@@ -8,6 +8,11 @@
     --ext-toolbar-button-text: #111;
     --ext-toolbar-button-hover-bg: rgba(0, 0, 0, .12);
     --ext-toolbar-button-hover-border: rgba(0, 0, 0, .2);
+    --ext-top-panels-top: 18px;
+}
+
+:root:has(#conversation-header-actions) {
+    --ext-top-panels-top: calc(18px + 64px);
 }
 
 .ext-toolbar {
@@ -121,7 +126,7 @@
     font-size: 11px;
     padding: 0 .4rem;
     border-radius: .35rem;
-    background: rgba(0, 0, 0, .06);
+    background: var(--ext-toolbar-button-bg);
 }
 
 .ext-note-pill {
@@ -364,7 +369,7 @@
 
 #ext-top-panels {
     position: fixed;
-    top: 18px;
+    top: var(--ext-top-panels-top);
     right: 18px;
     display: flex;
     flex-direction: column;
@@ -421,7 +426,7 @@
 }
 
 .ext-tag-sidebar-tag {
-    background: rgba(0, 0, 0, .08);
+    background: var(--ext-toolbar-button-bg);
     padding: .15rem .4rem;
     border-radius: .5rem;
     max-width: 115px;
