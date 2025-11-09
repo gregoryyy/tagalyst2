@@ -119,7 +119,7 @@ function teardownUI() {
     closeActiveNoteEditor();
     document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
     document.querySelectorAll('.ext-note-editor').forEach(editor => editor.remove());
-    document.querySelectorAll('.ext-toolbar').forEach(tb => tb.remove());
+    document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
     document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
     document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
     tagListEl = null;
@@ -513,7 +513,7 @@ function injectToolbar(el, threadKey) {
     let toolbar = el.querySelector('.ext-toolbar');
     if (toolbar) {
         if (toolbar.dataset.threadKey !== threadKey) {
-            toolbar.remove();
+            toolbar.closest('.ext-toolbar-row')?.remove();
             toolbar = null;
         } else {
             updateCollapseVisibility(el);
@@ -521,6 +521,8 @@ function injectToolbar(el, threadKey) {
         }
     }
 
+    const row = document.createElement('div');
+    row.className = 'ext-toolbar-row';
     const wrap = document.createElement('div');
     wrap.className = 'ext-toolbar';
     wrap.innerHTML = `
@@ -530,6 +532,7 @@ function injectToolbar(el, threadKey) {
     <button class="ext-star" title="Bookmark" aria-pressed="false">☆</button>
     <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
   `;
+    row.appendChild(wrap);
 
     // Events
     wrap.querySelector('.ext-collapse').onclick = () => collapse(el, !el.classList.contains('ext-collapsed'));
@@ -544,7 +547,7 @@ function injectToolbar(el, threadKey) {
     wrap.querySelector('.ext-note').onclick = () => openInlineNoteEditor(el, threadKey);
 
     wrap.dataset.threadKey = threadKey;
-    el.prepend(wrap);
+    el.prepend(row);
     toolbar = wrap;
     updateCollapseVisibility(el);
     syncCollapseButton(el);
@@ -590,11 +593,25 @@ async function renderBadges(el, threadKey, value) {
 
 function ensurePairNumber(el, pairIndex) {
     if (typeof pairIndex !== 'number') return;
-    let badge = el.querySelector('.ext-pair-number');
+    const role = el?.getAttribute?.('data-message-author-role');
+    if (role !== 'user') {
+        const wrap = el.querySelector('.ext-pair-number-wrap');
+        if (wrap) wrap.remove();
+        return;
+    }
+    const row = el.querySelector('.ext-toolbar-row');
+    if (!row) return;
+    let wrap = row.querySelector('.ext-pair-number-wrap');
+    if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'ext-pair-number-wrap';
+        row.insertBefore(wrap, row.firstChild);
+    }
+    let badge = wrap.querySelector('.ext-pair-number');
     if (!badge) {
-        badge = document.createElement('div');
+        badge = document.createElement('span');
         badge.className = 'ext-pair-number';
-        el.prepend(badge);
+        wrap.appendChild(badge);
     }
     badge.textContent = `${pairIndex + 1}.`;
 }

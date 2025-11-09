@@ -3,9 +3,13 @@
 
 Bugs:
 
-- export:
+- navigation and layout:
   - collapse misses Canvas
+  - collapse hides topmost query/toolbar
+  - topmost toolbar hides ChatGPT control (Share)
+- export:
   - filter out UI and extension stuff
+  - allow targeted exports (stars, filter results, tags)
 - keep tags and annotations displayed when editing DONE
 - when user clicks a new focus that isn't a chat (project overview), clear toolbar state
 - error in promise while loading extension

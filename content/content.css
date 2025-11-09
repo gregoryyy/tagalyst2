@@ -10,6 +10,13 @@
     box-shadow: 0 12px 24px rgba(0, 0, 0, .08);
 }
 
+.ext-toolbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .35rem;
+}
+
 .ext-toolbar button {
     all: unset;
     width: 27px;
@@ -402,11 +409,17 @@
 }
 
 
+.ext-pair-number-wrap {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    margin-right: .35rem;
+}
+
 .ext-pair-number {
     font-size: 11px;
     font-weight: 600;
     color: rgba(0, 0, 0, .45);
-    margin-bottom: .35rem;
 }
 
 .ext-tag-editor-input {

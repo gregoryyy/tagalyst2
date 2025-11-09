@@ -6,6 +6,8 @@ A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com
 - Use top-right utility frames (search + tags) and bottom-right navigation to jump through the conversation
 - View tag frequencies (placeholder list today) and soon filter/search via dedicated frames, plus copy a Markdown snapshot (all or starred only) via the MD Copy panel
 
+The guiding visual principle is polarity: ChatGPT keeps its affordances on the left, while Tagalyst draws its controls from the right (top-right panels, right-aligned per-message toolbars, bottom-right navigation). This keeps ownership clear at a glance.
+
 ## UI layout
 - **Top-right**: dedicated Search and Tags frames (read-only for now) for quick filtering concepts and future workflows.
 - **Bottom-right**: the navigation stack (Navigate / Collapse / Expand / Export) used to move around threads, batch actions, and trigger Markdown export.
