@@ -142,11 +142,16 @@
     text-transform: uppercase;
     margin-bottom: .35rem;
     color: rgba(0, 0, 0, .65);
+    text-align: center;
 }
 
 .ext-nav-buttons {
     display: flex;
     gap: 6px;
+}
+
+.ext-nav-frame .ext-nav-buttons + .ext-nav-buttons {
+    margin-top: 6px;
 }
 
 .ext-nav-buttons button {

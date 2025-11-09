@@ -290,6 +290,10 @@ function ensurePageControls(container, threadKey) {
             <button id="ext-jump-first" title="Jump to first prompt">⤒</button>
             <button id="ext-jump-last" title="Jump to last prompt">⤓</button>
         </div>
+        <div class="ext-nav-buttons">
+            <button id="ext-jump-star-prev" title="Previous starred message">★↑</button>
+            <button id="ext-jump-star-next" title="Next starred message">★↓</button>
+        </div>
     </div>
     <div class="ext-batch-frame">
         <span class="ext-nav-label">Collapse</span>
@@ -316,12 +320,28 @@ function ensurePageControls(container, threadKey) {
         if (target) target.scrollIntoView({ behavior: 'smooth', block });
     }
 
+    let starNavIndex = -1;
+
+    async function scrollStarred(delta) {
+        const nodes = await getStarredNodes(container, threadKey);
+        if (!nodes.length) return;
+        if (starNavIndex < 0 || starNavIndex >= nodes.length) {
+            starNavIndex = delta >= 0 ? 0 : nodes.length - 1;
+        } else {
+            starNavIndex = Math.max(0, Math.min(starNavIndex + delta, nodes.length - 1));
+        }
+        const target = nodes[starNavIndex];
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
     box.querySelector('#ext-jump-first').onclick = () => scrollToNode(0, 'start');
     box.querySelector('#ext-jump-last').onclick = () => {
         const nodes = getNavigationNodes(container);
         if (!nodes.length) return;
         scrollToNode(nodes.length - 1, 'end', nodes);
     };
+    box.querySelector('#ext-jump-star-prev').onclick = () => { scrollStarred(-1); };
+    box.querySelector('#ext-jump-star-next').onclick = () => { scrollStarred(1); };
     box.querySelector('#ext-collapse-all').onclick = () => toggleAll(container, true);
     box.querySelector('#ext-collapse-unstarred').onclick = () => toggleByStar(container, threadKey, false, true);
     box.querySelector('#ext-expand-all').onclick = () => toggleAll(container, false);
@@ -445,6 +465,18 @@ async function toggleByStar(container, threadKey, starred, collapseState) {
         const isStarred = !!cur.starred;
         if (isStarred === starred) collapse(el, collapseState);
     }
+}
+
+async function getStarredNodes(container, threadKey) {
+    const msgs = enumerateMessages(container);
+    if (!msgs.length) return [];
+    const entries = msgs.map(el => ({ el, key: `${threadKey}:${keyForMessage(el)}` }));
+    const store = await getStore(entries.map(e => e.key));
+    const out = [];
+    for (const { el, key } of entries) {
+        if ((store[key] || {}).starred) out.push(el);
+    }
+    return out;
 }
 
 // ---------------------- Orchestration --------------------------
