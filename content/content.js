@@ -62,7 +62,7 @@ function findTranscriptRoot() {
 
 function isMessageNode(el) {
     if (!el || !el.parentElement) return false;
-    if (el.querySelector('form, textarea, [contenteditable="true"]').length) return false; // composer region
+    if (el.querySelector('form, textarea, [contenteditable="true"]')) return false; // composer region
     const textLen = (el.innerText || '').trim().length;
     if (textLen < 8) return false;
     // Heuristics: rich text or code, and likely large block
@@ -70,6 +70,10 @@ function isMessageNode(el) {
 }
 
 function enumerateMessages(root) {
+    const attrMatches = Array.from(root.querySelectorAll('[data-message-author-role]'));
+    if (attrMatches.length) return attrMatches;
+
+    // Fallback to heuristic block detection if the explicit attribute is absent.
     const out = [];
     for (const child of root.children) {
         if (isMessageNode(child)) out.push(child);
