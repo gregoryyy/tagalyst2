@@ -20,9 +20,26 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 
 ## Notes
 - Data is stored locally via `chrome.storage.local` keyed by `{threadKey}:{messageKey}`.
+- Whenever ChatGPT exposes `data-message-id` on a message, that UUID becomes the `{messageKey}` input so the backend (or other tools) can correlate records 1:1. If the attribute is missing we fall back to a hash of the message text + position.
 - Message blocks are discovered via the stable `data-message-author-role` attribute (user / assistant) that ChatGPT renders on every turn. If that attribute disappears, the content script falls back to the old heuristics in `isMessageNode`.
 - The script is defensive (MutationObserver + heuristics). DOM changes on the site can still break selectors; update `isMessageNode` heuristics if needed.
 - This extension never calls private ChatGPT APIs and avoids reparenting nodes, minimizing breakage.
+
+## Terminology & Pair API
+- **Thread** (`t`) is the ordered list of conversational exchanges. (Use “session” only when referring to time-bounded usage, not the DOM thread.)
+- **Pair** (`p = (q, r)`) is a single user query `q` and its assistant response `r`. There are currently no response variants, so `t = [p₀, p₁, …]`.
+
+The content script exposes a tiny helper API for debugging or other extensions:
+
+```js
+// Return all pairs in the current thread
+window.__tagalyst.getThreadPairs(); // => [{ query, queryId, response, responseId }, ...]
+
+// Return the p-th pair (0-indexed). Useful notation: p_i = getThreadPair(i).
+window.__tagalyst.getThreadPair(3);
+```
+
+These helpers respect the same discovery logic as the UI (preferring `data-message-author-role` and falling back to heuristics).
 
 
 ## Roadmap

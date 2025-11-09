@@ -6,10 +6,15 @@
  */
 
 // -------------------------- Utilities --------------------------
+/**
+ * Small helper for delaying async flows without blocking the UI thread.
+ */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+/**
+ * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
+ */
 function hashString(s) {
-    // FNV-1a 32-bit (fast enough; collisions unlikely for our use)
     let h = 0x811c9dc5;
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i);
@@ -18,6 +23,9 @@ function hashString(s) {
     return ("0000000" + h.toString(16)).slice(-8);
 }
 
+/**
+ * Strips excess whitespace and zero-width chars so hashes stay stable.
+ */
 function normalizeText(t) {
     return (t || "")
         .replace(/\s+/g, " ")
@@ -25,6 +33,9 @@ function normalizeText(t) {
         .trim();
 }
 
+/**
+ * Generates a thread-level key using the conversation ID when available.
+ */
 function getThreadKey() {
     // Prefer URL path (conversation id). Fallback to title + domain.
     try {
@@ -34,21 +45,42 @@ function getThreadKey() {
     return hashString(document.title + location.host);
 }
 
+/**
+ * Returns the DOM-provided message UUID if available.
+ */
+function getMessageId(el) {
+    return el?.getAttribute?.('data-message-id') || null;
+}
+
+/**
+ * Stable-ish per-message key derived from ChatGPT IDs or fallback heuristics.
+ */
 function keyForMessage(el) {
+    const domId = getMessageId(el);
+    if (domId) return domId;
     const text = normalizeText(el.innerText).slice(0, 4000); // perf cap
     const idx = Array.prototype.indexOf.call(el.parentElement?.children || [], el);
     return hashString(text + "|" + idx);
 }
 
+/**
+ * Promise-wrapped chrome.storage.local get.
+ */
 async function getStore(keys) {
     return new Promise(resolve => chrome.storage.local.get(keys, resolve));
 }
 
+/**
+ * Promise-wrapped chrome.storage.local set.
+ */
 async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
 }
 
 // --------------------- Discovery & Enumeration -----------------
+/**
+ * Finds the primary scrollable container that holds the conversation.
+ */
 function findTranscriptRoot() {
     const main = document.querySelector('main') || document.body;
     const candidates = Array.from(main.querySelectorAll('*')).filter(el => {
@@ -60,6 +92,9 @@ function findTranscriptRoot() {
     return (candidates.sort((a, b) => b.clientHeight - a.clientHeight)[0]) || main;
 }
 
+/**
+ * Heuristic message detector used only when the explicit role attribute is absent.
+ */
 function isMessageNode(el) {
     if (!el || !el.parentElement) return false;
     if (el.querySelector('form, textarea, [contenteditable="true"]')) return false; // composer region
@@ -69,6 +104,9 @@ function isMessageNode(el) {
     return !!el.querySelector('pre, code, p, li, h1, h2, h3') || textLen > 80;
 }
 
+/**
+ * Returns all message nodes, preferring the native role attribute.
+ */
 function enumerateMessages(root) {
     const attrMatches = Array.from(root.querySelectorAll('[data-message-author-role]'));
     if (attrMatches.length) return attrMatches;
@@ -81,7 +119,44 @@ function enumerateMessages(root) {
     return out;
 }
 
+/**
+ * Groups message DOM nodes into ordered (query, response) pairs.
+ */
+function derivePairs(messages) {
+    const pairs = [];
+    for (let i = 0; i < messages.length; i += 2) {
+        const query = messages[i];
+        if (!query) break;
+        const response = messages[i + 1] || null;
+        pairs.push({
+            query,
+            response,
+            queryId: getMessageId(query),
+            responseId: response ? getMessageId(response) : null,
+        });
+    }
+    return pairs;
+}
+
+/**
+ * Returns every (query, response) pair within the current thread container.
+ */
+function getPairs(root) {
+    return derivePairs(enumerateMessages(root));
+}
+
+/**
+ * Returns the p-th pair (0-indexed) or null if it does not exist.
+ */
+function getPair(root, idx) {
+    if (idx < 0) return null;
+    return getPairs(root)[idx] || null;
+}
+
 // ---------------------- UI Injection ---------------------------
+/**
+ * Injects global page controls once per document.
+ */
 function ensurePageControls(container) {
     if (document.getElementById('ext-page-controls')) return;
     const box = document.createElement('div');
@@ -107,6 +182,9 @@ function ensurePageControls(container) {
     box.querySelector('#ext-expand-all').onclick = () => toggleAll(container, false);
 }
 
+/**
+ * Prepends the per-message toolbar and wires its handlers.
+ */
 function injectToolbar(el, threadKey) {
     if (el.querySelector('.ext-toolbar')) return; // idempotent
 
@@ -143,6 +221,9 @@ function injectToolbar(el, threadKey) {
     el.prepend(wrap);
 }
 
+/**
+ * Reads star/tag data for a message and updates its badges + CSS state.
+ */
 async function renderBadges(el, threadKey, value) {
     const k = `${threadKey}:${keyForMessage(el)}`;
     const cur = value || (await getStore([k]))[k] || {};
@@ -163,16 +244,25 @@ async function renderBadges(el, threadKey, value) {
     }
 }
 
+/**
+ * Toggles the collapsed state for one message block.
+ */
 function collapse(el, yes) {
     el.classList.toggle('ext-collapsed', !!yes);
 }
 
+/**
+ * Applies collapse/expand state to every discovered message.
+ */
 function toggleAll(container, yes) {
     const msgs = enumerateMessages(container);
     for (const m of msgs) collapse(m, !!yes);
 }
 
 // ---------------------- Orchestration --------------------------
+/**
+ * Entry point: finds the thread, injects UI, and watches for updates.
+ */
 async function bootstrap() {
     // Wait a moment for the app shell to mount
     await sleep(600);
@@ -208,6 +298,18 @@ new MutationObserver(() => {
         bootstrap();
     }
 }).observe(document, { subtree: true, childList: true });
+
+// Surface a minimal pairing API for scripts / devtools.
+window.__tagalyst = Object.assign(window.__tagalyst || {}, {
+    getThreadPairs: () => {
+        const root = findTranscriptRoot();
+        return root ? getPairs(root) : [];
+    },
+    getThreadPair: (idx) => {
+        const root = findTranscriptRoot();
+        return root ? getPair(root, idx) : null;
+    },
+});
 
 // First boot
 bootstrap();
