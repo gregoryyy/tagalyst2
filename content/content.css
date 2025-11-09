@@ -1,0 +1,84 @@
+/* Non-destructive UI and state classes */
+.ext-toolbar button {
+    all: unset;
+    padding: 0 .35rem;
+    cursor: pointer;
+    border-radius: .35rem;
+}
+
+
+.ext-toolbar button:hover {
+    background: rgba(0, 0, 0, .08);
+}
+
+
+/* Collapse effect */
+.ext-collapsed {
+    max-height: 100px !important;
+    overflow: hidden !important;
+    position: relative;
+}
+
+
+.ext-collapsed::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 36px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(0, 0, 0, .06));
+}
+
+
+/* Tag badges */
+.ext-badges {
+    display: inline-flex;
+    gap: .25rem;
+    flex-wrap: wrap;
+    margin-left: .5rem;
+}
+
+
+.ext-badge {
+    font-size: 11px;
+    padding: 0 .4rem;
+    border-radius: .35rem;
+    background: rgba(0, 0, 0, .06);
+}
+
+
+/* Bookmark state */
+.ext-starred .ext-toolbar .ext-star {
+    filter: saturate(1.2);
+    font-weight: 700;
+}
+
+
+/* Floating page controls */
+#ext-page-controls {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 2147483646;
+    /* above site UI */
+}
+
+
+#ext-page-controls button {
+    all: unset;
+    padding: .5rem .6rem;
+    font-size: 12px;
+    border-radius: .6rem;
+    background: rgba(0, 0, 0, .08);
+    cursor: pointer;
+}
+
+
+#ext-page-controls button:hover {
+    background: rgba(0, 0, 0, .12);
+}
