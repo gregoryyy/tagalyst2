@@ -1,5 +1,5 @@
 /**
- * ChatGPT DOM Tools — content script (MV3)
+ * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
  * - Defensive discovery with MutationObserver
  * - Non-destructive overlays (no reparenting site nodes)
  * - Local persistence via chrome.storage
