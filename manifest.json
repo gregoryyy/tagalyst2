@@ -1,19 +1,21 @@
 {
     "name": "ChatGPT DOM Tools",
     "description": "Collapse/expand, tag, and bookmark ChatGPT messages; jump to first/last.",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "permissions": [
         "storage"
     ],
     "host_permissions": [
-        "https://chat.openai.com/*"
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
     ],
     "content_scripts": [
         {
             "matches": [
-                "https://chat.openai.com/*"
+                "https://chat.openai.com/*",
+                "https://chatgpt.com/*"
             ],
             "js": [
                 "content/content.js"
