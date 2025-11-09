@@ -1,14 +1,46 @@
 /* Non-destructive UI and state classes */
+.ext-toolbar {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .2rem .55rem;
+    border-radius: 32px;
+    border: 1px solid rgba(0, 0, 0, .05);
+    background: #fff;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, .08);
+}
+
 .ext-toolbar button {
     all: unset;
-    padding: 0 .35rem;
+    width: 27px;
+    height: 27px;
+    padding: 0;
+    border-radius: .6rem;
+    border: 1px solid rgba(0, 0, 0, .12);
+    background: rgba(0, 0, 0, .08);
+    color: #111;
     cursor: pointer;
-    border-radius: .35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
 
 .ext-toolbar button:hover {
-    background: rgba(0, 0, 0, .08);
+    background: rgba(0, 0, 0, .12);
+    border-color: rgba(0, 0, 0, .2);
+}
+
+.ext-toolbar button:focus-visible {
+    outline: 2px solid rgba(0, 0, 0, .45);
+    outline-offset: 2px;
+}
+
+.ext-toolbar .ext-collapse {
+    font-size: 16px;
 }
 
 
@@ -37,7 +69,11 @@
     display: inline-flex;
     gap: .25rem;
     flex-wrap: wrap;
-    margin-left: .5rem;
+    margin-right: .5rem;
+    flex: 1;
+    min-height: 30px;
+    align-items: center;
+    min-width: 0;
 }
 
 
@@ -50,10 +86,7 @@
 
 
 /* Bookmark state */
-.ext-starred .ext-toolbar .ext-star {
-    filter: saturate(1.2);
-    font-weight: 700;
-}
+
 
 
 /* Floating page controls */
@@ -71,16 +104,24 @@
 
 #ext-page-controls button {
     all: unset;
-    padding: .5rem .6rem;
+    width: 34px;
+    height: 34px;
+    padding: 0;
     font-size: 12px;
     border-radius: .6rem;
+    border: 1px solid rgba(0, 0, 0, .12);
     background: rgba(0, 0, 0, .08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    transition: background .15s ease, border-color .15s ease;
 }
 
 
 #ext-page-controls button:hover {
     background: rgba(0, 0, 0, .12);
+    border-color: rgba(0, 0, 0, .2);
 }
 
 .ext-nav-frame,
@@ -128,110 +169,67 @@
     text-align: center;
 }
 
-.ext-tag-dialog {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, .35);
-    z-index: 2147483647;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .15s ease;
-}
-
-.ext-tag-dialog.visible {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.ext-tag-modal {
-    width: min(420px, calc(100% - 32px));
-    background: #fff;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 24px 40px rgba(0, 0, 0, .2);
+.ext-tag-editor {
+    margin-top: .6rem;
+    border: 1px solid rgba(0, 0, 0, .2);
+    border-radius: .9rem;
+    background: rgba(255, 255, 255, .95);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, .12);
+    padding: .75rem;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: .5rem;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.ext-tag-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-    font-size: 16px;
-}
-
-.ext-tag-close {
-    all: unset;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    text-align: center;
-    font-size: 20px;
-    line-height: 32px;
-    cursor: pointer;
-    color: rgba(0, 0, 0, .65);
-}
-
-.ext-tag-close:hover {
-    background: rgba(0, 0, 0, .08);
-}
-
-.ext-tag-label {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 13px;
-    color: rgba(0, 0, 0, .7);
-}
-
-.ext-tag-input {
-    padding: .6rem .75rem;
-    border: 1px solid rgba(0, 0, 0, .2);
-    border-radius: .5rem;
-    font-size: 14px;
-}
-
-.ext-tag-input:focus {
-    border-color: #4b8bff;
+.ext-tag-editor-input {
+    min-height: 48px;
+    padding: .4rem .2rem;
     outline: none;
-    box-shadow: 0 0 0 2px rgba(75, 139, 255, .25);
+    border: none;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
 }
 
-.ext-tag-actions {
+.ext-tag-editor-input:focus {
+    box-shadow: inset 0 -2px 0 #0b57d0;
+}
+
+.ext-tag-editor-input:empty::before {
+    content: attr(data-placeholder);
+    color: rgba(0, 0, 0, .4);
+}
+
+.ext-tag-editor-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
 }
 
-.ext-tag-actions button {
+.ext-tag-editor-actions button {
     all: unset;
     padding: .45rem 1.1rem;
     border-radius: .55rem;
     cursor: pointer;
     font-size: 13px;
     font-weight: 600;
+    background: rgba(0, 0, 0, .08);
 }
 
-.ext-tag-save {
+.ext-tag-editor-save {
     background: #0b57d0;
     color: #fff;
 }
 
-.ext-tag-save:hover {
+.ext-tag-editor-save:hover {
     background: #0a4ec0;
 }
 
-.ext-tag-cancel {
-    background: rgba(0, 0, 0, .08);
-    color: rgba(0, 0, 0, .8);
+.ext-tag-editor-actions button:hover:not(.ext-tag-editor-save) {
+    background: rgba(0, 0, 0, .12);
 }
 
-.ext-tag-cancel:hover {
-    background: rgba(0, 0, 0, .12);
+.ext-tag-editing .ext-badges {
+    display: none;
 }

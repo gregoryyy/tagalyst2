@@ -64,6 +64,16 @@ function keyForMessage(el) {
 }
 
 /**
+ * Determines whether the collapse control should be shown for a message.
+ * Hidden for single-line prompts (no line breaks).
+ */
+function shouldShowCollapseControl(el) {
+    const text = (el.innerText || '').trim();
+    if (!text) return false;
+    return text.includes('\n');
+}
+
+/**
  * Promise-wrapped chrome.storage.local get.
  */
 async function getStore(keys) {
@@ -77,86 +87,86 @@ async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
 }
 
-// ------------------------ Tag Dialog UI ------------------------
-let tagDialogEl = null;
+// ------------------------ Tag Editor UI ------------------------
+let activeTagEditor = null;
 
-function ensureTagDialog() {
-    if (tagDialogEl) return tagDialogEl;
-    const overlay = document.createElement('div');
-    overlay.id = 'ext-tag-dialog';
-    overlay.className = 'ext-tag-dialog';
-    overlay.setAttribute('aria-hidden', 'true');
-    overlay.innerHTML = `
-    <div class="ext-tag-modal" role="dialog" aria-modal="true" aria-labelledby="ext-tag-title">
-        <div class="ext-tag-header">
-            <span id="ext-tag-title">Edit tags</span>
-            <button type="button" class="ext-tag-close" aria-label="Cancel">×</button>
-        </div>
-        <label class="ext-tag-label">
-            Tags (comma-separated)
-            <input type="text" class="ext-tag-input" placeholder="e.g. math, follow-up" />
-        </label>
-        <div class="ext-tag-actions">
-            <button type="button" class="ext-tag-save">Save</button>
-            <button type="button" class="ext-tag-cancel">Cancel</button>
-        </div>
-    </div>
-  `;
-    document.documentElement.appendChild(overlay);
-    tagDialogEl = overlay;
-    return overlay;
+function closeActiveTagEditor() {
+    if (activeTagEditor) {
+        activeTagEditor.cleanup();
+        activeTagEditor = null;
+    }
 }
 
-function promptForTags(initial) {
-    const overlay = ensureTagDialog();
-    const input = overlay.querySelector('.ext-tag-input');
-    const saveBtn = overlay.querySelector('.ext-tag-save');
-    const cancelBtn = overlay.querySelector('.ext-tag-cancel');
-    const closeBtn = overlay.querySelector('.ext-tag-close');
-    const modal = overlay.querySelector('.ext-tag-modal');
+async function openInlineTagEditor(messageEl, threadKey) {
+    if (activeTagEditor?.message === messageEl) {
+        closeActiveTagEditor();
+        return;
+    }
+    closeActiveTagEditor();
 
-    input.value = initial || '';
-    overlay.classList.add('visible');
-    overlay.setAttribute('aria-hidden', 'false');
-    setTimeout(() => {
-        input.focus();
-        input.select();
-    }, 0);
+    const key = `${threadKey}:${keyForMessage(messageEl)}`;
+    const store = await getStore([key]);
+    const cur = store[key] || {};
+    const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
 
-    return new Promise(resolve => {
-        const cleanup = (value) => {
-            overlay.classList.remove('visible');
-            overlay.setAttribute('aria-hidden', 'true');
-            overlay.removeEventListener('click', onOverlayClick);
-            overlay.removeEventListener('keydown', onKeyDown, true);
-            saveBtn.removeEventListener('click', onSave);
-            cancelBtn.removeEventListener('click', onCancel);
-            closeBtn.removeEventListener('click', onCancel);
-            resolve(value);
-        };
+    const editor = document.createElement('div');
+    editor.className = 'ext-tag-editor';
+    editor.innerHTML = `
+        <div class="ext-tag-editor-input" contenteditable="true" role="textbox" aria-label="Edit tags" data-placeholder="Add tags…"></div>
+        <div class="ext-tag-editor-actions">
+            <button type="button" class="ext-tag-editor-save">Save</button>
+            <button type="button" class="ext-tag-editor-cancel">Cancel</button>
+        </div>
+    `;
 
-        const onSave = () => cleanup(input.value);
-        const onCancel = () => cleanup(null);
-        const onOverlayClick = (evt) => {
-            if (evt.target === overlay) onCancel();
-        };
-        const onKeyDown = (evt) => {
-            if (!overlay.classList.contains('visible')) return;
-            if (evt.key === 'Escape') {
-                evt.preventDefault();
-                onCancel();
-            } else if (evt.key === 'Enter' && (evt.target === input || modal.contains(evt.target))) {
-                evt.preventDefault();
-                onSave();
-            }
-        };
+    const input = editor.querySelector('.ext-tag-editor-input');
+    input.textContent = existing;
 
-        saveBtn.addEventListener('click', onSave);
-        cancelBtn.addEventListener('click', onCancel);
-        closeBtn.addEventListener('click', onCancel);
-        overlay.addEventListener('click', onOverlayClick);
-        overlay.addEventListener('keydown', onKeyDown, true);
+    const toolbar = messageEl.querySelector('.ext-toolbar');
+    (toolbar || messageEl).after(editor);
+    messageEl.classList.add('ext-tag-editing');
+    input.focus();
+    placeCaretAtEnd(input);
+
+    const cleanup = () => {
+        editor.remove();
+        messageEl.classList.remove('ext-tag-editing');
+        if (activeTagEditor?.message === messageEl) activeTagEditor = null;
+    };
+
+    const save = async () => {
+        const raw = input.innerText.replace(/\n+/g, ',');
+        const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
+        cur.tags = tags;
+        await setStore({ [key]: cur });
+        renderBadges(messageEl, threadKey, cur);
+        cleanup();
+    };
+
+    const cancel = () => cleanup();
+
+    editor.querySelector('.ext-tag-editor-save').onclick = save;
+    editor.querySelector('.ext-tag-editor-cancel').onclick = cancel;
+    editor.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape') {
+            evt.preventDefault();
+            cancel();
+        } else if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
+            evt.preventDefault();
+            save();
+        }
     });
+
+    activeTagEditor = { message: messageEl, cleanup };
+}
+
+function placeCaretAtEnd(el) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
 }
 
 // --------------------- Discovery & Enumeration -----------------
@@ -235,6 +245,15 @@ function getPromptNodes(root) {
 }
 
 /**
+ * Returns nodes used for navigation (prompts when available, otherwise all messages).
+ */
+function getNavigationNodes(root) {
+    const prompts = getPromptNodes(root);
+    if (prompts.length) return prompts;
+    return enumerateMessages(root);
+}
+
+/**
  * Returns the p-th pair (0-indexed) or null if it does not exist.
  */
 function getPair(root, idx) {
@@ -247,7 +266,8 @@ function getPair(root, idx) {
  * Injects global page controls once per document.
  */
 function ensurePageControls(container, threadKey) {
-    if (document.getElementById('ext-page-controls')) return;
+    const existing = document.getElementById('ext-page-controls');
+    if (existing) existing.remove();
     const box = document.createElement('div');
     box.id = 'ext-page-controls';
     box.innerHTML = `
@@ -275,19 +295,19 @@ function ensurePageControls(container, threadKey) {
   `;
     document.documentElement.appendChild(box);
 
-    function scrollToPrompt(idx, block = 'center') {
-        const prompts = getPromptNodes(container);
-        if (!prompts.length) return;
-        const clamped = Math.max(0, Math.min(idx, prompts.length - 1));
-        const target = prompts[clamped];
+    function scrollToNode(idx, block = 'center', list) {
+        const nodes = list || getNavigationNodes(container);
+        if (!nodes.length) return;
+        const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
+        const target = nodes[clamped];
         if (target) target.scrollIntoView({ behavior: 'smooth', block });
     }
 
-    box.querySelector('#ext-jump-first').onclick = () => scrollToPrompt(0, 'start');
+    box.querySelector('#ext-jump-first').onclick = () => scrollToNode(0, 'start');
     box.querySelector('#ext-jump-last').onclick = () => {
-        const prompts = getPromptNodes(container);
-        if (!prompts.length) return;
-        scrollToPrompt(prompts.length - 1, 'end');
+        const nodes = getNavigationNodes(container);
+        if (!nodes.length) return;
+        scrollToNode(nodes.length - 1, 'end', nodes);
     };
     box.querySelector('#ext-collapse-all').onclick = () => toggleAll(container, true);
     box.querySelector('#ext-collapse-unstarred').onclick = () => toggleByStar(container, threadKey, false, true);
@@ -299,15 +319,19 @@ function ensurePageControls(container, threadKey) {
  * Prepends the per-message toolbar and wires its handlers.
  */
 function injectToolbar(el, threadKey) {
-    if (el.querySelector('.ext-toolbar')) return; // idempotent
+    let toolbar = el.querySelector('.ext-toolbar');
+    if (toolbar) {
+        updateCollapseVisibility(el);
+        return; // already wired
+    }
 
     const wrap = document.createElement('div');
     wrap.className = 'ext-toolbar';
     wrap.innerHTML = `
-    <button class="ext-tag" title="Add tag">🏷️</button>
-    <button class="ext-star" title="Bookmark" aria-pressed="false">☆</button>
-    <button class="ext-collapse" title="Collapse">▾</button>
     <span class="ext-badges"></span>
+    <button class="ext-tag" title="Edit tags" aria-label="Edit tags">✎</button>
+    <button class="ext-star" title="Bookmark" aria-pressed="false">☆</button>
+    <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
   `;
 
     // Events
@@ -319,19 +343,12 @@ function injectToolbar(el, threadKey) {
         await setStore({ [k]: cur });
         renderBadges(el, threadKey, cur);
     };
-    wrap.querySelector('.ext-tag').onclick = async () => {
-        const k = `${threadKey}:${keyForMessage(el)}`;
-        const cur = (await getStore([k]))[k] || {};
-        const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
-        const add = await promptForTags(existing);
-        if (add !== null) {
-            cur.tags = add.split(',').map(s => s.trim()).filter(Boolean);
-            await setStore({ [k]: cur });
-            renderBadges(el, threadKey, cur);
-        }
-    };
+    wrap.querySelector('.ext-tag').onclick = () => openInlineTagEditor(el, threadKey);
 
     el.prepend(wrap);
+    toolbar = wrap;
+    updateCollapseVisibility(el);
+    syncCollapseButton(el);
 }
 
 /**
@@ -363,11 +380,29 @@ async function renderBadges(el, threadKey, value) {
     }
 }
 
+function updateCollapseVisibility(el) {
+    const btn = el.querySelector('.ext-toolbar .ext-collapse');
+    if (!btn) return;
+    const show = shouldShowCollapseControl(el);
+    btn.style.display = show ? '' : 'none';
+}
+
+function syncCollapseButton(el) {
+    const btn = el.querySelector('.ext-toolbar .ext-collapse');
+    if (!btn) return;
+    const collapsed = el.classList.contains('ext-collapsed');
+    btn.textContent = collapsed ? '+' : '−';
+    btn.setAttribute('title', collapsed ? 'Expand message' : 'Collapse message');
+    btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
+    btn.setAttribute('aria-expanded', String(!collapsed));
+}
+
 /**
  * Toggles the collapsed state for one message block.
  */
 function collapse(el, yes) {
     el.classList.toggle('ext-collapsed', !!yes);
+    syncCollapseButton(el);
 }
 
 /**
