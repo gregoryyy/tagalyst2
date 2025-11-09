@@ -1,13 +1,24 @@
 /* Non-destructive UI and state classes */
+:root {
+    --ext-toolbar-surface: #fff;
+    --ext-toolbar-border: rgba(0, 42, 105, .15);
+    --ext-toolbar-shadow: 0 12px 24px rgba(16, 76, 186, .12);
+    --ext-toolbar-button-bg: rgba(38, 118, 255, .12);
+    --ext-toolbar-button-border: rgba(0, 42, 105, .15);
+    --ext-toolbar-button-text: #111;
+    --ext-toolbar-button-hover-bg: rgba(0, 0, 0, .12);
+    --ext-toolbar-button-hover-border: rgba(0, 0, 0, .2);
+}
+
 .ext-toolbar {
     display: flex;
     align-items: center;
     gap: .35rem;
     padding: .2rem .55rem;
     border-radius: 32px;
-    border: 1px solid rgba(0, 42, 105, .15);
-    background: #fff;
-    box-shadow: 0 12px 24px rgba(16, 76, 186, .12);
+    border: 1px solid var(--ext-toolbar-border);
+    background: var(--ext-toolbar-surface);
+    box-shadow: var(--ext-toolbar-shadow);
 }
 
 .ext-toolbar-row {
@@ -23,9 +34,9 @@
     height: 27px;
     padding: 0;
     border-radius: .6rem;
-    border: 1px solid rgba(0, 42, 105, .15);
-    background: rgba(38, 118, 255, .12);
-    color: #111;
+    border: 1px solid var(--ext-toolbar-button-border);
+    background: var(--ext-toolbar-button-bg);
+    color: var(--ext-toolbar-button-text);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -55,11 +66,15 @@
 
 
 .ext-toolbar button:hover {
-    background: rgba(0, 0, 0, .12);
-    border-color: rgba(0, 0, 0, .2);
+    background: var(--ext-toolbar-button-hover-bg);
+    border-color: var(--ext-toolbar-button-hover-border);
 }
 
-.ext-toolbar button:focus-visible {
+.ext-toolbar button:focus-visible,
+#ext-page-controls button:focus-visible,
+.ext-nav-buttons button:focus-visible,
+.ext-batch-buttons button:focus-visible,
+.ext-export-button:focus-visible {
     outline: 2px solid rgba(0, 0, 0, .45);
     outline-offset: 2px;
 }
@@ -148,30 +163,31 @@
     padding: 0;
     font-size: 12px;
     border-radius: .6rem;
-    border: 1px solid rgba(0, 0, 0, .12);
-    background: rgba(0, 0, 0, .08);
+    border: 1px solid var(--ext-toolbar-button-border);
+    background: var(--ext-toolbar-button-bg);
+    color: var(--ext-toolbar-button-text);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background .15s ease, border-color .15s ease;
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease;
 }
 
 
 #ext-page-controls button:hover {
-    background: rgba(38, 118, 255, .2);
-    border-color: rgba(0, 42, 105, .3);
+    background: var(--ext-toolbar-button-hover-bg);
+    border-color: var(--ext-toolbar-button-hover-border);
 }
 
 .ext-nav-frame,
 .ext-batch-frame,
 .ext-export-frame {
-    border: 1px solid rgba(0, 42, 105, .15);
+    border: 1px solid var(--ext-toolbar-border);
     border-radius: .9rem;
     padding: .45rem .7rem .7rem;
-    background: #fff;
+    background: var(--ext-toolbar-surface);
     backdrop-filter: blur(2px);
-    box-shadow: 0 4px 12px rgba(16, 76, 186, .12);
+    box-shadow: var(--ext-toolbar-shadow);
     margin: .2rem 0;
     align-self: flex-end;
 }
@@ -188,16 +204,20 @@
     text-align: center;
     padding: .4rem .5rem;
     border-radius: .6rem;
-    border: 1px solid rgba(0, 0, 0, .12);
-    background: rgba(0, 0, 0, .08);
+    border: 1px solid var(--ext-toolbar-button-border);
+    background: var(--ext-toolbar-button-bg);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
+    color: var(--ext-toolbar-button-text);
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
 
-.ext-export-button:hover {
-    background: rgba(0, 0, 0, .12);
-    border-color: rgba(0, 0, 0, .2);
+.ext-export-button:hover,
+.ext-nav-buttons button:hover,
+.ext-batch-buttons button:hover {
+    background: var(--ext-toolbar-button-hover-bg);
+    border-color: var(--ext-toolbar-button-hover-border);
 }
 
 .ext-nav-label {
@@ -229,6 +249,12 @@
     align-items: center;
     justify-content: center;
     font-size: 16px;
+    border-radius: .6rem;
+    border: 1px solid var(--ext-toolbar-button-border);
+    background: var(--ext-toolbar-button-bg);
+    color: var(--ext-toolbar-button-text);
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
 
 .ext-batch-buttons {
@@ -240,6 +266,13 @@
 .ext-batch-buttons button {
     min-width: 48px;
     text-align: center;
+    border-radius: .6rem;
+    border: 1px solid var(--ext-toolbar-button-border);
+    background: var(--ext-toolbar-button-bg);
+    color: var(--ext-toolbar-button-text);
+    padding: .35rem .55rem;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
 
 .ext-tag-editor {
@@ -343,24 +376,24 @@
 
 .ext-top-frame {
     width: 100%;
-    border: 1px solid rgba(0, 42, 105, .15);
+    border: 1px solid var(--ext-toolbar-border);
     border-radius: .9rem;
     padding: .45rem .7rem .7rem;
-    background: #fff;
-    box-shadow: 0 4px 12px rgba(16, 76, 186, .12);
+    background: var(--ext-toolbar-surface);
+    box-shadow: var(--ext-toolbar-shadow);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     animation: extFadeSlideIn .2s ease;
 }
 
 .ext-top-label {
-    font-size: 11px;
+    font-size: 10px;
     text-align: center;
     font-weight: 600;
-    letter-spacing: .12em;
+    letter-spacing: .08em;
     text-transform: uppercase;
     color: rgba(0, 0, 0, .65);
     display: block;
-    margin-bottom: .45rem;
+    margin-bottom: .25rem;
 }
 
 .ext-search-input {
