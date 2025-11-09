@@ -77,6 +77,88 @@ async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
 }
 
+// ------------------------ Tag Dialog UI ------------------------
+let tagDialogEl = null;
+
+function ensureTagDialog() {
+    if (tagDialogEl) return tagDialogEl;
+    const overlay = document.createElement('div');
+    overlay.id = 'ext-tag-dialog';
+    overlay.className = 'ext-tag-dialog';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML = `
+    <div class="ext-tag-modal" role="dialog" aria-modal="true" aria-labelledby="ext-tag-title">
+        <div class="ext-tag-header">
+            <span id="ext-tag-title">Edit tags</span>
+            <button type="button" class="ext-tag-close" aria-label="Cancel">×</button>
+        </div>
+        <label class="ext-tag-label">
+            Tags (comma-separated)
+            <input type="text" class="ext-tag-input" placeholder="e.g. math, follow-up" />
+        </label>
+        <div class="ext-tag-actions">
+            <button type="button" class="ext-tag-save">Save</button>
+            <button type="button" class="ext-tag-cancel">Cancel</button>
+        </div>
+    </div>
+  `;
+    document.documentElement.appendChild(overlay);
+    tagDialogEl = overlay;
+    return overlay;
+}
+
+function promptForTags(initial) {
+    const overlay = ensureTagDialog();
+    const input = overlay.querySelector('.ext-tag-input');
+    const saveBtn = overlay.querySelector('.ext-tag-save');
+    const cancelBtn = overlay.querySelector('.ext-tag-cancel');
+    const closeBtn = overlay.querySelector('.ext-tag-close');
+    const modal = overlay.querySelector('.ext-tag-modal');
+
+    input.value = initial || '';
+    overlay.classList.add('visible');
+    overlay.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+        input.focus();
+        input.select();
+    }, 0);
+
+    return new Promise(resolve => {
+        const cleanup = (value) => {
+            overlay.classList.remove('visible');
+            overlay.setAttribute('aria-hidden', 'true');
+            overlay.removeEventListener('click', onOverlayClick);
+            overlay.removeEventListener('keydown', onKeyDown, true);
+            saveBtn.removeEventListener('click', onSave);
+            cancelBtn.removeEventListener('click', onCancel);
+            closeBtn.removeEventListener('click', onCancel);
+            resolve(value);
+        };
+
+        const onSave = () => cleanup(input.value);
+        const onCancel = () => cleanup(null);
+        const onOverlayClick = (evt) => {
+            if (evt.target === overlay) onCancel();
+        };
+        const onKeyDown = (evt) => {
+            if (!overlay.classList.contains('visible')) return;
+            if (evt.key === 'Escape') {
+                evt.preventDefault();
+                onCancel();
+            } else if (evt.key === 'Enter' && (evt.target === input || modal.contains(evt.target))) {
+                evt.preventDefault();
+                onSave();
+            }
+        };
+
+        saveBtn.addEventListener('click', onSave);
+        cancelBtn.addEventListener('click', onCancel);
+        closeBtn.addEventListener('click', onCancel);
+        overlay.addEventListener('click', onOverlayClick);
+        overlay.addEventListener('keydown', onKeyDown, true);
+    });
+}
+
 // --------------------- Discovery & Enumeration -----------------
 /**
  * Finds the primary scrollable container that holds the conversation.
@@ -146,6 +228,13 @@ function getPairs(root) {
 }
 
 /**
+ * Returns only the prompt (user query) nodes.
+ */
+function getPromptNodes(root) {
+    return getPairs(root).map(p => p.query).filter(Boolean);
+}
+
+/**
  * Returns the p-th pair (0-indexed) or null if it does not exist.
  */
 function getPair(root, idx) {
@@ -157,29 +246,53 @@ function getPair(root, idx) {
 /**
  * Injects global page controls once per document.
  */
-function ensurePageControls(container) {
+function ensurePageControls(container, threadKey) {
     if (document.getElementById('ext-page-controls')) return;
     const box = document.createElement('div');
     box.id = 'ext-page-controls';
     box.innerHTML = `
-    <button id="ext-jump-first">⤒ First</button>
-    <button id="ext-jump-last">⤓ Last</button>
-    <button id="ext-collapse-all">Collapse all</button>
-    <button id="ext-expand-all">Expand all</button>
+    <div class="ext-nav-frame">
+        <span class="ext-nav-label">Navigate</span>
+        <div class="ext-nav-buttons">
+            <button id="ext-jump-first" title="Jump to first prompt">⤒</button>
+            <button id="ext-jump-last" title="Jump to last prompt">⤓</button>
+        </div>
+    </div>
+    <div class="ext-batch-frame">
+        <span class="ext-nav-label">Collapse</span>
+        <div class="ext-batch-buttons">
+            <button id="ext-collapse-all" title="Collapse all prompts">All</button>
+            <button id="ext-collapse-unstarred" title="Collapse unstarred prompts">☆</button>
+        </div>
+    </div>
+    <div class="ext-batch-frame">
+        <span class="ext-nav-label">Expand</span>
+        <div class="ext-batch-buttons">
+            <button id="ext-expand-all" title="Expand all prompts">All</button>
+            <button id="ext-expand-starred" title="Expand starred prompts">★</button>
+        </div>
+    </div>
   `;
     document.documentElement.appendChild(box);
 
-    box.querySelector('#ext-jump-first').onclick = () => {
-        const msgs = enumerateMessages(container);
-        if (msgs[0]) msgs[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
+    function scrollToPrompt(idx, block = 'center') {
+        const prompts = getPromptNodes(container);
+        if (!prompts.length) return;
+        const clamped = Math.max(0, Math.min(idx, prompts.length - 1));
+        const target = prompts[clamped];
+        if (target) target.scrollIntoView({ behavior: 'smooth', block });
+    }
+
+    box.querySelector('#ext-jump-first').onclick = () => scrollToPrompt(0, 'start');
     box.querySelector('#ext-jump-last').onclick = () => {
-        const msgs = enumerateMessages(container);
-        const last = msgs[msgs.length - 1];
-        if (last) last.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        const prompts = getPromptNodes(container);
+        if (!prompts.length) return;
+        scrollToPrompt(prompts.length - 1, 'end');
     };
     box.querySelector('#ext-collapse-all').onclick = () => toggleAll(container, true);
+    box.querySelector('#ext-collapse-unstarred').onclick = () => toggleByStar(container, threadKey, false, true);
     box.querySelector('#ext-expand-all').onclick = () => toggleAll(container, false);
+    box.querySelector('#ext-expand-starred').onclick = () => toggleByStar(container, threadKey, true, false);
 }
 
 /**
@@ -192,7 +305,7 @@ function injectToolbar(el, threadKey) {
     wrap.className = 'ext-toolbar';
     wrap.innerHTML = `
     <button class="ext-tag" title="Add tag">🏷️</button>
-    <button class="ext-star" title="Bookmark">⭐</button>
+    <button class="ext-star" title="Bookmark" aria-pressed="false">☆</button>
     <button class="ext-collapse" title="Collapse">▾</button>
     <span class="ext-badges"></span>
   `;
@@ -210,7 +323,7 @@ function injectToolbar(el, threadKey) {
         const k = `${threadKey}:${keyForMessage(el)}`;
         const cur = (await getStore([k]))[k] || {};
         const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
-        const add = prompt('Tags (comma-separated):', existing);
+        const add = await promptForTags(existing);
         if (add !== null) {
             cur.tags = add.split(',').map(s => s.trim()).filter(Boolean);
             await setStore({ [k]: cur });
@@ -231,7 +344,13 @@ async function renderBadges(el, threadKey, value) {
     if (!badges) return;
 
     // starred visual state
-    el.classList.toggle('ext-starred', !!cur.starred);
+    const starred = !!cur.starred;
+    el.classList.toggle('ext-starred', starred);
+    const starBtn = el.querySelector('.ext-toolbar .ext-star');
+    if (starBtn) {
+        starBtn.textContent = starred ? '★' : '☆';
+        starBtn.setAttribute('aria-pressed', String(starred));
+    }
 
     // render tags
     badges.innerHTML = '';
@@ -259,6 +378,21 @@ function toggleAll(container, yes) {
     for (const m of msgs) collapse(m, !!yes);
 }
 
+/**
+ * Applies collapse state only to messages with matching star state.
+ */
+async function toggleByStar(container, threadKey, starred, collapseState) {
+    const msgs = enumerateMessages(container);
+    if (!msgs.length) return;
+    const entries = msgs.map(el => ({ el, key: `${threadKey}:${keyForMessage(el)}` }));
+    const store = await getStore(entries.map(e => e.key));
+    for (const { el, key } of entries) {
+        const cur = store[key] || {};
+        const isStarred = !!cur.starred;
+        if (isStarred === starred) collapse(el, collapseState);
+    }
+}
+
 // ---------------------- Orchestration --------------------------
 /**
  * Entry point: finds the thread, injects UI, and watches for updates.
@@ -269,8 +403,8 @@ async function bootstrap() {
     const container = findTranscriptRoot();
     if (!container) return;
 
-    ensurePageControls(container);
     const threadKey = getThreadKey();
+    ensurePageControls(container, threadKey);
 
     function refresh() {
         const msgs = enumerateMessages(container);
