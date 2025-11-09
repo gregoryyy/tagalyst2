@@ -1,10 +1,11 @@
-# ChatGPT DOM Tools (MV3)
-
+# Tagalyst 2: ChatGPT DOM Tools (MV3)
 
 A Chrome extension that adds non-destructive UI on chat.openai.com to:
 - Collapse/expand messages
 - Tag and bookmark messages (local-only)
 - Jump to first / last message
+
+Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This version makes only light-weight assumptions and restricts to list item-level operations not actual test highlighting.
 
 
 ## Install (Developer Mode)
