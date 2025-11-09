@@ -97,6 +97,19 @@ function closeActiveTagEditor() {
     }
 }
 
+function teardownUI() {
+    closeActiveTagEditor();
+    document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
+    document.querySelectorAll('.ext-toolbar').forEach(tb => tb.remove());
+    document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
+    const controls = document.getElementById('ext-page-controls');
+    if (controls) controls.remove();
+    if (bootstrap._observer) {
+        bootstrap._observer.disconnect();
+        bootstrap._observer = null;
+    }
+}
+
 async function openInlineTagEditor(messageEl, threadKey) {
     if (activeTagEditor?.message === messageEl) {
         closeActiveTagEditor();
@@ -321,8 +334,13 @@ function ensurePageControls(container, threadKey) {
 function injectToolbar(el, threadKey) {
     let toolbar = el.querySelector('.ext-toolbar');
     if (toolbar) {
-        updateCollapseVisibility(el);
-        return; // already wired
+        if (toolbar.dataset.threadKey !== threadKey) {
+            toolbar.remove();
+            toolbar = null;
+        } else {
+            updateCollapseVisibility(el);
+            return; // already wired for this thread
+        }
     }
 
     const wrap = document.createElement('div');
@@ -345,6 +363,7 @@ function injectToolbar(el, threadKey) {
     };
     wrap.querySelector('.ext-tag').onclick = () => openInlineTagEditor(el, threadKey);
 
+    wrap.dataset.threadKey = threadKey;
     el.prepend(wrap);
     toolbar = wrap;
     updateCollapseVisibility(el);
@@ -435,6 +454,7 @@ async function toggleByStar(container, threadKey, starred, collapseState) {
 async function bootstrap() {
     // Wait a moment for the app shell to mount
     await sleep(600);
+    teardownUI();
     const container = findTranscriptRoot();
     if (!container) return;
 
@@ -457,6 +477,7 @@ async function bootstrap() {
         bootstrap._raf = requestAnimationFrame(refresh);
     });
     mo.observe(container, { childList: true, subtree: true });
+    bootstrap._observer = mo;
 }
 
 // Some pages use SPA routing; re-bootstrap on URL changes
