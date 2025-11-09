@@ -97,6 +97,8 @@ async function setStore(obj) {
 // ------------------------ Inline Editors ------------------------
 let activeTagEditor = null;
 let activeNoteEditor = null;
+let tagListEl = null;
+let topPanelsEl = null;
 
 function closeActiveTagEditor() {
     if (activeTagEditor) {
@@ -120,8 +122,13 @@ function teardownUI() {
     document.querySelectorAll('.ext-toolbar').forEach(tb => tb.remove());
     document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
     document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
+    tagListEl = null;
     const controls = document.getElementById('ext-page-controls');
     if (controls) controls.remove();
+    if (topPanelsEl) {
+        topPanelsEl.remove();
+        topPanelsEl = null;
+    }
     if (bootstrap._observer) {
         bootstrap._observer.disconnect();
         bootstrap._observer = null;
@@ -188,6 +195,14 @@ async function openInlineTagEditor(messageEl, threadKey) {
             save();
         }
     });
+    editor.addEventListener('mousedown', evt => evt.stopPropagation());
+    const outsideTag = (evt) => {
+        if (!editor.contains(evt.target)) {
+            cancel();
+            document.removeEventListener('mousedown', outsideTag, true);
+        }
+    };
+    document.addEventListener('mousedown', outsideTag, true);
 
     activeTagEditor = { message: messageEl, cleanup };
 }
@@ -258,6 +273,14 @@ async function openInlineNoteEditor(messageEl, threadKey) {
             save();
         }
     });
+    editor.addEventListener('mousedown', evt => evt.stopPropagation());
+    const outsideNote = (evt) => {
+        if (!editor.contains(evt.target)) {
+            cancel();
+            document.removeEventListener('mousedown', outsideNote, true);
+        }
+    };
+    document.addEventListener('mousedown', outsideNote, true);
 
     activeNoteEditor = { message: messageEl, cleanup };
 }
@@ -433,8 +456,16 @@ function ensurePageControls(container, threadKey) {
             <button id="ext-expand-starred" title="Expand starred prompts">★</button>
         </div>
     </div>
+    <div class="ext-export-frame">
+        <span class="ext-nav-label">MD Copy</span>
+        <div class="ext-export-buttons">
+            <button id="ext-export-all" class="ext-export-button">All</button>
+            <button id="ext-export-starred" class="ext-export-button">★</button>
+        </div>
+    </div>
   `;
     document.documentElement.appendChild(box);
+    syncTopPanelWidth();
 
     function scrollToNode(idx, block = 'center', list) {
         const nodes = list || getNavigationNodes(container);
@@ -470,6 +501,9 @@ function ensurePageControls(container, threadKey) {
     box.querySelector('#ext-collapse-unstarred').onclick = () => toggleByStar(container, threadKey, false, true);
     box.querySelector('#ext-expand-all').onclick = () => toggleAll(container, false);
     box.querySelector('#ext-expand-starred').onclick = () => toggleByStar(container, threadKey, true, false);
+
+    box.querySelector('#ext-export-all').onclick = () => runExport(container, false);
+    box.querySelector('#ext-export-starred').onclick = () => runExport(container, true);
 }
 
 /**
@@ -554,6 +588,17 @@ async function renderBadges(el, threadKey, value) {
     }
 }
 
+function ensurePairNumber(el, pairIndex) {
+    if (typeof pairIndex !== 'number') return;
+    let badge = el.querySelector('.ext-pair-number');
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'ext-pair-number';
+        el.prepend(badge);
+    }
+    badge.textContent = `${pairIndex + 1}.`;
+}
+
 function updateCollapseVisibility(el) {
     const btn = el.querySelector('.ext-toolbar .ext-collapse');
     if (!btn) return;
@@ -627,6 +672,7 @@ async function bootstrap() {
 
     const threadKey = getThreadKey();
     ensurePageControls(container, threadKey);
+    ensureTopPanels();
 
     let refreshRunning = false;
     let refreshQueued = false;
@@ -641,16 +687,37 @@ async function bootstrap() {
             do {
                 refreshQueued = false;
                 const msgs = enumerateMessages(container);
+                const pairMap = new Map();
+                const pairs = getPairs(container);
+                pairs.forEach((pair, idx) => {
+                    if (pair.query) pairMap.set(pair.query, idx);
+                    if (pair.response) pairMap.set(pair.response, idx);
+                });
                 const entries = msgs.map(el => ({
                     el,
-                    key: `${threadKey}:${keyForMessage(el)}`
+                    key: `${threadKey}:${keyForMessage(el)}`,
+                    pairIndex: pairMap.get(el)
                 }));
                 if (!entries.length) break;
-                const store = await getStore(entries.map(e => e.key));
-                for (const { el, key } of entries) {
+                const keys = entries.map(e => e.key);
+                const store = await getStore(keys);
+                const tagCounts = new Map();
+                for (const { el, key, pairIndex } of entries) {
                     injectToolbar(el, threadKey);
-                    await renderBadges(el, threadKey, store[key]);
+                    ensurePairNumber(el, pairIndex);
+                    const value = store[key];
+                    if (value && Array.isArray(value.tags)) {
+                        for (const t of value.tags) {
+                            if (!t) continue;
+                            tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+                        }
+                    }
+                    await renderBadges(el, threadKey, value);
                 }
+                const sortedTags = Array.from(tagCounts.entries())
+                    .map(([tag, count]) => ({ tag, count }))
+                    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+                updateTagList(sortedTags);
             } while (refreshQueued);
         } finally {
             refreshRunning = false;
@@ -691,3 +758,87 @@ window.__tagalyst = Object.assign(window.__tagalyst || {}, {
 
 // First boot
 bootstrap();
+function ensureTopPanels() {
+    if (topPanelsEl) return topPanelsEl;
+    const wrap = document.createElement('div');
+    wrap.id = 'ext-top-panels';
+    wrap.innerHTML = `
+        <div class="ext-top-frame ext-top-search">
+            <span class="ext-top-label">Search</span>
+            <input type="text" class="ext-search-input" placeholder="Search (coming soon)" />
+        </div>
+        <div class="ext-top-frame ext-top-tags">
+            <span class="ext-top-label">Tags</span>
+            <div class="ext-tag-list" id="ext-tag-list"></div>
+        </div>
+    `;
+    document.body.appendChild(wrap);
+    topPanelsEl = wrap;
+    tagListEl = wrap.querySelector('#ext-tag-list');
+    syncTopPanelWidth();
+    return wrap;
+}
+
+function updateTagList(counts) {
+    ensureTopPanels();
+    if (!tagListEl) return;
+    tagListEl.innerHTML = '';
+    if (!counts.length) {
+        const empty = document.createElement('div');
+        empty.className = 'ext-tag-sidebar-empty';
+        empty.textContent = 'No tags yet';
+        tagListEl.appendChild(empty);
+        return;
+    }
+    for (const { tag, count } of counts) {
+        const row = document.createElement('div');
+        row.className = 'ext-tag-sidebar-row';
+        const label = document.createElement('span');
+        label.className = 'ext-tag-sidebar-tag';
+        label.textContent = tag;
+        const badge = document.createElement('span');
+        badge.className = 'ext-tag-sidebar-count';
+        badge.textContent = count;
+        row.append(label, badge);
+        tagListEl.appendChild(row);
+    }
+}
+
+function runExport(container, starredOnly) {
+    try {
+        const md = exportThreadToMarkdown(container, starredOnly);
+        navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
+    } catch (err) {
+        console.error('Export failed', err);
+    }
+}
+
+function exportThreadToMarkdown(container, starredOnly) {
+    const pairs = getPairs(container);
+    const sections = [];
+    pairs.forEach((pair, idx) => {
+        const num = idx + 1;
+        const isStarred = pair.query?.classList.contains('ext-starred') || pair.response?.classList.contains('ext-starred');
+        if (starredOnly && !isStarred) return;
+        const query = pair.query ? pair.query.innerText.trim() : '';
+        const response = pair.response ? pair.response.innerText.trim() : '';
+        const lines = [];
+        if (query) {
+            lines.push(`### ${num}. Prompt`, '', query);
+        }
+        if (response) {
+            if (lines.length) lines.push('');
+            lines.push(`### ${num}. Response`, '', response);
+        }
+        if (lines.length) sections.push(lines.join('\n'));
+    });
+    return sections.join('\n\n');
+}
+
+function syncTopPanelWidth() {
+    if (!topPanelsEl) return;
+    const controls = document.getElementById('ext-page-controls');
+    const refWidth = controls ? controls.getBoundingClientRect().width : null;
+    const width = refWidth && refWidth > 0 ? refWidth : topPanelsEl.getBoundingClientRect().width || 200;
+    topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
+}

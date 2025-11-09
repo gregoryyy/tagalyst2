@@ -113,9 +113,6 @@
     text-overflow: ellipsis;
 }
 
-.ext-note-editing .ext-note-pill {
-    display: none;
-}
 
 
 /* Bookmark state */
@@ -132,6 +129,8 @@
     gap: 8px;
     z-index: 2147483646;
     /* above site UI */
+    width: auto;
+    align-items: flex-end;
 }
 
 
@@ -158,13 +157,40 @@
 }
 
 .ext-nav-frame,
-.ext-batch-frame {
+.ext-batch-frame,
+.ext-export-frame {
     border: 1px solid rgba(0, 0, 0, .15);
     border-radius: .9rem;
-    padding: .6rem .8rem .8rem;
+    padding: .45rem .7rem .7rem;
     background: rgba(255, 255, 255, .95);
     backdrop-filter: blur(2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+    margin: .2rem 0;
+    align-self: flex-end;
+}
+
+.ext-export-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+}
+
+.ext-export-button {
+    all: unset;
+    flex: 1;
+    text-align: center;
+    padding: .4rem .5rem;
+    border-radius: .6rem;
+    border: 1px solid rgba(0, 0, 0, .12);
+    background: rgba(0, 0, 0, .08);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ext-export-button:hover {
+    background: rgba(0, 0, 0, .12);
+    border-color: rgba(0, 0, 0, .2);
 }
 
 .ext-nav-label {
@@ -173,7 +199,7 @@
     font-weight: 600;
     letter-spacing: .08em;
     text-transform: uppercase;
-    margin-bottom: .35rem;
+    margin-bottom: .25rem;
     color: rgba(0, 0, 0, .65);
     text-align: center;
 }
@@ -181,6 +207,7 @@
 .ext-nav-buttons {
     display: flex;
     gap: 6px;
+    justify-content: center;
 }
 
 .ext-nav-frame .ext-nav-buttons + .ext-nav-buttons {
@@ -200,6 +227,7 @@
 .ext-batch-buttons {
     display: flex;
     gap: 6px;
+    justify-content: center;
 }
 
 .ext-batch-buttons button {
@@ -289,6 +317,98 @@
     background: rgba(0, 0, 0, .12);
 }
 
+@keyframes extFadeSlideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+#ext-top-panels {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 2147483644;
+    width: auto;
+    align-items: flex-end;
+}
+
+.ext-top-frame {
+    width: 100%;
+    border: 1px solid rgba(0, 0, 0, .12);
+    border-radius: 1rem;
+    padding: .65rem .8rem .8rem;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, .15);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    animation: extFadeSlideIn .2s ease;
+}
+
+.ext-top-label {
+    font-size: 11px;
+    text-align: center;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: rgba(0, 0, 0, .65);
+    display: block;
+    margin-bottom: .45rem;
+}
+
+.ext-search-input {
+    width: 100%;
+    border: 1px solid rgba(0, 0, 0, .2);
+    border-radius: .6rem;
+    padding: .45rem .6rem;
+    font-size: 13px;
+}
+
+.ext-tag-list {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    max-height: 220px;
+    overflow-y: auto;
+    padding-right: .2rem;
+}
+
+.ext-tag-sidebar-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.ext-tag-sidebar-tag {
+    background: rgba(0, 0, 0, .08);
+    padding: .15rem .4rem;
+    border-radius: .5rem;
+    max-width: 115px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ext-tag-sidebar-count {
+    font-weight: 600;
+    margin-left: .4rem;
+}
+
+.ext-tag-sidebar-empty {
+    font-size: 11px;
+    text-align: center;
+    color: rgba(0, 0, 0, .45);
+}
+
+
+.ext-pair-number {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, .45);
+    margin-bottom: .35rem;
+}
+
 .ext-tag-editor-input {
     min-height: 48px;
     padding: .4rem .2rem;
@@ -335,8 +455,4 @@
 
 .ext-tag-editor-actions button:hover:not(.ext-tag-editor-save) {
     background: rgba(0, 0, 0, .12);
-}
-
-.ext-tag-editing .ext-badges {
-    display: none;
 }

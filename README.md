@@ -1,11 +1,15 @@
 # Tagalyst 2: ChatGPT DOM Tools (MV3)
 
 A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com to:
-- Collapse/expand any multi-line message with a per-message toolbar
-- Tag and bookmark messages locally with an inline editor
-- Attach free-text annotations to individual messages (stored locally)
-- Jump to first/last message or only starred messages via the floating nav
-- Batch collapse/expand all, starred-only, or unstarred-only messages
+- Collapse/expand any multi-line message with a right-aligned toolbar (each message shows its toolbar + sequential number)
+- Tag and bookmark messages locally with inline editors; annotations and tags are managed via floating dialogs
+- Use top-right utility frames (search + tags) and bottom-right navigation to jump through the conversation
+- View tag frequencies (placeholder list today) and soon filter/search via dedicated frames, plus copy a Markdown snapshot (all or starred only) via the MD Copy panel
+
+## UI layout
+- **Top-right**: dedicated Search and Tags frames (read-only for now) for quick filtering concepts and future workflows.
+- **Bottom-right**: the navigation stack (Navigate / Collapse / Expand / Export) used to move around threads, batch actions, and trigger Markdown export.
+- **Per message**: a right-aligned toolbar (tags, annotations, star, collapse) plus a left-aligned pair number (`1.` `2.` …) so each exchange can be referenced quickly.
 
 Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This version makes only light-weight assumptions and restricts to list item-level operations not actual text highlighting.
 
@@ -46,6 +50,10 @@ These helpers respect the same discovery logic as the UI (preferring `data-messa
 
 
 ## Roadmap
-- Inline note editor per message
+- Cross-chat search including tags and annotations
+- Text range markup within responses
 - Export visible thread to Markdown (DOM-only)
+  - Selection within thread: tags, stars, search results
+  - Assemble across threads: export session
 - Optional Shadow DOM for toolbar isolation
+- ... also see `TODO.md`
