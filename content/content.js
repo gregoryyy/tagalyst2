@@ -68,15 +68,22 @@ function keyForMessage(el) {
  * Hidden for single-line prompts (no line breaks).
  */
 function shouldShowCollapseControl(el) {
+    const role = el?.getAttribute?.('data-message-author-role');
+    if (role !== 'user') return true;
     const text = (el.innerText || '').trim();
     if (!text) return false;
-    return text.includes('\n');
+    const style = getComputedStyle(el);
+    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) || 18;
+    const lines = lineHeight ? el.clientHeight / lineHeight : 0;
+    if (lines > 1.4) return true;
+    return text.length > 160 || text.includes('\n');
 }
 
 /**
  * Promise-wrapped chrome.storage.local get.
  */
 async function getStore(keys) {
+    if (!Array.isArray(keys) || !keys.length) return {};
     return new Promise(resolve => chrome.storage.local.get(keys, resolve));
 }
 
@@ -87,8 +94,9 @@ async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
 }
 
-// ------------------------ Tag Editor UI ------------------------
+// ------------------------ Inline Editors ------------------------
 let activeTagEditor = null;
+let activeNoteEditor = null;
 
 function closeActiveTagEditor() {
     if (activeTagEditor) {
@@ -97,11 +105,21 @@ function closeActiveTagEditor() {
     }
 }
 
+function closeActiveNoteEditor() {
+    if (activeNoteEditor) {
+        activeNoteEditor.cleanup();
+        activeNoteEditor = null;
+    }
+}
+
 function teardownUI() {
     closeActiveTagEditor();
+    closeActiveNoteEditor();
     document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
+    document.querySelectorAll('.ext-note-editor').forEach(editor => editor.remove());
     document.querySelectorAll('.ext-toolbar').forEach(tb => tb.remove());
     document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
+    document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
     const controls = document.getElementById('ext-page-controls');
     if (controls) controls.remove();
     if (bootstrap._observer) {
@@ -136,12 +154,13 @@ async function openInlineTagEditor(messageEl, threadKey) {
     input.textContent = existing;
 
     const toolbar = messageEl.querySelector('.ext-toolbar');
-    (toolbar || messageEl).after(editor);
+    const detachFloating = mountFloatingEditor(editor, toolbar || messageEl);
     messageEl.classList.add('ext-tag-editing');
     input.focus();
     placeCaretAtEnd(input);
 
     const cleanup = () => {
+        detachFloating();
         editor.remove();
         messageEl.classList.remove('ext-tag-editing');
         if (activeTagEditor?.message === messageEl) activeTagEditor = null;
@@ -173,6 +192,76 @@ async function openInlineTagEditor(messageEl, threadKey) {
     activeTagEditor = { message: messageEl, cleanup };
 }
 
+async function openInlineNoteEditor(messageEl, threadKey) {
+    if (activeNoteEditor?.message === messageEl) {
+        closeActiveNoteEditor();
+        return;
+    }
+    closeActiveNoteEditor();
+
+    const key = `${threadKey}:${keyForMessage(messageEl)}`;
+    const store = await getStore([key]);
+    const cur = store[key] || {};
+    const existing = typeof cur.note === 'string' ? cur.note : '';
+
+    const editor = document.createElement('div');
+    editor.className = 'ext-note-editor';
+    editor.innerHTML = `
+        <label class="ext-note-label">
+            Annotation
+            <textarea class="ext-note-input" rows="3" placeholder="Add details…"></textarea>
+        </label>
+        <div class="ext-note-actions">
+            <button type="button" class="ext-note-save">Save</button>
+            <button type="button" class="ext-note-cancel">Cancel</button>
+        </div>
+    `;
+
+    const input = editor.querySelector('.ext-note-input');
+    input.value = existing;
+
+    const toolbar = messageEl.querySelector('.ext-toolbar');
+    const detachFloating = mountFloatingEditor(editor, toolbar || messageEl);
+    messageEl.classList.add('ext-note-editing');
+    input.focus();
+    input.select();
+
+    const cleanup = () => {
+        detachFloating();
+        editor.remove();
+        messageEl.classList.remove('ext-note-editing');
+        if (activeNoteEditor?.message === messageEl) activeNoteEditor = null;
+    };
+
+    const save = async () => {
+        const value = input.value.trim();
+        if (value) {
+            cur.note = value;
+        } else {
+            delete cur.note;
+        }
+        await setStore({ [key]: cur });
+        renderBadges(messageEl, threadKey, cur);
+        cleanup();
+    };
+
+    const cancel = () => cleanup();
+
+    editor.querySelector('.ext-note-save').onclick = save;
+    editor.querySelector('.ext-note-cancel').onclick = cancel;
+    editor.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape') {
+            evt.preventDefault();
+            cancel();
+        } else if ((evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
+            evt.preventDefault();
+            save();
+        }
+    });
+
+    activeNoteEditor = { message: messageEl, cleanup };
+}
+
 function placeCaretAtEnd(el) {
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -180,6 +269,41 @@ function placeCaretAtEnd(el) {
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
+}
+
+function mountFloatingEditor(editor, anchor) {
+    editor.classList.add('ext-floating-editor');
+    document.body.appendChild(editor);
+
+    const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
+
+    const update = () => {
+        const rect = anchor.getBoundingClientRect();
+        const width = Math.min(420, window.innerWidth - 32);
+        editor.style.width = `${width}px`;
+        const baseTop = window.scrollY + rect.top + 16;
+        const maxTop = window.scrollY + window.innerHeight - editor.offsetHeight - 16;
+        const top = clamp(baseTop, window.scrollY + 16, maxTop);
+        const baseLeft = window.scrollX + rect.right - width;
+        const minLeft = window.scrollX + 16;
+        const maxLeft = window.scrollX + window.innerWidth - width - 16;
+        const left = clamp(baseLeft, minLeft, maxLeft);
+        editor.style.top = `${top}px`;
+        editor.style.left = `${left}px`;
+    };
+
+    const onScroll = () => update();
+    const onResize = () => update();
+
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    update();
+
+    return () => {
+        window.removeEventListener('scroll', onScroll, true);
+        window.removeEventListener('resize', onResize);
+        editor.classList.remove('ext-floating-editor');
+    };
 }
 
 // --------------------- Discovery & Enumeration -----------------
@@ -367,7 +491,8 @@ function injectToolbar(el, threadKey) {
     wrap.className = 'ext-toolbar';
     wrap.innerHTML = `
     <span class="ext-badges"></span>
-    <button class="ext-tag" title="Edit tags" aria-label="Edit tags">✎</button>
+    <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
+    <button class="ext-note" title="Add annotation" aria-label="Add annotation"><span class="ext-btn-icon">✎<small>A</small></span></button>
     <button class="ext-star" title="Bookmark" aria-pressed="false">☆</button>
     <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
   `;
@@ -382,6 +507,7 @@ function injectToolbar(el, threadKey) {
         renderBadges(el, threadKey, cur);
     };
     wrap.querySelector('.ext-tag').onclick = () => openInlineTagEditor(el, threadKey);
+    wrap.querySelector('.ext-note').onclick = () => openInlineNoteEditor(el, threadKey);
 
     wrap.dataset.threadKey = threadKey;
     el.prepend(wrap);
@@ -416,6 +542,15 @@ async function renderBadges(el, threadKey, value) {
         span.className = 'ext-badge';
         span.textContent = t;
         badges.appendChild(span);
+    }
+
+    const note = typeof cur.note === 'string' ? cur.note.trim() : '';
+    if (note) {
+        const noteChip = document.createElement('span');
+        noteChip.className = 'ext-note-pill';
+        noteChip.textContent = note.length > 80 ? `${note.slice(0, 77)}…` : note;
+        noteChip.title = note;
+        badges.appendChild(noteChip);
     }
 }
 
@@ -493,11 +628,32 @@ async function bootstrap() {
     const threadKey = getThreadKey();
     ensurePageControls(container, threadKey);
 
-    function refresh() {
-        const msgs = enumerateMessages(container);
-        for (const m of msgs) {
-            injectToolbar(m, threadKey);
-            renderBadges(m, threadKey);
+    let refreshRunning = false;
+    let refreshQueued = false;
+
+    async function refresh() {
+        if (refreshRunning) {
+            refreshQueued = true;
+            return;
+        }
+        refreshRunning = true;
+        try {
+            do {
+                refreshQueued = false;
+                const msgs = enumerateMessages(container);
+                const entries = msgs.map(el => ({
+                    el,
+                    key: `${threadKey}:${keyForMessage(el)}`
+                }));
+                if (!entries.length) break;
+                const store = await getStore(entries.map(e => e.key));
+                for (const { el, key } of entries) {
+                    injectToolbar(el, threadKey);
+                    await renderBadges(el, threadKey, store[key]);
+                }
+            } while (refreshQueued);
+        } finally {
+            refreshRunning = false;
         }
     }
 

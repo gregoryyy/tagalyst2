@@ -1,9 +1,11 @@
 # Tagalyst 2: ChatGPT DOM Tools (MV3)
 
-A Chrome extension that adds non-destructive UI on chat.openai.com to:
-- Collapse/expand messages
-- Tag and bookmark messages (local-only)
-- Jump to first / last message
+A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com to:
+- Collapse/expand any multi-line message with a per-message toolbar
+- Tag and bookmark messages locally with an inline editor
+- Attach free-text annotations to individual messages (stored locally)
+- Jump to first/last message or only starred messages via the floating nav
+- Batch collapse/expand all, starred-only, or unstarred-only messages
 
 Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This version makes only light-weight assumptions and restricts to list item-level operations not actual text highlighting.
 
@@ -24,6 +26,7 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - Message blocks are discovered via the stable `data-message-author-role` attribute (user / assistant) that ChatGPT renders on every turn. If that attribute disappears, the content script falls back to the old heuristics in `isMessageNode`.
 - The script is defensive (MutationObserver + heuristics). DOM changes on the site can still break selectors; update `isMessageNode` heuristics if needed.
 - This extension never calls private ChatGPT APIs and avoids reparenting nodes, minimizing breakage.
+- When switching chats the extension tears down and rebuilds its UI automatically, so you can move between projects without stale controls.
 
 ## Terminology & Pair API
 - **Thread** (`t`) is the ordered list of conversational exchanges. (Use “session” only when referring to time-bounded usage, not the DOM thread.)

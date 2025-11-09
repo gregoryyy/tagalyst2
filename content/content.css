@@ -28,6 +28,24 @@
     transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
+.ext-btn-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transform: translate(-1px, 2px);
+}
+
+.ext-btn-icon small {
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    position: absolute;
+    top: -1px;
+    right: -1px;
+}
+
 
 .ext-toolbar button:hover {
     background: rgba(0, 0, 0, .12);
@@ -82,6 +100,21 @@
     padding: 0 .4rem;
     border-radius: .35rem;
     background: rgba(0, 0, 0, .06);
+}
+
+.ext-note-pill {
+    font-size: 11px;
+    padding: 0 .5rem;
+    border-radius: .45rem;
+    background: rgba(0, 0, 0, .12);
+    max-width: 260px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ext-note-editing .ext-note-pill {
+    display: none;
 }
 
 
@@ -185,6 +218,75 @@
     flex-direction: column;
     gap: .5rem;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ext-note-editor {
+    margin-top: .6rem;
+    border: 1px solid rgba(0, 0, 0, .2);
+    border-radius: .9rem;
+    background: rgba(255, 255, 255, .95);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, .12);
+    padding: .75rem;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ext-floating-editor {
+    position: absolute;
+    z-index: 2147483646;
+}
+
+.ext-note-label {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    font-size: 13px;
+    color: rgba(0, 0, 0, .72);
+}
+
+.ext-note-input {
+    border: 1px solid rgba(0, 0, 0, .2);
+    border-radius: .5rem;
+    padding: .6rem .75rem;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.ext-note-input:focus {
+    border-color: #0b57d0;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(11, 87, 208, .25);
+}
+
+.ext-note-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.ext-note-actions button {
+    all: unset;
+    padding: .45rem 1.1rem;
+    border-radius: .55rem;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(0, 0, 0, .08);
+}
+
+.ext-note-save {
+    background: #0b57d0;
+    color: #fff;
+}
+
+.ext-note-save:hover {
+    background: #0a4ec0;
+}
+
+.ext-note-actions button:hover:not(.ext-note-save) {
+    background: rgba(0, 0, 0, .12);
 }
 
 .ext-tag-editor-input {
