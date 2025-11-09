@@ -5,9 +5,9 @@
     gap: .35rem;
     padding: .2rem .55rem;
     border-radius: 32px;
-    border: 1px solid rgba(0, 0, 0, .05);
+    border: 1px solid rgba(0, 42, 105, .15);
     background: #fff;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, .08);
+    box-shadow: 0 12px 24px rgba(16, 76, 186, .12);
 }
 
 .ext-toolbar-row {
@@ -23,8 +23,8 @@
     height: 27px;
     padding: 0;
     border-radius: .6rem;
-    border: 1px solid rgba(0, 0, 0, .12);
-    background: rgba(0, 0, 0, .08);
+    border: 1px solid rgba(0, 42, 105, .15);
+    background: rgba(38, 118, 255, .12);
     color: #111;
     cursor: pointer;
     display: inline-flex;
@@ -159,19 +159,19 @@
 
 
 #ext-page-controls button:hover {
-    background: rgba(0, 0, 0, .12);
-    border-color: rgba(0, 0, 0, .2);
+    background: rgba(38, 118, 255, .2);
+    border-color: rgba(0, 42, 105, .3);
 }
 
 .ext-nav-frame,
 .ext-batch-frame,
 .ext-export-frame {
-    border: 1px solid rgba(0, 0, 0, .15);
+    border: 1px solid rgba(0, 42, 105, .15);
     border-radius: .9rem;
     padding: .45rem .7rem .7rem;
-    background: rgba(255, 255, 255, .95);
+    background: #fff;
     backdrop-filter: blur(2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+    box-shadow: 0 4px 12px rgba(16, 76, 186, .12);
     margin: .2rem 0;
     align-self: flex-end;
 }
@@ -343,11 +343,11 @@
 
 .ext-top-frame {
     width: 100%;
-    border: 1px solid rgba(0, 0, 0, .12);
-    border-radius: 1rem;
-    padding: .65rem .8rem .8rem;
-    background: rgba(255, 255, 255, .96);
-    box-shadow: 0 8px 18px rgba(0, 0, 0, .15);
+    border: 1px solid rgba(0, 42, 105, .15);
+    border-radius: .9rem;
+    padding: .45rem .7rem .7rem;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(16, 76, 186, .12);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     animation: extFadeSlideIn .2s ease;
 }
@@ -412,14 +412,18 @@
 .ext-pair-number-wrap {
     display: flex;
     align-items: center;
-    gap: .25rem;
     margin-right: .35rem;
 }
 
 .ext-pair-number {
-    font-size: 11px;
-    font-weight: 600;
-    color: rgba(0, 0, 0, .45);
+    font-size: 13px;
+    font-weight: 700;
+    color: #2166dc;
+    border: 1px solid #2166dc;
+    border-radius: 0;
+    padding: 0 .55rem;
+    line-height: 1.8;
+    background: white;
 }
 
 .ext-tag-editor-input {
