@@ -4,6 +4,9 @@ const defaultConfig = {
     tagsEnabled: true,
 };
 
+/**
+ * Reads the extension config from chrome.storage.local.
+ */
 function getConfig() {
     return new Promise(resolve => {
         chrome.storage.local.get([CONFIG_STORAGE_KEY], (data) => {
@@ -13,12 +16,18 @@ function getConfig() {
     });
 }
 
+/**
+ * Persists the config object back to chrome.storage.local.
+ */
 function saveConfig(partial) {
     return new Promise(resolve => {
         chrome.storage.local.set({ [CONFIG_STORAGE_KEY]: partial }, resolve);
     });
 }
 
+/**
+ * Computes approximate bytes used by chrome.storage.local.
+ */
 function getStorageUsage() {
     return new Promise(resolve => {
         chrome.storage.local.get(null, (data) => {
@@ -34,12 +43,18 @@ function getStorageUsage() {
     });
 }
 
+/**
+ * Updates the storage usage readout element with current value.
+ */
 async function updateStorageDisplay(el) {
     const bytes = await getStorageUsage();
     const formatted = `${bytes.toLocaleString()} bytes`;
     el.textContent = formatted;
 }
 
+/**
+ * Bootstraps the options page controls and storage utilities.
+ */
 function init() {
     const searchEnable = document.getElementById('search-enable');
     const tagsEnable = document.getElementById('tags-enable');

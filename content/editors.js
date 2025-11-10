@@ -2,6 +2,9 @@
 let activeTagEditor = null;
 let activeNoteEditor = null;
 
+/**
+ * Tears down the currently open tag editor if present.
+ */
 function closeActiveTagEditor() {
     if (activeTagEditor) {
         activeTagEditor.cleanup();
@@ -9,6 +12,9 @@ function closeActiveTagEditor() {
     }
 }
 
+/**
+ * Tears down the currently open note editor if present.
+ */
 function closeActiveNoteEditor() {
     if (activeNoteEditor) {
         activeNoteEditor.cleanup();
@@ -16,6 +22,9 @@ function closeActiveNoteEditor() {
     }
 }
 
+/**
+ * Opens the floating tag editor for a message.
+ */
 async function openInlineTagEditor(messageEl, threadKey) {
     if (activeTagEditor?.message === messageEl) {
         closeActiveTagEditor();
@@ -89,6 +98,9 @@ async function openInlineTagEditor(messageEl, threadKey) {
     activeTagEditor = { message: messageEl, cleanup };
 }
 
+/**
+ * Opens the floating note editor for a message.
+ */
 async function openInlineNoteEditor(messageEl, threadKey) {
     if (activeNoteEditor?.message === messageEl) {
         closeActiveNoteEditor();
@@ -168,6 +180,9 @@ async function openInlineNoteEditor(messageEl, threadKey) {
     activeNoteEditor = { message: messageEl, cleanup };
 }
 
+/**
+ * Places the caret at the end of a contentEditable element.
+ */
 function placeCaretAtEnd(el) {
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -177,6 +192,9 @@ function placeCaretAtEnd(el) {
     sel.addRange(range);
 }
 
+/**
+ * Positions an editor relative to an anchor and keeps it synced.
+ */
 function mountFloatingEditor(editor, anchor) {
     editor.classList.add('ext-floating-editor');
     markExtNode(editor);

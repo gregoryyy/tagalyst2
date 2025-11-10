@@ -1,6 +1,6 @@
 // ---------------------- Orchestration --------------------------
 /**
- * Entry point: finds the thread, injects UI, and watches for updates.
+ * Entry point: discovers the transcript, injects UI, and watches DOM.
  */
 async function bootstrap() {
     // Wait a moment for the app shell to mount
@@ -17,6 +17,9 @@ async function bootstrap() {
     let refreshRunning = false;
     let refreshQueued = false;
 
+    /**
+     * Re-renders toolbars, badges, and focus state across the thread.
+     */
     async function refresh() {
         if (refreshRunning) {
             refreshQueued = true;
@@ -106,6 +109,10 @@ window.__tagalyst = Object.assign(window.__tagalyst || {}, {
 
 // First boot
 bootstrap();
+
+/**
+ * Renders the floating Search/Tags panels once per page.
+ */
 function ensureTopPanels() {
     if (topPanelsEl) return topPanelsEl;
     const wrap = document.createElement('div');
@@ -134,6 +141,9 @@ function ensureTopPanels() {
     return wrap;
 }
 
+/**
+ * Populates the tags list with the current frequency counts.
+ */
 function updateTagList(counts) {
     ensureTopPanels();
     if (!tagListEl) return;
@@ -164,6 +174,9 @@ function updateTagList(counts) {
     syncTagSidebarSelectionUI();
 }
 
+/**
+ * Copies the Markdown export (all or focus-only) to the clipboard.
+ */
 function runExport(container, focusOnly) {
     try {
         const md = exportThreadToMarkdown(container, focusOnly);
@@ -173,6 +186,9 @@ function runExport(container, focusOnly) {
     }
 }
 
+/**
+ * Serializes the current thread into Markdown text.
+ */
 function exportThreadToMarkdown(container, focusOnly) {
     const pairs = getPairs(container);
     const sections = [];
@@ -195,6 +211,9 @@ function exportThreadToMarkdown(container, focusOnly) {
     return sections.join('\n\n');
 }
 
+/**
+ * Checks whether any node in a pair belongs to the focus set.
+ */
 function isPairFocused(pair) {
     const nodes = [];
     if (pair.query) nodes.push(pair.query);
@@ -205,6 +224,9 @@ function isPairFocused(pair) {
     });
 }
 
+/**
+ * Keeps the top panels width aligned with the page controls.
+ */
 function syncTopPanelWidth() {
     if (!topPanelsEl) return;
     const controls = document.getElementById('ext-page-controls');

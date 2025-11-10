@@ -1,18 +1,5 @@
 /**
- * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
- * - Defensive discovery with MutationObserver
- * - Non-destructive overlays (no reparenting site nodes)
- * - Local persistence via chrome.storage
- */
-
-// -------------------------- Utilities --------------------------
-/**
- * Small helper for delaying async flows without blocking the UI thread.
- */
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-/**
- * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
+ * Creates a deterministic 32-bit FNV-1a hash suitable for lightweight IDs.
  */
 function hashString(s) {
     let h = 0x811c9dc5;
@@ -24,7 +11,7 @@ function hashString(s) {
 }
 
 /**
- * Strips excess whitespace and zero-width chars so hashes stay stable.
+ * Normalizes whitespace/zero-width characters so comparisons stay stable.
  */
 function normalizeText(t) {
     return (t || "")
@@ -34,7 +21,7 @@ function normalizeText(t) {
 }
 
 /**
- * Generates a thread-level key using the conversation ID when available.
+ * Derives a thread-scoped key based on URL or page title as fallback.
  */
 function getThreadKey() {
     // Prefer URL path (conversation id). Fallback to title + domain.
@@ -46,14 +33,14 @@ function getThreadKey() {
 }
 
 /**
- * Returns the DOM-provided message UUID if available.
+ * Returns ChatGPT's data-message-id when available for a node.
  */
 function getMessageId(el) {
     return el?.getAttribute?.('data-message-id') || null;
 }
 
 /**
- * Stable-ish per-message key derived from ChatGPT IDs or fallback heuristics.
+ * Builds a stable message key using ChatGPT IDs or hashed content.
  */
 function keyForMessage(el) {
     const domId = getMessageId(el);
@@ -64,8 +51,7 @@ function keyForMessage(el) {
 }
 
 /**
- * Determines whether the collapse control should be shown for a message.
- * Hidden for single-line prompts (no line breaks).
+ * Determines whether a message should show the collapse button.
  */
 function shouldShowCollapseControl(el) {
     const role = el?.getAttribute?.('data-message-author-role');
@@ -80,7 +66,7 @@ function shouldShowCollapseControl(el) {
 }
 
 /**
- * Promise-wrapped chrome.storage.local get.
+ * Reads values from chrome.storage.local for the given keys.
  */
 async function getStore(keys) {
     if (!Array.isArray(keys) || !keys.length) return {};
@@ -88,7 +74,7 @@ async function getStore(keys) {
 }
 
 /**
- * Promise-wrapped chrome.storage.local set.
+ * Persists values to chrome.storage.local.
  */
 async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
@@ -105,12 +91,18 @@ let configLoaded = false;
 let searchToggleEl = null;
 let tagToggleEl = null;
 
+/**
+ * Marks a node as owned by the extension for mutation filtering.
+ */
 function markExtNode(el) {
     if (el?.setAttribute) {
         el.setAttribute(EXT_ATTR, '1');
     }
 }
 
+/**
+ * Returns the nearest ancestor that belongs to the extension.
+ */
 function closestExtNode(node) {
     if (!node) return null;
     if (node.nodeType === Node.ELEMENT_NODE && typeof node.closest === 'function') {
@@ -123,10 +115,16 @@ function closestExtNode(node) {
     return null;
 }
 
+/**
+ * Checks whether a given DOM node is part of Tagalyst UI.
+ */
 function isExtensionNode(node) {
     return !!closestExtNode(node);
 }
 
+/**
+ * Tells whether a mutation affects non-extension DOM nodes.
+ */
 function mutationTouchesExternal(record) {
     if (!isExtensionNode(record.target)) return true;
     for (const node of record.addedNodes) {
@@ -138,20 +136,32 @@ function mutationTouchesExternal(record) {
     return false;
 }
 
+/**
+ * True when the Search pane is enabled in config.
+ */
 function isSearchEnabled() {
     return !!config.searchEnabled;
 }
 
+/**
+ * True when the Tags pane is enabled in config.
+ */
 function areTagsEnabled() {
     return !!config.tagsEnabled;
 }
 
+/**
+ * Requests a deferred refresh via the bootstrap orchestrator.
+ */
 function requestRefresh() {
     if (typeof bootstrap === 'function' && typeof bootstrap._requestRefresh === 'function') {
         bootstrap._requestRefresh();
     }
 }
 
+/**
+ * Ensures transient focus state matches current feature toggles.
+ */
 function enforceConfigState() {
     if (!isSearchEnabled()) {
         focusState.searchQuery = '';
@@ -163,6 +173,9 @@ function enforceConfigState() {
     }
 }
 
+/**
+ * Applies a config override and re-syncs UI/focus state.
+ */
 function applyConfigObject(obj) {
     config = { ...defaultConfig, ...(obj || {}) };
     enforceConfigState();
@@ -171,6 +184,9 @@ function applyConfigObject(obj) {
     requestRefresh();
 }
 
+/**
+ * Loads the config from storage (one time) before use.
+ */
 async function ensureConfigLoaded() {
     if (configLoaded) return config;
     const store = await getStore([CONFIG_STORAGE_KEY]);
@@ -179,6 +195,9 @@ async function ensureConfigLoaded() {
     return config;
 }
 
+/**
+ * Shows/hides panels and disables inputs based on config flags.
+ */
 function updateConfigUI() {
     const searchPanel = topPanelsEl?.querySelector('.ext-top-search');
     const tagPanel = topPanelsEl?.querySelector('.ext-top-tags');
@@ -196,6 +215,9 @@ function updateConfigUI() {
 }
 
 // ------------------------ Focus State ------------------------
+/**
+ * Clears all focus-related state to its defaults.
+ */
 function resetFocusState() {
     focusState.selectedTags.clear();
     focusState.searchQuery = '';
@@ -206,12 +228,18 @@ function resetFocusState() {
     messageState.clear();
 }
 
+/**
+ * Determines which focus mode (stars/tags/search) is active.
+ */
 function computeFocusMode() {
     if (isSearchEnabled() && focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
     if (areTagsEnabled() && focusState.selectedTags.size) return FOCUS_MODES.TAGS;
     return FOCUS_MODES.STARS;
 }
 
+/**
+ * Returns a human-friendly label for the current focus mode.
+ */
 function describeFocusMode() {
     switch (focusState.mode) {
         case FOCUS_MODES.TAGS:
@@ -223,11 +251,17 @@ function describeFocusMode() {
     }
 }
 
+/**
+ * Returns the glyph representing focused/unfocused state for the mode.
+ */
 function getFocusGlyph(isFilled) {
     const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
     return isFilled ? glyph.filled : glyph.empty;
 }
 
+/**
+ * Ensures message metadata exists (key/value/pairIndex cache).
+ */
 function ensureMessageMeta(el, key) {
     let meta = messageState.get(el);
     if (!meta) {
@@ -238,6 +272,9 @@ function ensureMessageMeta(el, key) {
     return meta;
 }
 
+/**
+ * Updates cached metadata for a message element.
+ */
 function setMessageMeta(el, { key, value, pairIndex }) {
     const meta = ensureMessageMeta(el, key);
     if (typeof pairIndex === 'number') meta.pairIndex = pairIndex;
@@ -245,6 +282,9 @@ function setMessageMeta(el, { key, value, pairIndex }) {
     return meta;
 }
 
+/**
+ * Whether a stored value contains any of the currently selected tags.
+ */
 function matchesSelectedTags(value) {
     if (!areTagsEnabled() || !focusState.selectedTags.size) return false;
     const tags = Array.isArray(value?.tags) ? value.tags : [];
@@ -252,6 +292,9 @@ function matchesSelectedTags(value) {
     return tags.some(tag => focusState.selectedTags.has(tag));
 }
 
+/**
+ * True when the DOM node text matches the active search query.
+ */
 function matchesSearchQuery(el) {
     const query = focusState.searchQueryLower;
     if (!query) return false;
@@ -259,6 +302,9 @@ function matchesSearchQuery(el) {
     return text.includes(query);
 }
 
+/**
+ * Determines if a message is part of the active focus set.
+ */
 function isMessageFocused(el, value) {
     switch (focusState.mode) {
         case FOCUS_MODES.TAGS:
@@ -270,6 +316,9 @@ function isMessageFocused(el, value) {
     }
 }
 
+/**
+ * Syncs the per-message focus button glyph and aria state.
+ */
 function updateFocusButton(el, value) {
     const btn = el.querySelector('.ext-toolbar .ext-focus-button');
     if (!btn) return;
@@ -305,6 +354,9 @@ function updateFocusButton(el, value) {
     }
 }
 
+/**
+ * Updates buttons on all known message nodes.
+ */
 function refreshFocusButtons() {
     messageState.forEach(({ value }, el) => {
         if (!document.contains(el)) {
@@ -315,6 +367,9 @@ function refreshFocusButtons() {
     });
 }
 
+/**
+ * Recomputes the focus mode and updates visual affordances.
+ */
 function syncFocusMode() {
     focusState.mode = computeFocusMode();
     focusNavIndex = -1;
@@ -323,6 +378,9 @@ function syncFocusMode() {
     syncTagSidebarSelectionUI();
 }
 
+/**
+ * Collects DOM nodes currently belonging to the focus subset.
+ */
 function getFocusMatches() {
     const nodes = [];
     messageState.forEach(({ value }, el) => {
@@ -333,6 +391,9 @@ function getFocusMatches() {
     return nodes;
 }
 
+/**
+ * Returns a noun describing the current focus subset for tooltips.
+ */
 function focusSetLabel() {
     switch (focusState.mode) {
         case FOCUS_MODES.TAGS:
@@ -344,6 +405,9 @@ function focusSetLabel() {
     }
 }
 
+/**
+ * Refreshes navigation/collapse/export button labels to match focus mode.
+ */
 function updateFocusControlsUI() {
     if (!pageControls) return;
     const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
@@ -370,6 +434,9 @@ function updateFocusControlsUI() {
     }
 }
 
+/**
+ * Updates the tag list UI to reflect selected tags.
+ */
 function syncTagSidebarSelectionUI() {
     if (!tagListEl) return;
     tagListEl.querySelectorAll('.ext-tag-sidebar-row').forEach(row => {
@@ -378,6 +445,9 @@ function syncTagSidebarSelectionUI() {
     });
 }
 
+/**
+ * Handles user input in the search panel and updates focus state.
+ */
 function handleSearchInput(value) {
     if (!isSearchEnabled()) return;
     const normalized = (value || '').trim();
@@ -386,6 +456,9 @@ function handleSearchInput(value) {
     syncFocusMode();
 }
 
+/**
+ * Adds/removes a tag from the selected set then re-syncs focus.
+ */
 function toggleTagSelection(tag) {
     if (!areTagsEnabled()) return;
     if (!tag) return;
@@ -396,4 +469,3 @@ function toggleTagSelection(tag) {
     }
     syncFocusMode();
 }
-

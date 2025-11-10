@@ -26,33 +26,8 @@ const messageState = new Map();
 let pageControls = null;
 let focusNavIndex = -1;
 
-function teardownUI() {
-    closeActiveTagEditor();
-    closeActiveNoteEditor();
-    document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
-    document.querySelectorAll('.ext-note-editor').forEach(editor => editor.remove());
-    document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
-    document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
-    document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
-    tagListEl = null;
-    const controls = document.getElementById('ext-page-controls');
-    if (controls) controls.remove();
-    if (topPanelsEl) {
-        topPanelsEl.remove();
-        topPanelsEl = null;
-    }
-    resetFocusState();
-    if (bootstrap._observer) {
-        bootstrap._observer.disconnect();
-        bootstrap._observer = null;
-    }
-}
-
-
-
-// --------------------- Discovery & Enumeration -----------------
 /**
- * Finds the primary scrollable container that holds the conversation.
+ * Locates the primary ChatGPT transcript container element.
  */
 function findTranscriptRoot() {
     const main = document.querySelector('main') || document.body;
@@ -66,7 +41,7 @@ function findTranscriptRoot() {
 }
 
 /**
- * Heuristic message detector used only when the explicit role attribute is absent.
+ * Heuristic to determine if a DOM node is a ChatGPT message block.
  */
 function isMessageNode(el) {
     if (!el || !el.parentElement) return false;
@@ -78,7 +53,7 @@ function isMessageNode(el) {
 }
 
 /**
- * Returns all message nodes, preferring the native role attribute.
+ * Returns all message nodes within the current transcript.
  */
 function enumerateMessages(root) {
     const attrMatches = Array.from(root.querySelectorAll('[data-message-author-role]'));
@@ -93,7 +68,7 @@ function enumerateMessages(root) {
 }
 
 /**
- * Groups message DOM nodes into ordered (query, response) pairs.
+ * Groups messages into (prompt,response) pairs for convenience.
  */
 function derivePairs(messages) {
     const pairs = [];
@@ -112,21 +87,21 @@ function derivePairs(messages) {
 }
 
 /**
- * Returns every (query, response) pair within the current thread container.
+ * Gets every (prompt,response) pair found in the thread container.
  */
 function getPairs(root) {
     return derivePairs(enumerateMessages(root));
 }
 
 /**
- * Returns only the prompt (user query) nodes.
+ * Returns the prompt nodes from each pair, skipping empty slots.
  */
 function getPromptNodes(root) {
     return getPairs(root).map(p => p.query).filter(Boolean);
 }
 
 /**
- * Returns nodes used for navigation (prompts when available, otherwise all messages).
+ * Provides the node set used for navigation controls (prompts or all messages).
  */
 function getNavigationNodes(root) {
     const prompts = getPromptNodes(root);
@@ -135,7 +110,7 @@ function getNavigationNodes(root) {
 }
 
 /**
- * Returns the p-th pair (0-indexed) or null if it does not exist.
+ * Retrieves the idx-th pair (0-based) if it exists.
  */
 function getPair(root, idx) {
     if (idx < 0) return null;
@@ -144,7 +119,7 @@ function getPair(root, idx) {
 
 // ---------------------- UI Injection ---------------------------
 /**
- * Injects global page controls once per document.
+ * Renders global navigation/collapse/export controls for a thread.
  */
 function ensurePageControls(container, threadKey) {
     const existing = document.getElementById('ext-page-controls');
@@ -237,7 +212,7 @@ function ensurePageControls(container, threadKey) {
 }
 
 /**
- * Prepends the per-message toolbar and wires its handlers.
+ * Adds the per-message toolbar (tags, notes, star, collapse, etc.).
  */
 function injectToolbar(el, threadKey) {
     let toolbar = el.querySelector('.ext-toolbar');
@@ -289,7 +264,7 @@ function injectToolbar(el, threadKey) {
 }
 
 /**
- * Reads star/tag data for a message and updates its badges + CSS state.
+ * Updates tag/note badges and focus button state for a message.
  */
 function renderBadges(el, threadKey, value) {
     const k = `${threadKey}:${keyForMessage(el)}`;
@@ -323,80 +298,8 @@ function renderBadges(el, threadKey, value) {
     updateFocusButton(el, cur);
 }
 
-function handleUserToolbarButtonClick(messageEl) {
-    const messageKey = keyForMessage(messageEl);
-    console.info('[Tagalyst] User toolbar button clicked', { messageKey });
-}
-
-function ensureUserToolbarButton(el) {
-    const row = el.querySelector('.ext-toolbar-row');
-    if (!row) return;
-    const role = el?.getAttribute?.('data-message-author-role');
-    const existing = row.querySelector('.ext-user-toolbar-button');
-    if (role !== 'user') {
-        if (existing) existing.remove();
-        return;
-    }
-    if (existing) return existing;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ext-user-toolbar-button';
-    btn.title = 'Tagalyst user action';
-    btn.setAttribute('aria-label', 'Tagalyst user action');
-    btn.textContent = '>';
-    btn.addEventListener('click', (evt) => {
-        evt.stopPropagation();
-        handleUserToolbarButtonClick(el);
-    });
-    row.appendChild(btn);
-    return btn;
-}
-
-function ensurePairNumber(el, pairIndex) {
-    const role = el?.getAttribute?.('data-message-author-role');
-    ensureUserToolbarButton(el);
-    if (role !== 'user') {
-        const wrap = el.querySelector('.ext-pair-number-wrap');
-        if (wrap) wrap.remove();
-        return;
-    }
-    if (typeof pairIndex !== 'number') return;
-    const row = el.querySelector('.ext-toolbar-row');
-    if (!row) return;
-    let wrap = row.querySelector('.ext-pair-number-wrap');
-    if (!wrap) {
-        wrap = document.createElement('div');
-        wrap.className = 'ext-pair-number-wrap';
-        row.insertBefore(wrap, row.firstChild);
-    }
-    let badge = wrap.querySelector('.ext-pair-number');
-    if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'ext-pair-number';
-        wrap.appendChild(badge);
-    }
-    badge.textContent = `${pairIndex + 1}.`;
-}
-
-function updateCollapseVisibility(el) {
-    const btn = el.querySelector('.ext-toolbar .ext-collapse');
-    if (!btn) return;
-    const show = shouldShowCollapseControl(el);
-    btn.style.display = show ? '' : 'none';
-}
-
-function syncCollapseButton(el) {
-    const btn = el.querySelector('.ext-toolbar .ext-collapse');
-    if (!btn) return;
-    const collapsed = el.classList.contains('ext-collapsed');
-    btn.textContent = collapsed ? '+' : '−';
-    btn.setAttribute('title', collapsed ? 'Expand message' : 'Collapse message');
-    btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
-    btn.setAttribute('aria-expanded', String(!collapsed));
-}
-
 /**
- * Toggles the collapsed state for one message block.
+ * Collapses or expands an individual message element.
  */
 function collapse(el, yes) {
     el.classList.toggle('ext-collapsed', !!yes);
@@ -404,7 +307,7 @@ function collapse(el, yes) {
 }
 
 /**
- * Applies collapse/expand state to every discovered message.
+ * Collapses or expands every discovered message in the container.
  */
 function toggleAll(container, yes) {
     const msgs = enumerateMessages(container);
@@ -412,7 +315,7 @@ function toggleAll(container, yes) {
 }
 
 /**
- * Applies collapse state against the current focus subset.
+ * Applies collapse state to nodes based on whether they match focus.
  */
 function collapseByFocus(container, target, collapseState) {
     const matches = getFocusMatches();

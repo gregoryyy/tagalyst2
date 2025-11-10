@@ -1,11 +1,13 @@
 # Tasks for Tagalyst 2
 
 
-Behavioral Bugs:
+Bugs:
+
 - navigation and layout:
   - collapse misses Canvas
   - collapse hides topmost query/toolbar
   - topmost toolbar hides ChatGPT control (Share)
+  - when outside conversation view, hide toolbars
 - export:
   - filter out UI and extension stuff
   - allow targeted exports (stars, filter results, tags)
@@ -16,15 +18,31 @@ Behavioral Bugs:
   - MANY: The resource <URL> was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
   - MANY: [Violation] Forced reflow while executing JavaScript took 47ms etc., possibly aggravated by tag and search panel.
 
+Codebase:
+
+- refactor and document
+- add tests
+- fix performance errors (see bugs)
+- packaging for marketplace deployment
+
 Features:
 
-- settings
-- memory management:
-  - delete local storage
-  - load / save file
-- cardinal numbers for pairs (left aligned for prompts, same y as query message toolbar)
+- show length of message (lines, chars)
+- settings DONE
+  - toolbars enabled (search, tags) DONE
+    - expand on hover
+    - size of search results
+  - appearance: 
+    - e.g., background color for highlighted items (more than bookmark)
+    - button colors
+  - storage management DONE
+- storage management:
+  - delete local storage DONE
+  - load / save file DONE
+- cardinal numbers for pairs (left aligned for prompts, same y as query message toolbar) DONE
 - navigate by highlighted item:
-  - if search results or tags, this means navigation runs via these.
+  - if search results or tags, this means navigation runs via these. DONE -> needs improvement?
+  - "scrollradar", seeing where highlighted items are across the page
 - export without UI content but with:
   - links to graphics
   - mathematical content, i.e., KaTeX
