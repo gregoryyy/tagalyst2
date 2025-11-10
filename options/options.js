@@ -45,6 +45,7 @@ function init() {
     const tagsEnable = document.getElementById('tags-enable');
     const status = document.getElementById('status');
     const storageSizeEl = document.getElementById('storage-size');
+    const viewBtn = document.getElementById('view-storage');
     const importBtn = document.getElementById('import-storage');
     const exportBtn = document.getElementById('export-storage');
     const importInput = document.getElementById('import-file');
@@ -63,7 +64,7 @@ function init() {
     tempSpan.remove();
     const baseWidth = clearStorageBtn.offsetWidth || confirmWidth;
     const targetWidth = Math.ceil(Math.max(confirmWidth, baseWidth) + 32);
-    [importBtn, exportBtn, clearStorageBtn].forEach(btn => {
+    [viewBtn, importBtn, exportBtn, clearStorageBtn].forEach(btn => {
         btn.style.width = `${targetWidth}px`;
         btn.style.minWidth = `${targetWidth}px`;
     });
@@ -96,6 +97,18 @@ function init() {
     };
 
     [searchEnable, tagsEnable].forEach(el => el.addEventListener('change', onChange));
+
+    viewBtn.addEventListener('click', async () => {
+        const data = await new Promise(resolve => chrome.storage.local.get(null, resolve));
+        const serialized = JSON.stringify(data, null, 2);
+        const newWin = window.open('', 'tagalystStorageView');
+        if (!newWin) {
+            showStatus('Popup blocked');
+            return;
+        }
+        newWin.document.write(`<pre style="font-family:monospace; white-space:pre; margin:0; padding:16px;">${serialized.replace(/</g, '&lt;')}</pre>`);
+        newWin.document.title = 'Tagalyst Storage';
+    });
 
     exportBtn.addEventListener('click', async () => {
         const data = await new Promise(resolve => chrome.storage.local.get(null, resolve));
