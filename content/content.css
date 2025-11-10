@@ -31,6 +31,8 @@
     align-items: center;
     justify-content: flex-end;
     gap: .35rem;
+    position: relative;
+    overflow: visible;
 }
 
 .ext-toolbar button {
@@ -75,11 +77,46 @@
     border-color: var(--ext-toolbar-button-hover-border);
 }
 
+.ext-focus-button[disabled] {
+    opacity: .55;
+    cursor: default;
+    box-shadow: none;
+}
+
+.ext-user-toolbar-button {
+    all: unset;
+    width: 32px;
+    height: 32px;
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: .75rem;
+    border-radius: 50%;
+    border: 1px solid var(--ext-toolbar-button-border);
+    background: var(--ext-toolbar-button-bg);
+    color: var(--ext-toolbar-button-text);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+    box-shadow: var(--ext-toolbar-shadow);
+}
+
+.ext-user-toolbar-button:hover {
+    background: var(--ext-toolbar-button-hover-bg);
+    border-color: var(--ext-toolbar-button-hover-border);
+}
+
 .ext-toolbar button:focus-visible,
 #ext-page-controls button:focus-visible,
 .ext-nav-buttons button:focus-visible,
 .ext-batch-buttons button:focus-visible,
-.ext-export-button:focus-visible {
+.ext-export-button:focus-visible,
+.ext-user-toolbar-button:focus-visible {
     outline: 2px solid rgba(0, 0, 0, .45);
     outline-offset: 2px;
 }
@@ -423,6 +460,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 12px;
+    cursor: pointer;
 }
 
 .ext-tag-sidebar-tag {
@@ -438,6 +476,15 @@
 .ext-tag-sidebar-count {
     font-weight: 600;
     margin-left: .4rem;
+}
+
+.ext-tag-sidebar-row.ext-tag-selected .ext-tag-sidebar-tag {
+    background: #2166dc;
+    color: #fff;
+}
+
+.ext-tag-sidebar-row.ext-tag-selected .ext-tag-sidebar-count {
+    color: #2166dc;
 }
 
 .ext-tag-sidebar-empty {

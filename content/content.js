@@ -94,11 +94,238 @@ async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
 }
 
+// ------------------------ Focus State ------------------------
+function resetFocusState() {
+    focusState.selectedTags.clear();
+    focusState.searchQuery = '';
+    focusState.searchQueryLower = '';
+    focusState.mode = FOCUS_MODES.STARS;
+    searchInputEl = null;
+    pageControls = null;
+    messageState.clear();
+}
+
+function computeFocusMode() {
+    if (focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
+    if (focusState.selectedTags.size) return FOCUS_MODES.TAGS;
+    return FOCUS_MODES.STARS;
+}
+
+function describeFocusMode() {
+    switch (focusState.mode) {
+        case FOCUS_MODES.TAGS:
+            return 'selected tags';
+        case FOCUS_MODES.SEARCH:
+            return 'search results';
+        default:
+            return 'starred items';
+    }
+}
+
+function getFocusGlyph(isFilled) {
+    const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
+    return isFilled ? glyph.filled : glyph.empty;
+}
+
+function ensureMessageMeta(el, key) {
+    let meta = messageState.get(el);
+    if (!meta) {
+        meta = { key: key || null, value: {}, pairIndex: null };
+        messageState.set(el, meta);
+    }
+    if (key) meta.key = key;
+    return meta;
+}
+
+function setMessageMeta(el, { key, value, pairIndex }) {
+    const meta = ensureMessageMeta(el, key);
+    if (typeof pairIndex === 'number') meta.pairIndex = pairIndex;
+    if (value) meta.value = value;
+    return meta;
+}
+
+function matchesSelectedTags(value) {
+    if (!focusState.selectedTags.size) return false;
+    const tags = Array.isArray(value?.tags) ? value.tags : [];
+    if (!tags.length) return false;
+    for (const tag of focusState.selectedTags) {
+        if (!tags.includes(tag)) return false;
+    }
+    return true;
+}
+
+function matchesSearchQuery(el) {
+    const query = focusState.searchQueryLower;
+    if (!query) return false;
+    const text = normalizeText(el?.innerText || '').toLowerCase();
+    return text.includes(query);
+}
+
+function isMessageFocused(el, value) {
+    switch (focusState.mode) {
+        case FOCUS_MODES.TAGS:
+            return matchesSelectedTags(value);
+        case FOCUS_MODES.SEARCH:
+            return matchesSearchQuery(el);
+        default:
+            return !!value?.starred;
+    }
+}
+
+function updateFocusButton(el, value) {
+    const btn = el.querySelector('.ext-toolbar .ext-focus-button');
+    if (!btn) return;
+    const active = isMessageFocused(el, value);
+    const glyph = getFocusGlyph(active);
+    if (btn.textContent !== glyph) btn.textContent = glyph;
+    const pressed = String(active);
+    if (btn.getAttribute('aria-pressed') !== pressed) {
+        btn.setAttribute('aria-pressed', pressed);
+    }
+    const focusDesc = describeFocusMode();
+    const interactive = focusState.mode === FOCUS_MODES.STARS;
+    const disabled = !interactive;
+    if (btn.disabled !== disabled) {
+        if (disabled) {
+            btn.setAttribute('disabled', 'true');
+        } else {
+            btn.removeAttribute('disabled');
+        }
+    }
+    if (interactive) {
+        const title = active ? 'Remove bookmark' : 'Bookmark message';
+        if (btn.title !== title) {
+            btn.title = title;
+            btn.setAttribute('aria-label', title);
+        }
+    } else {
+        const title = active ? `Matches ${focusDesc}` : `Does not match ${focusDesc}`;
+        if (btn.title !== title) {
+            btn.title = title;
+            btn.setAttribute('aria-label', title);
+        }
+    }
+}
+
+function refreshFocusButtons() {
+    messageState.forEach(({ value }, el) => {
+        if (!document.contains(el)) {
+            messageState.delete(el);
+            return;
+        }
+        updateFocusButton(el, value || {});
+    });
+}
+
+function syncFocusMode() {
+    focusState.mode = computeFocusMode();
+    focusNavIndex = -1;
+    refreshFocusButtons();
+    updateFocusControlsUI();
+    syncTagSidebarSelectionUI();
+}
+
+function getFocusMatches() {
+    const nodes = [];
+    messageState.forEach(({ value }, el) => {
+        if (document.contains(el) && isMessageFocused(el, value || {})) {
+            nodes.push(el);
+        }
+    });
+    return nodes;
+}
+
+function focusSetLabel() {
+    switch (focusState.mode) {
+        case FOCUS_MODES.TAGS:
+            return 'tagged message';
+        case FOCUS_MODES.SEARCH:
+            return 'search hit';
+        default:
+            return 'starred message';
+    }
+}
+
+function updateFocusControlsUI() {
+    if (!pageControls) return;
+    const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
+    const desc = focusSetLabel();
+    if (pageControls.focusPrev) {
+        pageControls.focusPrev.textContent = `${glyph.filled}↑`;
+        pageControls.focusPrev.title = `Previous ${desc}`;
+    }
+    if (pageControls.focusNext) {
+        pageControls.focusNext.textContent = `${glyph.filled}↓`;
+        pageControls.focusNext.title = `Next ${desc}`;
+    }
+    if (pageControls.collapseNonFocus) {
+        pageControls.collapseNonFocus.textContent = glyph.empty;
+        pageControls.collapseNonFocus.title = `Collapse messages outside current ${desc}s`;
+    }
+    if (pageControls.expandFocus) {
+        pageControls.expandFocus.textContent = glyph.filled;
+        pageControls.expandFocus.title = `Expand current ${desc}s`;
+    }
+    if (pageControls.exportFocus) {
+        pageControls.exportFocus.textContent = glyph.filled;
+        pageControls.exportFocus.title = `Copy Markdown for current ${desc}s`;
+    }
+}
+
+function syncTagSidebarSelectionUI() {
+    if (!tagListEl) return;
+    tagListEl.querySelectorAll('.ext-tag-sidebar-row').forEach(row => {
+        const tag = row.dataset.tag;
+        row.classList.toggle('ext-tag-selected', !!(tag && focusState.selectedTags.has(tag)));
+    });
+}
+
+function handleSearchInput(value) {
+    const normalized = (value || '').trim();
+    focusState.searchQuery = normalized;
+    focusState.searchQueryLower = normalized.toLowerCase();
+    syncFocusMode();
+}
+
+function toggleTagSelection(tag) {
+    if (!tag) return;
+    if (focusState.selectedTags.has(tag)) {
+        focusState.selectedTags.delete(tag);
+    } else {
+        focusState.selectedTags.add(tag);
+    }
+    syncFocusMode();
+}
+
 // ------------------------ Inline Editors ------------------------
 let activeTagEditor = null;
 let activeNoteEditor = null;
 let tagListEl = null;
 let topPanelsEl = null;
+let searchInputEl = null;
+
+const FOCUS_MODES = Object.freeze({
+    STARS: 'stars',
+    TAGS: 'tags',
+    SEARCH: 'search',
+});
+
+const focusGlyphs = {
+    [FOCUS_MODES.STARS]: { empty: '☆', filled: '★' },
+    [FOCUS_MODES.TAGS]: { empty: '○', filled: '●' },
+    [FOCUS_MODES.SEARCH]: { empty: '□', filled: '■' },
+};
+
+const focusState = {
+    mode: FOCUS_MODES.STARS,
+    selectedTags: new Set(),
+    searchQuery: '',
+    searchQueryLower: '',
+};
+
+const messageState = new Map();
+let pageControls = null;
+let focusNavIndex = -1;
 
 function closeActiveTagEditor() {
     if (activeTagEditor) {
@@ -129,6 +356,7 @@ function teardownUI() {
         topPanelsEl.remove();
         topPanelsEl = null;
     }
+    resetFocusState();
     if (bootstrap._observer) {
         bootstrap._observer.disconnect();
         bootstrap._observer = null;
@@ -475,17 +703,15 @@ function ensurePageControls(container, threadKey) {
         if (target) target.scrollIntoView({ behavior: 'smooth', block });
     }
 
-    let starNavIndex = -1;
-
-    async function scrollStarred(delta) {
-        const nodes = await getStarredNodes(container, threadKey);
+    function scrollFocus(delta) {
+        const nodes = getFocusMatches();
         if (!nodes.length) return;
-        if (starNavIndex < 0 || starNavIndex >= nodes.length) {
-            starNavIndex = delta >= 0 ? 0 : nodes.length - 1;
+        if (focusNavIndex < 0 || focusNavIndex >= nodes.length) {
+            focusNavIndex = delta >= 0 ? 0 : nodes.length - 1;
         } else {
-            starNavIndex = Math.max(0, Math.min(starNavIndex + delta, nodes.length - 1));
+            focusNavIndex = Math.max(0, Math.min(focusNavIndex + delta, nodes.length - 1));
         }
-        const target = nodes[starNavIndex];
+        const target = nodes[focusNavIndex];
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -495,15 +721,25 @@ function ensurePageControls(container, threadKey) {
         if (!nodes.length) return;
         scrollToNode(nodes.length - 1, 'end', nodes);
     };
-    box.querySelector('#ext-jump-star-prev').onclick = () => { scrollStarred(-1); };
-    box.querySelector('#ext-jump-star-next').onclick = () => { scrollStarred(1); };
+    box.querySelector('#ext-jump-star-prev').onclick = () => { scrollFocus(-1); };
+    box.querySelector('#ext-jump-star-next').onclick = () => { scrollFocus(1); };
     box.querySelector('#ext-collapse-all').onclick = () => toggleAll(container, true);
-    box.querySelector('#ext-collapse-unstarred').onclick = () => toggleByStar(container, threadKey, false, true);
+    box.querySelector('#ext-collapse-unstarred').onclick = () => collapseByFocus(container, 'out', true);
     box.querySelector('#ext-expand-all').onclick = () => toggleAll(container, false);
-    box.querySelector('#ext-expand-starred').onclick = () => toggleByStar(container, threadKey, true, false);
+    box.querySelector('#ext-expand-starred').onclick = () => collapseByFocus(container, 'in', false);
 
     box.querySelector('#ext-export-all').onclick = () => runExport(container, false);
     box.querySelector('#ext-export-starred').onclick = () => runExport(container, true);
+
+    pageControls = {
+        root: box,
+        focusPrev: box.querySelector('#ext-jump-star-prev'),
+        focusNext: box.querySelector('#ext-jump-star-next'),
+        collapseNonFocus: box.querySelector('#ext-collapse-unstarred'),
+        expandFocus: box.querySelector('#ext-expand-starred'),
+        exportFocus: box.querySelector('#ext-export-starred'),
+    };
+    updateFocusControlsUI();
 }
 
 /**
@@ -529,19 +765,21 @@ function injectToolbar(el, threadKey) {
     <span class="ext-badges"></span>
     <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
     <button class="ext-note" title="Add annotation" aria-label="Add annotation"><span class="ext-btn-icon">✎<small>A</small></span></button>
-    <button class="ext-star" title="Bookmark" aria-pressed="false">☆</button>
+    <button class="ext-focus-button" title="Bookmark" aria-pressed="false">☆</button>
     <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
   `;
     row.appendChild(wrap);
 
     // Events
     wrap.querySelector('.ext-collapse').onclick = () => collapse(el, !el.classList.contains('ext-collapsed'));
-    wrap.querySelector('.ext-star').onclick = async () => {
+    wrap.querySelector('.ext-focus-button').onclick = async () => {
+        if (focusState.mode !== FOCUS_MODES.STARS) return;
         const k = `${threadKey}:${keyForMessage(el)}`;
         const cur = (await getStore([k]))[k] || {};
         cur.starred = !cur.starred;
         await setStore({ [k]: cur });
         renderBadges(el, threadKey, cur);
+        updateFocusControlsUI();
     };
     wrap.querySelector('.ext-tag').onclick = () => openInlineTagEditor(el, threadKey);
     wrap.querySelector('.ext-note').onclick = () => openInlineNoteEditor(el, threadKey);
@@ -549,6 +787,7 @@ function injectToolbar(el, threadKey) {
     wrap.dataset.threadKey = threadKey;
     el.prepend(row);
     toolbar = wrap;
+    ensureUserToolbarButton(el);
     updateCollapseVisibility(el);
     syncCollapseButton(el);
 }
@@ -556,20 +795,16 @@ function injectToolbar(el, threadKey) {
 /**
  * Reads star/tag data for a message and updates its badges + CSS state.
  */
-async function renderBadges(el, threadKey, value) {
+function renderBadges(el, threadKey, value) {
     const k = `${threadKey}:${keyForMessage(el)}`;
-    const cur = value || (await getStore([k]))[k] || {};
+    const cur = value || {};
+    setMessageMeta(el, { key: k, value: cur });
     const badges = el.querySelector('.ext-badges');
     if (!badges) return;
 
     // starred visual state
     const starred = !!cur.starred;
     el.classList.toggle('ext-starred', starred);
-    const starBtn = el.querySelector('.ext-toolbar .ext-star');
-    if (starBtn) {
-        starBtn.textContent = starred ? '★' : '☆';
-        starBtn.setAttribute('aria-pressed', String(starred));
-    }
 
     // render tags
     badges.innerHTML = '';
@@ -589,16 +824,47 @@ async function renderBadges(el, threadKey, value) {
         noteChip.title = note;
         badges.appendChild(noteChip);
     }
+    updateFocusButton(el, cur);
+}
+
+function handleUserToolbarButtonClick(messageEl) {
+    const messageKey = keyForMessage(messageEl);
+    console.info('[Tagalyst] User toolbar button clicked', { messageKey });
+}
+
+function ensureUserToolbarButton(el) {
+    const row = el.querySelector('.ext-toolbar-row');
+    if (!row) return;
+    const role = el?.getAttribute?.('data-message-author-role');
+    const existing = row.querySelector('.ext-user-toolbar-button');
+    if (role !== 'user') {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) return existing;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ext-user-toolbar-button';
+    btn.title = 'Tagalyst user action';
+    btn.setAttribute('aria-label', 'Tagalyst user action');
+    btn.textContent = '>';
+    btn.addEventListener('click', (evt) => {
+        evt.stopPropagation();
+        handleUserToolbarButtonClick(el);
+    });
+    row.appendChild(btn);
+    return btn;
 }
 
 function ensurePairNumber(el, pairIndex) {
-    if (typeof pairIndex !== 'number') return;
     const role = el?.getAttribute?.('data-message-author-role');
+    ensureUserToolbarButton(el);
     if (role !== 'user') {
         const wrap = el.querySelector('.ext-pair-number-wrap');
         if (wrap) wrap.remove();
         return;
     }
+    if (typeof pairIndex !== 'number') return;
     const row = el.querySelector('.ext-toolbar-row');
     if (!row) return;
     let wrap = row.querySelector('.ext-pair-number-wrap');
@@ -650,30 +916,18 @@ function toggleAll(container, yes) {
 }
 
 /**
- * Applies collapse state only to messages with matching star state.
+ * Applies collapse state against the current focus subset.
  */
-async function toggleByStar(container, threadKey, starred, collapseState) {
-    const msgs = enumerateMessages(container);
-    if (!msgs.length) return;
-    const entries = msgs.map(el => ({ el, key: `${threadKey}:${keyForMessage(el)}` }));
-    const store = await getStore(entries.map(e => e.key));
-    for (const { el, key } of entries) {
-        const cur = store[key] || {};
-        const isStarred = !!cur.starred;
-        if (isStarred === starred) collapse(el, collapseState);
+function collapseByFocus(container, target, collapseState) {
+    const matches = getFocusMatches();
+    if (!matches.length) return;
+    const matchSet = new Set(matches);
+    for (const el of enumerateMessages(container)) {
+        const isMatch = matchSet.has(el);
+        if (target === 'in' ? isMatch : !isMatch) {
+            collapse(el, collapseState);
+        }
     }
-}
-
-async function getStarredNodes(container, threadKey) {
-    const msgs = enumerateMessages(container);
-    if (!msgs.length) return [];
-    const entries = msgs.map(el => ({ el, key: `${threadKey}:${keyForMessage(el)}` }));
-    const store = await getStore(entries.map(e => e.key));
-    const out = [];
-    for (const { el, key } of entries) {
-        if ((store[key] || {}).starred) out.push(el);
-    }
-    return out;
 }
 
 // ---------------------- Orchestration --------------------------
@@ -719,22 +973,25 @@ async function bootstrap() {
                 const keys = entries.map(e => e.key);
                 const store = await getStore(keys);
                 const tagCounts = new Map();
+                messageState.clear();
                 for (const { el, key, pairIndex } of entries) {
                     injectToolbar(el, threadKey);
                     ensurePairNumber(el, pairIndex);
-                    const value = store[key];
+                    const value = store[key] || {};
+                    setMessageMeta(el, { key, value, pairIndex });
                     if (value && Array.isArray(value.tags)) {
                         for (const t of value.tags) {
                             if (!t) continue;
                             tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
                         }
                     }
-                    await renderBadges(el, threadKey, value);
+                    renderBadges(el, threadKey, value);
                 }
                 const sortedTags = Array.from(tagCounts.entries())
                     .map(([tag, count]) => ({ tag, count }))
                     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
                 updateTagList(sortedTags);
+                refreshFocusButtons();
             } while (refreshQueued);
         } finally {
             refreshRunning = false;
@@ -782,7 +1039,7 @@ function ensureTopPanels() {
     wrap.innerHTML = `
         <div class="ext-top-frame ext-top-search">
             <span class="ext-top-label">Search</span>
-            <input type="text" class="ext-search-input" placeholder="Search (coming soon)" />
+            <input type="text" class="ext-search-input" placeholder="Search messages…" />
         </div>
         <div class="ext-top-frame ext-top-tags">
             <span class="ext-top-label">Tags</span>
@@ -792,6 +1049,11 @@ function ensureTopPanels() {
     document.body.appendChild(wrap);
     topPanelsEl = wrap;
     tagListEl = wrap.querySelector('#ext-tag-list');
+    searchInputEl = wrap.querySelector('.ext-search-input');
+    if (searchInputEl) {
+        searchInputEl.value = focusState.searchQuery;
+        searchInputEl.addEventListener('input', (evt) => handleSearchInput(evt.target.value));
+    }
     syncTopPanelWidth();
     return wrap;
 }
@@ -810,6 +1072,7 @@ function updateTagList(counts) {
     for (const { tag, count } of counts) {
         const row = document.createElement('div');
         row.className = 'ext-tag-sidebar-row';
+        row.dataset.tag = tag;
         const label = document.createElement('span');
         label.className = 'ext-tag-sidebar-tag';
         label.textContent = tag;
@@ -817,26 +1080,29 @@ function updateTagList(counts) {
         badge.className = 'ext-tag-sidebar-count';
         badge.textContent = count;
         row.append(label, badge);
+        row.classList.toggle('ext-tag-selected', focusState.selectedTags.has(tag));
+        row.addEventListener('click', () => toggleTagSelection(tag));
         tagListEl.appendChild(row);
     }
+    syncTagSidebarSelectionUI();
 }
 
-function runExport(container, starredOnly) {
+function runExport(container, focusOnly) {
     try {
-        const md = exportThreadToMarkdown(container, starredOnly);
+        const md = exportThreadToMarkdown(container, focusOnly);
         navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
     } catch (err) {
         console.error('Export failed', err);
     }
 }
 
-function exportThreadToMarkdown(container, starredOnly) {
+function exportThreadToMarkdown(container, focusOnly) {
     const pairs = getPairs(container);
     const sections = [];
     pairs.forEach((pair, idx) => {
         const num = idx + 1;
-        const isStarred = pair.query?.classList.contains('ext-starred') || pair.response?.classList.contains('ext-starred');
-        if (starredOnly && !isStarred) return;
+        const isFocused = focusOnly ? isPairFocused(pair) : true;
+        if (focusOnly && !isFocused) return;
         const query = pair.query ? pair.query.innerText.trim() : '';
         const response = pair.response ? pair.response.innerText.trim() : '';
         const lines = [];
@@ -850,6 +1116,16 @@ function exportThreadToMarkdown(container, starredOnly) {
         if (lines.length) sections.push(lines.join('\n'));
     });
     return sections.join('\n\n');
+}
+
+function isPairFocused(pair) {
+    const nodes = [];
+    if (pair.query) nodes.push(pair.query);
+    if (pair.response) nodes.push(pair.response);
+    return nodes.some(node => {
+        const meta = messageState.get(node);
+        return isMessageFocused(node, meta?.value || {});
+    });
 }
 
 function syncTopPanelWidth() {

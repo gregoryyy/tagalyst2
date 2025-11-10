@@ -3,15 +3,24 @@
 A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com to:
 - Collapse/expand any multi-line message with a right-aligned toolbar (each message shows its toolbar + sequential number)
 - Tag and bookmark messages locally with inline editors; annotations and tags are managed via floating dialogs
-- Use top-right utility frames (search + tags) and bottom-right navigation to jump through the conversation
-- View tag frequencies (placeholder list today) and soon filter/search via dedicated frames, plus copy a Markdown snapshot (all or starred only) via the MD Copy panel
+- Use the top-right Search + Tags panels (live filters) together with the bottom-right navigation stack to move through a thread
+- View tag frequencies, click any tag to focus matching messages, or type in the search box to filter responses before copying a Markdown snapshot (all or focus-only) via the MD Copy panel
 
 The guiding visual principle is polarity: ChatGPT keeps its affordances on the left, while Tagalyst draws its controls from the right (top-right panels, right-aligned per-message toolbars, bottom-right navigation). This keeps ownership clear at a glance.
 
 ## UI layout
-- **Top-right**: dedicated Search and Tags frames (read-only for now) for quick filtering concepts and future workflows.
+- **Top-right**: Search (type to match any prompt/response text) and Tags (click to toggle one or more tags) panels; both feed the focus controls described below.
 - **Bottom-right**: the navigation stack (Navigate / Collapse / Expand / Export) used to move around threads, batch actions, and trigger Markdown export.
 - **Per message**: a right-aligned toolbar (tags, annotations, star, collapse) plus a left-aligned pair number (`1.` `2.` …) so each exchange can be referenced quickly.
+
+## Focus modes & toolbar icons
+Tagalyst keeps one “focus” set at a time, which drives navigation, collapse/expand, and the MD Copy panel:
+
+- **Stars (`☆`/`★`)** – default. Click the toolbar button on any message to bookmark it; navigation arrows (`★↑/★↓`), Collapse `☆`, Expand `★`, and the `★` MD Copy button operate on the starred subset.
+- **Tags (`○`/`●`)** – click any tag in the top-right list (multi-select is supported). The toolbar glyph switches to circles and fills only when a message carries **all** of the selected tags. The per-message focus button is read-only in this mode because membership is derived from tags; navigation/export/collapse now operate on the highlighted tag matches.
+- **Search (`□`/`■`)** – typing in the Search panel swaps the glyph to squares and highlights every prompt/response that contains the query (case-insensitive substring). Controls again operate on the live search results, and clearing the search field returns to tags (if any) or stars.
+
+The UI always reflects the active mode: the same glyph appears on the navigation buttons, Collapse/Expand focus controls, and the focus-only MD Copy action so it is clear which subset will move/export. Clear the search field and/or deselect tags to fall back to the base starred workflow.
 
 Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This version makes only light-weight assumptions and restricts to list item-level operations not actual text highlighting.
 
