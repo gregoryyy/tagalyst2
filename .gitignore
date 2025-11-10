@@ -1,2 +1,6 @@
 .DS_Store
 unversioned/
+
+node_modules/
+# for now, ignore the lock file
+package-lock.json

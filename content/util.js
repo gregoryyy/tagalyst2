@@ -469,3 +469,11 @@ function toggleTagSelection(tag) {
     }
     syncFocusMode();
 }
+
+// Export selected helpers for unit tests without affecting extension runtime
+if (typeof module !== 'undefined') {
+    module.exports = {
+        hashString,
+        normalizeText,
+    };
+}

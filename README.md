@@ -43,6 +43,11 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - The script is defensive (MutationObserver + heuristics). DOM changes on the site can still break selectors; update `isMessageNode` heuristics if needed.
 - This extension never calls private ChatGPT APIs and avoids reparenting nodes, minimizing breakage.
 - When switching chats the extension tears down and rebuilds its UI automatically, so you can move between projects without stale controls.
+- Unit tests (Jest) currently cover the non-visual utility helpers. Run them via `npm test`.
+
+## Development
+- Install dependencies: `npm install`
+- Run the Jest suite (non-visual helpers): `npm test`
 
 ## Terminology & Pair API
 - **Thread** (`t`) is the ordered list of conversational exchanges. (Use “session” only when referring to time-bounded usage, not the DOM thread.)
@@ -62,10 +67,4 @@ These helpers respect the same discovery logic as the UI (preferring `data-messa
 
 
 ## Roadmap
-- Cross-chat search including tags and annotations
-- Text range markup within responses
-- Export visible thread to Markdown (DOM-only)
-  - Selection within thread: tags, stars, search results
-  - Assemble across threads: export session
-- Optional Shadow DOM for toolbar isolation
-- ... also see `TODO.md`
+See `TODO.md`
