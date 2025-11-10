@@ -9,7 +9,7 @@ A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com
 The guiding visual principle is polarity: ChatGPT keeps its affordances on the left, while Tagalyst draws its controls from the right (top-right panels, right-aligned per-message toolbars, bottom-right navigation). This keeps ownership clear at a glance.
 
 ## UI layout
-- **Top-right**: Search (type to match any prompt/response text) and Tags (click to toggle one or more tags) panels; both feed the focus controls described below.
+- **Top-right**: Search (type to match any prompt/response text) and Tags (click to toggle one or more tags) panels; these feed the focus controls described below. Feature toggles now live in the Chrome extension **Options** page.
 - **Bottom-right**: the navigation stack (Navigate / Collapse / Expand / Export) used to move around threads, batch actions, and trigger Markdown export.
 - **Per message**: a right-aligned toolbar (tags, annotations, star, collapse) plus a left-aligned pair number (`1.` `2.` …) so each exchange can be referenced quickly.
 
@@ -17,7 +17,8 @@ The guiding visual principle is polarity: ChatGPT keeps its affordances on the l
 Tagalyst keeps one “focus” set at a time, which drives navigation, collapse/expand, and the MD Copy panel:
 
 - **Stars (`☆`/`★`)** – default. Click the toolbar button on any message to bookmark it; navigation arrows (`★↑/★↓`), Collapse `☆`, Expand `★`, and the `★` MD Copy button operate on the starred subset.
-- **Tags (`○`/`●`)** – click any tag in the top-right list (multi-select is supported). The toolbar glyph switches to circles and fills only when a message carries **all** of the selected tags. The per-message focus button is read-only in this mode because membership is derived from tags; navigation/export/collapse now operate on the highlighted tag matches.
+- **Tags (`○`/`●`)** – click any tag in the top-right list (multi-select is supported). The toolbar glyph switches to circles and fills whenever a message carries **any** of the selected tags. The per-message focus button is read-only in this mode because membership is derived from tags; navigation/export/collapse now operate on the highlighted tag matches. Disable tag filtering from the extension Options page if you want to pause this behavior.
+- **Extension Options** – open `chrome://extensions`, click **Tagalyst 2 → Details → Extension options**, and use the checkboxes to enable or disable Search and Tag filtering globally. When a toggle is off the UI grays out, stored input is cleared, and Tagalyst falls back to the base starred workflow until re-enabled.
 - **Search (`□`/`■`)** – typing in the Search panel swaps the glyph to squares and highlights every prompt/response that contains the query (case-insensitive substring). Controls again operate on the live search results, and clearing the search field returns to tags (if any) or stars.
 
 The UI always reflects the active mode: the same glyph appears on the navigation buttons, Collapse/Expand focus controls, and the focus-only MD Copy action so it is clear which subset will move/export. Clear the search field and/or deselect tags to fall back to the base starred workflow.

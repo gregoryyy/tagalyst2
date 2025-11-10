@@ -455,6 +455,11 @@
     padding-right: .2rem;
 }
 
+.ext-tag-list.ext-tags-disabled {
+    opacity: .4;
+    pointer-events: none;
+}
+
 .ext-tag-sidebar-row {
     display: flex;
     justify-content: space-between;
@@ -492,6 +497,7 @@
     text-align: center;
     color: rgba(0, 0, 0, .45);
 }
+
 
 
 .ext-pair-number-wrap {

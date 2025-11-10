@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tagalyst Settings</title>
+    <style>
+        :root {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f7f9fc;
+            color: #111;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        main {
+            max-width: 520px;
+            margin: 2.5rem auto;
+            padding: 2rem;
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 20px 45px rgba(15, 35, 95, .18);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 1.6rem;
+        }
+        .option {
+            display: flex;
+            align-items: center;
+            gap: .6rem;
+            border: 1px solid rgba(0, 0, 0, .1);
+            border-radius: .9rem;
+            padding: .9rem 1rem;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            background: rgba(33, 102, 220, .04);
+        }
+        .option input[type="checkbox"] {
+            width: 1.1rem;
+            height: 1.1rem;
+            accent-color: #2166dc;
+        }
+        #status {
+            min-height: 1.2rem;
+            font-size: .9rem;
+            color: #2166dc;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Tagalyst Settings</h1>
+        <label class="option">
+            <input type="checkbox" id="enable-search">
+            <span>Enable Search panel</span>
+        </label>
+        <label class="option">
+            <input type="checkbox" id="enable-tags">
+            <span>Enable Tag filtering</span>
+        </label>
+        <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="options.js"></script>
+</body>
+</html>

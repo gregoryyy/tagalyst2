@@ -33,5 +33,6 @@
     },
     "action": {
         "default_title": "ChatGPT DOM Tools"
-    }
+    },
+    "options_page": "options/options.html"
 }

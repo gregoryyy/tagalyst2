@@ -94,6 +94,88 @@ async function setStore(obj) {
     return new Promise(resolve => chrome.storage.local.set(obj, resolve));
 }
 
+const EXT_ATTR = 'data-ext-owned';
+const CONFIG_STORAGE_KEY = '__tagalyst_config';
+const defaultConfig = {
+    enableSearch: true,
+    enableTagFiltering: true,
+};
+let config = { ...defaultConfig };
+let configLoaded = false;
+let searchToggleEl = null;
+let tagToggleEl = null;
+
+function markExtNode(el) {
+    if (el?.setAttribute) {
+        el.setAttribute(EXT_ATTR, '1');
+    }
+}
+
+function closestExtNode(node) {
+    if (!node) return null;
+    if (node.nodeType === Node.ELEMENT_NODE && typeof node.closest === 'function') {
+        return node.closest(`[${EXT_ATTR}]`);
+    }
+    const parent = node.parentElement;
+    if (parent && typeof parent.closest === 'function') {
+        return parent.closest(`[${EXT_ATTR}]`);
+    }
+    return null;
+}
+
+function isExtensionNode(node) {
+    return !!closestExtNode(node);
+}
+
+function mutationTouchesExternal(record) {
+    if (!isExtensionNode(record.target)) return true;
+    for (const node of record.addedNodes) {
+        if (!isExtensionNode(node)) return true;
+    }
+    for (const node of record.removedNodes) {
+        if (!isExtensionNode(node)) return true;
+    }
+    return false;
+}
+
+function enforceConfigState() {
+    if (!config.enableSearch) {
+        focusState.searchQuery = '';
+        focusState.searchQueryLower = '';
+        if (searchInputEl) searchInputEl.value = '';
+    }
+    if (!config.enableTagFiltering) {
+        focusState.selectedTags.clear();
+    }
+}
+
+function applyConfigObject(obj) {
+    config = { ...defaultConfig, ...(obj || {}) };
+    enforceConfigState();
+    updateConfigUI();
+    syncFocusMode();
+}
+
+async function ensureConfigLoaded() {
+    if (configLoaded) return config;
+    const store = await getStore([CONFIG_STORAGE_KEY]);
+    applyConfigObject(store[CONFIG_STORAGE_KEY]);
+    configLoaded = true;
+    return config;
+}
+
+function updateConfigUI() {
+    if (searchInputEl) {
+        const enabled = !!config.enableSearch;
+        searchInputEl.disabled = !enabled;
+        searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
+        if (!enabled) searchInputEl.value = '';
+    }
+    if (tagListEl) {
+        tagListEl.classList.toggle('ext-tags-disabled', !config.enableTagFiltering);
+    }
+}
+
 // ------------------------ Focus State ------------------------
 function resetFocusState() {
     focusState.selectedTags.clear();
@@ -106,8 +188,8 @@ function resetFocusState() {
 }
 
 function computeFocusMode() {
-    if (focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
-    if (focusState.selectedTags.size) return FOCUS_MODES.TAGS;
+    if (config.enableSearch && focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
+    if (config.enableTagFiltering && focusState.selectedTags.size) return FOCUS_MODES.TAGS;
     return FOCUS_MODES.STARS;
 }
 
@@ -145,13 +227,10 @@ function setMessageMeta(el, { key, value, pairIndex }) {
 }
 
 function matchesSelectedTags(value) {
-    if (!focusState.selectedTags.size) return false;
+    if (!config.enableTagFiltering || !focusState.selectedTags.size) return false;
     const tags = Array.isArray(value?.tags) ? value.tags : [];
     if (!tags.length) return false;
-    for (const tag of focusState.selectedTags) {
-        if (!tags.includes(tag)) return false;
-    }
-    return true;
+    return tags.some(tag => focusState.selectedTags.has(tag));
 }
 
 function matchesSearchQuery(el) {
@@ -281,6 +360,7 @@ function syncTagSidebarSelectionUI() {
 }
 
 function handleSearchInput(value) {
+    if (!config.enableSearch) return;
     const normalized = (value || '').trim();
     focusState.searchQuery = normalized;
     focusState.searchQueryLower = normalized.toLowerCase();
@@ -288,6 +368,7 @@ function handleSearchInput(value) {
 }
 
 function toggleTagSelection(tag) {
+    if (!config.enableTagFiltering) return;
     if (!tag) return;
     if (focusState.selectedTags.has(tag)) {
         focusState.selectedTags.delete(tag);
@@ -377,6 +458,7 @@ async function openInlineTagEditor(messageEl, threadKey) {
 
     const editor = document.createElement('div');
     editor.className = 'ext-tag-editor';
+    markExtNode(editor);
     editor.innerHTML = `
         <div class="ext-tag-editor-input" contenteditable="true" role="textbox" aria-label="Edit tags" data-placeholder="Add tags…"></div>
         <div class="ext-tag-editor-actions">
@@ -449,6 +531,7 @@ async function openInlineNoteEditor(messageEl, threadKey) {
 
     const editor = document.createElement('div');
     editor.className = 'ext-note-editor';
+    markExtNode(editor);
     editor.innerHTML = `
         <label class="ext-note-label">
             Annotation
@@ -524,6 +607,7 @@ function placeCaretAtEnd(el) {
 
 function mountFloatingEditor(editor, anchor) {
     editor.classList.add('ext-floating-editor');
+    markExtNode(editor);
     document.body.appendChild(editor);
 
     const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
@@ -658,6 +742,7 @@ function ensurePageControls(container, threadKey) {
     if (existing) existing.remove();
     const box = document.createElement('div');
     box.id = 'ext-page-controls';
+    markExtNode(box);
     box.innerHTML = `
     <div class="ext-nav-frame">
         <span class="ext-nav-label">Navigate</span>
@@ -759,8 +844,10 @@ function injectToolbar(el, threadKey) {
 
     const row = document.createElement('div');
     row.className = 'ext-toolbar-row';
+    markExtNode(row);
     const wrap = document.createElement('div');
     wrap.className = 'ext-toolbar';
+    markExtNode(wrap);
     wrap.innerHTML = `
     <span class="ext-badges"></span>
     <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
@@ -937,6 +1024,7 @@ function collapseByFocus(container, target, collapseState) {
 async function bootstrap() {
     // Wait a moment for the app shell to mount
     await sleep(600);
+    await ensureConfigLoaded();
     teardownUI();
     const container = findTranscriptRoot();
     if (!container) return;
@@ -998,12 +1086,17 @@ async function bootstrap() {
         }
     }
 
-    // Initial pass and observe for changes
-    refresh();
-    const mo = new MutationObserver(() => {
-        // Debounced refresh to handle bursts during streaming
+    const requestRefresh = () => {
         if (bootstrap._raf) cancelAnimationFrame(bootstrap._raf);
         bootstrap._raf = requestAnimationFrame(refresh);
+    };
+    bootstrap._requestRefresh = requestRefresh;
+
+    // Initial pass and observe for changes
+    refresh();
+    const mo = new MutationObserver((records) => {
+        if (!records.some(mutationTouchesExternal)) return;
+        requestRefresh();
     });
     mo.observe(container, { childList: true, subtree: true });
     bootstrap._observer = mo;
@@ -1046,6 +1139,7 @@ function ensureTopPanels() {
             <div class="ext-tag-list" id="ext-tag-list"></div>
         </div>
     `;
+    markExtNode(wrap);
     document.body.appendChild(wrap);
     topPanelsEl = wrap;
     tagListEl = wrap.querySelector('#ext-tag-list');
@@ -1054,6 +1148,7 @@ function ensureTopPanels() {
         searchInputEl.value = focusState.searchQuery;
         searchInputEl.addEventListener('input', (evt) => handleSearchInput(evt.target.value));
     }
+    updateConfigUI();
     syncTopPanelWidth();
     return wrap;
 }
@@ -1062,6 +1157,7 @@ function updateTagList(counts) {
     ensureTopPanels();
     if (!tagListEl) return;
     tagListEl.innerHTML = '';
+    tagListEl.classList.toggle('ext-tags-disabled', !config.enableTagFiltering);
     if (!counts.length) {
         const empty = document.createElement('div');
         empty.className = 'ext-tag-sidebar-empty';
@@ -1134,4 +1230,13 @@ function syncTopPanelWidth() {
     const refWidth = controls ? controls.getBoundingClientRect().width : null;
     const width = refWidth && refWidth > 0 ? refWidth : topPanelsEl.getBoundingClientRect().width || 200;
     topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
+}
+
+if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        if (Object.prototype.hasOwnProperty.call(changes, CONFIG_STORAGE_KEY)) {
+            applyConfigObject(changes[CONFIG_STORAGE_KEY].newValue);
+        }
+    });
 }
