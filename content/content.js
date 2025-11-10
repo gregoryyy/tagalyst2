@@ -97,8 +97,8 @@ async function setStore(obj) {
 const EXT_ATTR = 'data-ext-owned';
 const CONFIG_STORAGE_KEY = '__tagalyst_config';
 const defaultConfig = {
-    enableSearch: true,
-    enableTagFiltering: true,
+    searchEnabled: true,
+    tagsEnabled: true,
 };
 let config = { ...defaultConfig };
 let configLoaded = false;
@@ -138,13 +138,27 @@ function mutationTouchesExternal(record) {
     return false;
 }
 
+function isSearchEnabled() {
+    return !!config.searchEnabled;
+}
+
+function areTagsEnabled() {
+    return !!config.tagsEnabled;
+}
+
+function requestRefresh() {
+    if (typeof bootstrap === 'function' && typeof bootstrap._requestRefresh === 'function') {
+        bootstrap._requestRefresh();
+    }
+}
+
 function enforceConfigState() {
-    if (!config.enableSearch) {
+    if (!isSearchEnabled()) {
         focusState.searchQuery = '';
         focusState.searchQueryLower = '';
         if (searchInputEl) searchInputEl.value = '';
     }
-    if (!config.enableTagFiltering) {
+    if (!areTagsEnabled()) {
         focusState.selectedTags.clear();
     }
 }
@@ -154,6 +168,7 @@ function applyConfigObject(obj) {
     enforceConfigState();
     updateConfigUI();
     syncFocusMode();
+    requestRefresh();
 }
 
 async function ensureConfigLoaded() {
@@ -165,14 +180,18 @@ async function ensureConfigLoaded() {
 }
 
 function updateConfigUI() {
+    const searchPanel = topPanelsEl?.querySelector('.ext-top-search');
+    const tagPanel = topPanelsEl?.querySelector('.ext-top-tags');
+    if (searchPanel) searchPanel.style.display = isSearchEnabled() ? '' : 'none';
+    if (tagPanel) tagPanel.style.display = areTagsEnabled() ? '' : 'none';
     if (searchInputEl) {
-        const enabled = !!config.enableSearch;
+        const enabled = isSearchEnabled();
         searchInputEl.disabled = !enabled;
         searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
         if (!enabled) searchInputEl.value = '';
     }
     if (tagListEl) {
-        tagListEl.classList.toggle('ext-tags-disabled', !config.enableTagFiltering);
+        tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
     }
 }
 
@@ -188,8 +207,8 @@ function resetFocusState() {
 }
 
 function computeFocusMode() {
-    if (config.enableSearch && focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
-    if (config.enableTagFiltering && focusState.selectedTags.size) return FOCUS_MODES.TAGS;
+    if (isSearchEnabled() && focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
+    if (areTagsEnabled() && focusState.selectedTags.size) return FOCUS_MODES.TAGS;
     return FOCUS_MODES.STARS;
 }
 
@@ -227,7 +246,7 @@ function setMessageMeta(el, { key, value, pairIndex }) {
 }
 
 function matchesSelectedTags(value) {
-    if (!config.enableTagFiltering || !focusState.selectedTags.size) return false;
+    if (!areTagsEnabled() || !focusState.selectedTags.size) return false;
     const tags = Array.isArray(value?.tags) ? value.tags : [];
     if (!tags.length) return false;
     return tags.some(tag => focusState.selectedTags.has(tag));
@@ -360,7 +379,7 @@ function syncTagSidebarSelectionUI() {
 }
 
 function handleSearchInput(value) {
-    if (!config.enableSearch) return;
+    if (!isSearchEnabled()) return;
     const normalized = (value || '').trim();
     focusState.searchQuery = normalized;
     focusState.searchQueryLower = normalized.toLowerCase();
@@ -368,7 +387,7 @@ function handleSearchInput(value) {
 }
 
 function toggleTagSelection(tag) {
-    if (!config.enableTagFiltering) return;
+    if (!areTagsEnabled()) return;
     if (!tag) return;
     if (focusState.selectedTags.has(tag)) {
         focusState.selectedTags.delete(tag);
@@ -1157,7 +1176,7 @@ function updateTagList(counts) {
     ensureTopPanels();
     if (!tagListEl) return;
     tagListEl.innerHTML = '';
-    tagListEl.classList.toggle('ext-tags-disabled', !config.enableTagFiltering);
+    tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
     if (!counts.length) {
         const empty = document.createElement('div');
         empty.className = 'ext-tag-sidebar-empty';

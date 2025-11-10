@@ -1,9 +1,7 @@
 const CONFIG_STORAGE_KEY = '__tagalyst_config';
 const defaultConfig = {
-    searchVisible: true,
-    searchInteractive: true,
-    tagsVisible: true,
-    tagsInteractive: true,
+    searchEnabled: true,
+    tagsEnabled: true,
 };
 
 function getConfig() {
@@ -43,10 +41,8 @@ async function updateStorageDisplay(el) {
 }
 
 function init() {
-    const searchVisible = document.getElementById('search-visible');
-    const searchInteractive = document.getElementById('search-interactive');
-    const tagsVisible = document.getElementById('tags-visible');
-    const tagsInteractive = document.getElementById('tags-interactive');
+    const searchEnable = document.getElementById('search-enable');
+    const tagsEnable = document.getElementById('tags-enable');
     const status = document.getElementById('status');
     const storageSizeEl = document.getElementById('storage-size');
     const clearStorageBtn = document.getElementById('clear-storage');
@@ -57,7 +53,8 @@ function init() {
     tempSpan.style.visibility = 'hidden';
     tempSpan.style.position = 'absolute';
     tempSpan.style.whiteSpace = 'nowrap';
-    tempSpan.style.fontSize = window.getComputedStyle(clearStorageBtn).fontSize;
+    const btnStyles = window.getComputedStyle(clearStorageBtn);
+    tempSpan.style.font = btnStyles.font;
     document.body.appendChild(tempSpan);
     const confirmWidth = tempSpan.getBoundingClientRect().width;
     tempSpan.remove();
@@ -78,28 +75,22 @@ function init() {
     };
 
     getConfig().then(cfg => {
-        searchVisible.checked = !!cfg.searchVisible;
-        searchInteractive.checked = !!cfg.searchInteractive;
-        tagsVisible.checked = !!cfg.tagsVisible;
-        tagsInteractive.checked = !!cfg.tagsInteractive;
+        searchEnable.checked = !!cfg.searchEnabled;
+        tagsEnable.checked = !!cfg.tagsEnabled;
     });
 
     updateStorageDisplay(storageSizeEl);
 
     const onChange = async () => {
         const next = {
-            searchVisible: searchVisible.checked,
-            searchInteractive: searchInteractive.checked,
-            tagsVisible: tagsVisible.checked,
-            tagsInteractive: tagsInteractive.checked,
+            searchEnabled: searchEnable.checked,
+            tagsEnabled: tagsEnable.checked,
         };
         await saveConfig(next);
         showStatus('Saved');
     };
 
-    [searchVisible, searchInteractive, tagsVisible, tagsInteractive].forEach(el => {
-        el.addEventListener('change', onChange);
-    });
+    [searchEnable, tagsEnable].forEach(el => el.addEventListener('change', onChange));
 
     clearStorageBtn.addEventListener('click', async () => {
         if (!confirmDelete) {
@@ -113,10 +104,8 @@ function init() {
         }
         await new Promise(resolve => chrome.storage.local.clear(resolve));
         await saveConfig({ ...defaultConfig });
-        searchVisible.checked = defaultConfig.searchVisible;
-        searchInteractive.checked = defaultConfig.searchInteractive;
-        tagsVisible.checked = defaultConfig.tagsVisible;
-        tagsInteractive.checked = defaultConfig.tagsInteractive;
+        searchEnable.checked = defaultConfig.searchEnabled;
+        tagsEnable.checked = defaultConfig.tagsEnabled;
         await updateStorageDisplay(storageSizeEl);
         showStatus('Storage cleared');
         resetButtonState();
