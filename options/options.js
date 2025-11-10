@@ -45,6 +45,9 @@ function init() {
     const tagsEnable = document.getElementById('tags-enable');
     const status = document.getElementById('status');
     const storageSizeEl = document.getElementById('storage-size');
+    const importBtn = document.getElementById('import-storage');
+    const exportBtn = document.getElementById('export-storage');
+    const importInput = document.getElementById('import-file');
     const clearStorageBtn = document.getElementById('clear-storage');
     const confirmLabel = 'Delete Ok?';
     const baseLabel = 'Delete';
@@ -60,8 +63,10 @@ function init() {
     tempSpan.remove();
     const baseWidth = clearStorageBtn.offsetWidth || confirmWidth;
     const targetWidth = Math.ceil(Math.max(confirmWidth, baseWidth) + 32);
-    clearStorageBtn.style.width = `${targetWidth}px`;
-    clearStorageBtn.style.minWidth = `${targetWidth}px`;
+    [importBtn, exportBtn, clearStorageBtn].forEach(btn => {
+        btn.style.width = `${targetWidth}px`;
+        btn.style.minWidth = `${targetWidth}px`;
+    });
     let confirmDelete = false;
     const resetButtonState = () => {
         confirmDelete = false;
@@ -91,6 +96,64 @@ function init() {
     };
 
     [searchEnable, tagsEnable].forEach(el => el.addEventListener('change', onChange));
+
+    exportBtn.addEventListener('click', async () => {
+        const data = await new Promise(resolve => chrome.storage.local.get(null, resolve));
+        const serialized = JSON.stringify(data, null, 2);
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await showSaveFilePicker({
+                    suggestedName: `tagalyst-storage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+                    types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(serialized);
+                await writable.close();
+                showStatus('Exported');
+                return;
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error('Export failed', err);
+                showStatus('Export failed');
+                return;
+            }
+        }
+        const blob = new Blob([serialized], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tagalyst-storage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showStatus('Exported');
+    });
+
+    importBtn.addEventListener('click', () => {
+        importInput.value = '';
+        importInput.click();
+    });
+
+    importInput.addEventListener('change', async (evt) => {
+        const file = evt.target.files?.[0];
+        if (!file) return;
+        if (!confirm('Importing will overwrite all Tagalyst data. Continue?')) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            await new Promise(resolve => chrome.storage.local.clear(resolve));
+            await new Promise(resolve => chrome.storage.local.set(data, resolve));
+            const cfg = await getConfig();
+            searchEnable.checked = !!cfg.searchEnabled;
+            tagsEnable.checked = !!cfg.tagsEnabled;
+            await updateStorageDisplay(storageSizeEl);
+            showStatus('Imported');
+        } catch (err) {
+            console.error('Import failed', err);
+            showStatus('Import failed');
+        }
+    });
 
     clearStorageBtn.addEventListener('click', async () => {
         if (!confirmDelete) {

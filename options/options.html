@@ -67,6 +67,13 @@
             margin-bottom: .6rem;
             font-weight: 600;
         }
+        .storage-actions {
+            display: flex;
+            gap: .5rem;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+        }
         .storage-panel {
             border: 1px dashed rgba(0, 0, 0, .25);
             border-radius: 1rem;
@@ -137,8 +144,13 @@
                 <span>Storage usage</span>
                 <span id="storage-size">—</span>
             </div>
-            <button id="clear-storage" class="delete-btn" type="button">Delete</button>
+            <div class="storage-actions">
+                <button id="import-storage" type="button">Import</button>
+                <button id="export-storage" type="button">Export</button>
+                <button id="clear-storage" class="delete-btn" type="button">Delete</button>
+            </div>
         </section>
+        <input type="file" id="import-file" accept="application/json" hidden />
         <p id="status" role="status" aria-live="polite"></p>
     </main>
     <script src="options.js"></script>
