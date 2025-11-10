@@ -18,8 +18,8 @@ Tagalyst keeps one “focus” set at a time, which drives navigation, collapse/
 
 - **Stars (`☆`/`★`)** – default. Click the toolbar button on any message to bookmark it; navigation arrows (`★↑/★↓`), Collapse `☆`, Expand `★`, and the `★` MD Copy button operate on the starred subset.
 - **Tags (`○`/`●`)** – click any tag in the top-right list (multi-select is supported). The toolbar glyph switches to circles and fills whenever a message carries **any** of the selected tags. The per-message focus button is read-only in this mode because membership is derived from tags; navigation/export/collapse now operate on the highlighted tag matches. Disable tag filtering via the extension Options page if you want to hide the panel entirely.
-- **Extension Options** – open `chrome://extensions`, click **Tagalyst 2 → Details → Extension options**, and use the **Enable** column in the Features table to turn the Search and Tag panes on/off (the “Expands” column is a placeholder). Disabling a pane hides it and clears its state. The same page also shows current storage usage plus Import/Export controls and a “Delete” button if you need a full reset.
 - **Search (`□`/`■`)** – typing in the Search panel swaps the glyph to squares and highlights every prompt/response that contains the query (case-insensitive substring). Controls again operate on the live search results, and clearing the search field returns to tags (if any) or stars.
+- **Extension Options** – open `chrome://extensions`, click **Tagalyst 2 → Details → Extension options**, and use the **Enable** column in the Features table to turn the Search and Tag panes on/off (the “Expands” column is a placeholder). Disabling a pane hides it and clears its state. The same page also shows current storage usage plus Import/Export controls and a “Delete” button if you need a full reset.
 
 The UI always reflects the active mode: the same glyph appears on the navigation buttons, Collapse/Expand focus controls, and the focus-only MD Copy action so it is clear which subset will move/export. Clear the search field and/or deselect tags to fall back to the base starred workflow.
 
@@ -48,6 +48,7 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 ## Development
 - Install dependencies: `npm install`
 - Run the Jest suite (non-visual helpers): `npm test`
+- Build a distributable ZIP (`dist/tagalyst2.zip`): `npm run build`
 
 ## Terminology & Pair API
 - **Thread** (`t`) is the ordered list of conversational exchanges. (Use “session” only when referring to time-bounded usage, not the DOM thread.)

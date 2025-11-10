@@ -1,5 +1,4 @@
-# Tasks for Tagalyst 2
-
+# TODOs and Roadmap for Tagalyst 2
 
 Bugs:
 
@@ -21,9 +20,11 @@ Bugs:
 Codebase:
 
 - refactor and document
-- add tests
+- add tests ONGOING
+  - unit via Jest DONE add 
+  - DOM via Puppeteer (Playwright has issue on MacOS)
 - fix performance errors (see bugs)
-- packaging for marketplace deployment
+- packaging for marketplace deployment DONE
 
 Features:
 
