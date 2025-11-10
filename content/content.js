@@ -1254,8 +1254,8 @@ function syncTopPanelWidth() {
 if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
         if (areaName !== 'local') return;
-        if (Object.prototype.hasOwnProperty.call(changes, CONFIG_STORAGE_KEY)) {
-            applyConfigObject(changes[CONFIG_STORAGE_KEY].newValue);
-        }
+        const change = changes[CONFIG_STORAGE_KEY];
+        if (!change) return;
+        applyConfigObject(change.newValue);
     });
 }
