@@ -1,7 +1,7 @@
 {
     "name": "Tagalyst 2",
-    "description": "Collapse/expand, tag, and bookmark ChatGPT messages; jump to first/last.",
-    "version": "0.1.5",
+    "description": "Basis: v0.1.5 with ts refactoring",
+    "version": "0.3.0",
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "permissions": [

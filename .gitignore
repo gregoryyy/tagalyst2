@@ -1,2 +1,9 @@
 .DS_Store
 unversioned/
+
+node_modules/
+package-lock.json
+*.tsbuildinfo
+# remove js
+#options/options.js
+#content/content.js

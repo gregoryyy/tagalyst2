@@ -35,6 +35,13 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - icons/icon16.png, icon32.png, icon48.png, icon128.png (placeholders OK)
 3. Open `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the folder.
 
+## Development
+- Install deps: `npm install` (brings in TypeScript + Chrome types only).
+- Source of truth lives in `content/content.ts` and `options/options.ts`. The emitted `.js` siblings are what MV3 actually loads, so remember to rebuild after edits.
+- Build once: `npm run build` (runs `tsc -p tsconfig.json` and rewrites the JS artifacts in-place).
+- Live edit loop: `npm run watch` to recompile automatically, then hit “Reload” on the Chrome extensions page.
+- Ambient Chrome + window globals are declared in `src/types/globals.d.ts`. Update that file if you add new surface APIs so `tsc` stays happy.
+- No bundler: everything compiles 1:1, so keep imports relative to the file tree Chrome already expects.
 
 ## Notes
 - Data is stored locally via `chrome.storage.local` keyed by `{threadKey}:{messageKey}`.

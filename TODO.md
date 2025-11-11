@@ -1,6 +1,12 @@
 # Tasks for Tagalyst 2
 
 
+Refactor to ts:
+- like for like
+- iterative changes
+- 
+
+
 Behavioral Bugs:
 - navigation and layout:
   - collapse misses Canvas

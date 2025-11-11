@@ -4,15 +4,17 @@
  * - Non-destructive overlays (no reparenting site nodes)
  * - Local persistence via chrome.storage
  */
+
 // -------------------------- Utilities --------------------------
 /**
  * Small helper for delaying async flows without blocking the UI thread.
  */
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
 /**
  * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
  */
-function hashString(s) {
+function hashString(s: string) {
     let h = 0x811c9dc5;
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i);
@@ -20,77 +22,78 @@ function hashString(s) {
     }
     return ("0000000" + h.toString(16)).slice(-8);
 }
+
 /**
  * Strips excess whitespace and zero-width chars so hashes stay stable.
  */
-function normalizeText(t) {
+function normalizeText(t: string) {
     return (t || "")
         .replace(/\s+/g, " ")
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
         .trim();
 }
+
 /**
  * Generates a thread-level key using the conversation ID when available.
  */
-function getThreadKey() {
+function getThreadKey(): string {
     // Prefer URL path (conversation id). Fallback to title + domain.
     try {
         const u = new URL(location.href);
-        if (u.pathname && u.pathname.length > 1)
-            return u.pathname.replace(/\W+/g, "-");
-    }
-    catch { }
+        if (u.pathname && u.pathname.length > 1) return u.pathname.replace(/\W+/g, "-");
+    } catch { }
     return hashString(document.title + location.host);
 }
+
 /**
  * Returns the DOM-provided message UUID if available.
  */
-function getMessageId(el) {
+function getMessageId(el: Element | null) {
     return el?.getAttribute?.('data-message-id') || null;
 }
+
 /**
  * Stable-ish per-message key derived from ChatGPT IDs or fallback heuristics.
  */
-function keyForMessage(el) {
+function keyForMessage(el: HTMLElement) {
     const domId = getMessageId(el);
-    if (domId)
-        return domId;
+    if (domId) return domId;
     const text = normalizeText(el.innerText).slice(0, 4000); // perf cap
     const idx = Array.prototype.indexOf.call(el.parentElement?.children || [], el);
     return hashString(text + "|" + idx);
 }
+
 /**
  * Determines whether the collapse control should be shown for a message.
  * Hidden for single-line prompts (no line breaks).
  */
-function shouldShowCollapseControl(el) {
+function shouldShowCollapseControl(el: HTMLElement) {
     const role = el?.getAttribute?.('data-message-author-role');
-    if (role !== 'user')
-        return true;
+    if (role !== 'user') return true;
     const text = (el.innerText || '').trim();
-    if (!text)
-        return false;
+    if (!text) return false;
     const style = getComputedStyle(el);
     const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) || 18;
     const lines = lineHeight ? el.clientHeight / lineHeight : 0;
-    if (lines > 1.4)
-        return true;
+    if (lines > 1.4) return true;
     return text.length > 160 || text.includes('\n');
 }
+
 /**
  * Promise-wrapped chrome.storage.local get.
  */
-async function getStore(keys) {
-    if (!Array.isArray(keys) || !keys.length)
-        return {};
+async function getStore(keys: string[]): Promise<Record<string, MessageValue>> {
+    if (!Array.isArray(keys) || !keys.length) return {};
     return new Promise(resolve => chrome.storage.local.get(keys, resolve));
 }
+
 /**
  * Promise-wrapped chrome.storage.local set.
  */
-async function setStore(obj) {
+async function setStore(obj: Record<string, MessageValue>): Promise<void> {
     return new Promise(resolve => chrome.storage.local.set(obj, () => resolve()));
 }
+
 const EXT_ATTR = 'data-ext-owned';
 const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
 const contentDefaultConfig = {
@@ -99,24 +102,56 @@ const contentDefaultConfig = {
 };
 let config = { ...contentDefaultConfig };
 let configLoaded = false;
-let searchToggleEl = null;
-let tagToggleEl = null;
+let searchToggleEl: HTMLElement | null = null;
+let tagToggleEl: HTMLElement | null = null;
+
+/**
+ * Augments the bootstrap function with stateful fields used across modules.
+ */
+type BootstrapWithMeta = ((...args: unknown[]) => Promise<void>) & {
+    _observer?: MutationObserver | null;
+    _requestRefresh?: () => void;
+    _raf?: number;
+};
+
+type MessageValue = Record<string, any>;
+
+type MessageMeta = {
+    key: string | null;
+    value: MessageValue;
+    pairIndex: number | null;
+};
+
+type ActiveEditor = {
+    message: HTMLElement;
+    cleanup: () => void;
+};
+
+type PageControls = {
+    root: HTMLElement;
+    focusPrev: HTMLButtonElement | null;
+    focusNext: HTMLButtonElement | null;
+    collapseNonFocus: HTMLButtonElement | null;
+    expandFocus: HTMLButtonElement | null;
+    exportFocus: HTMLButtonElement | null;
+};
+
 /**
  * Flags a DOM node as extension-managed so MutationObservers can ignore it.
  */
-function markExtNode(el) {
+function markExtNode(el: Element | null) {
     if (el?.setAttribute) {
         el.setAttribute(EXT_ATTR, '1');
     }
 }
+
 /**
  * Walks up from the provided node to see if any ancestor belongs to the extension.
  */
-function closestExtNode(node) {
-    if (!node)
-        return null;
-    if (node.nodeType === Node.ELEMENT_NODE && typeof node.closest === 'function') {
-        return node.closest(`[${EXT_ATTR}]`);
+function closestExtNode(node: Node | null) {
+    if (!node) return null;
+    if (node.nodeType === Node.ELEMENT_NODE && typeof (node as Element).closest === 'function') {
+        return (node as Element).closest(`[${EXT_ATTR}]`);
     }
     const parent = node.parentElement;
     if (parent && typeof parent.closest === 'function') {
@@ -124,49 +159,52 @@ function closestExtNode(node) {
     }
     return null;
 }
+
 /**
  * Returns true when the supplied node is part of extension-owned UI.
  */
-function isExtensionNode(node) {
+function isExtensionNode(node: Node | null) {
     return !!closestExtNode(node);
 }
+
 /**
  * Determines whether a mutation record affects host content rather than extension nodes.
  */
-function mutationTouchesExternal(record) {
-    if (!isExtensionNode(record.target))
-        return true;
+function mutationTouchesExternal(record: MutationRecord) {
+    if (!isExtensionNode(record.target)) return true;
     for (const node of record.addedNodes) {
-        if (!isExtensionNode(node))
-            return true;
+        if (!isExtensionNode(node)) return true;
     }
     for (const node of record.removedNodes) {
-        if (!isExtensionNode(node))
-            return true;
+        if (!isExtensionNode(node)) return true;
     }
     return false;
 }
+
 /**
  * Indicates whether the Search pane is currently enabled via options.
  */
 function isSearchEnabled() {
     return !!config.searchEnabled;
 }
+
 /**
  * Indicates whether the Tags pane is currently enabled via options.
  */
 function areTagsEnabled() {
     return !!config.tagsEnabled;
 }
+
 /**
  * Triggers a queued refresh run if the bootstrap helper exposes that hook.
  */
 function requestRefresh() {
-    const boot = bootstrap;
+    const boot = bootstrap as BootstrapWithMeta;
     if (typeof bootstrap === 'function' && typeof boot._requestRefresh === 'function') {
         boot._requestRefresh();
     }
 }
+
 /**
  * Applies config toggles to in-memory focus state and any existing inputs.
  */
@@ -174,55 +212,54 @@ function enforceConfigState() {
     if (!isSearchEnabled()) {
         focusState.searchQuery = '';
         focusState.searchQueryLower = '';
-        if (searchInputEl)
-            searchInputEl.value = '';
+        if (searchInputEl) searchInputEl.value = '';
     }
     if (!areTagsEnabled()) {
         focusState.selectedTags.clear();
     }
 }
+
 /**
  * Loads config data into the runtime state and refreshes dependent UI.
  */
-function applyConfigObject(obj) {
+function applyConfigObject(obj?: Partial<typeof contentDefaultConfig>) {
     config = { ...contentDefaultConfig, ...(obj || {}) };
     enforceConfigState();
     updateConfigUI();
     syncFocusMode();
     requestRefresh();
 }
+
 /**
  * Lazily reads persisted config the first time it is requested.
  */
-async function ensureConfigLoaded() {
-    if (configLoaded)
-        return config;
+async function ensureConfigLoaded(): Promise<typeof contentDefaultConfig> {
+    if (configLoaded) return config;
     const store = await getStore([CONTENT_CONFIG_STORAGE_KEY]);
     applyConfigObject(store[CONTENT_CONFIG_STORAGE_KEY]);
     configLoaded = true;
     return config;
 }
+
 /**
  * Syncs Search/Tag pane DOM visibility and states with the current config.
  */
 function updateConfigUI() {
-    const searchPanel = topPanelsEl?.querySelector('.ext-top-search');
-    const tagPanel = topPanelsEl?.querySelector('.ext-top-tags');
-    if (searchPanel)
-        searchPanel.style.display = isSearchEnabled() ? '' : 'none';
-    if (tagPanel)
-        tagPanel.style.display = areTagsEnabled() ? '' : 'none';
+    const searchPanel = topPanelsEl?.querySelector<HTMLElement>('.ext-top-search');
+    const tagPanel = topPanelsEl?.querySelector<HTMLElement>('.ext-top-tags');
+    if (searchPanel) searchPanel.style.display = isSearchEnabled() ? '' : 'none';
+    if (tagPanel) tagPanel.style.display = areTagsEnabled() ? '' : 'none';
     if (searchInputEl) {
         const enabled = isSearchEnabled();
         searchInputEl.disabled = !enabled;
         searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
-        if (!enabled)
-            searchInputEl.value = '';
+        if (!enabled) searchInputEl.value = '';
     }
     if (tagListEl) {
         tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
     }
 }
+
 // ------------------------ Focus State ------------------------
 /**
  * Clears focus-related caches and returns the UI to its default state.
@@ -236,16 +273,16 @@ function resetFocusState() {
     pageControls = null;
     messageState.clear();
 }
+
 /**
  * Determines which focus mode should drive navigation and filtering.
  */
 function computeFocusMode() {
-    if (isSearchEnabled() && focusState.searchQueryLower)
-        return FOCUS_MODES.SEARCH;
-    if (areTagsEnabled() && focusState.selectedTags.size)
-        return FOCUS_MODES.TAGS;
+    if (isSearchEnabled() && focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
+    if (areTagsEnabled() && focusState.selectedTags.size) return FOCUS_MODES.TAGS;
     return FOCUS_MODES.STARS;
 }
+
 /**
  * Provides a human-readable label for the current focus mode.
  */
@@ -259,66 +296,66 @@ function describeFocusMode() {
             return 'starred items';
     }
 }
+
 /**
  * Returns the glyph pair (empty/filled) for the given mode plus toggle state.
  */
-function getFocusGlyph(isFilled) {
+function getFocusGlyph(isFilled: boolean) {
     const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
     return isFilled ? glyph.filled : glyph.empty;
 }
+
 /**
  * Ensures each message node has tracked metadata (storage key, tag data, etc.).
  */
-function ensureMessageMeta(el, key) {
+function ensureMessageMeta(el: HTMLElement, key?: string | null) {
     let meta = messageState.get(el);
     if (!meta) {
         meta = { key: key || null, value: {}, pairIndex: null };
         messageState.set(el, meta);
     }
-    if (key)
-        meta.key = key;
+    if (key) meta.key = key;
     return meta;
 }
+
 /**
  * Updates cached metadata for a message node and returns the stored entry.
  */
-function setMessageMeta(el, { key, value, pairIndex } = {}) {
+function setMessageMeta(el: HTMLElement, { key, value, pairIndex }: { key?: string | null; value?: MessageValue; pairIndex?: number | null } = {}) {
     const meta = ensureMessageMeta(el, key || null);
     if (typeof pairIndex === 'number') {
         meta.pairIndex = pairIndex;
-    }
-    else if (pairIndex === null) {
+    } else if (pairIndex === null) {
         meta.pairIndex = null;
     }
-    if (value)
-        meta.value = value;
+    if (value) meta.value = value;
     return meta;
 }
+
 /**
  * Determines whether the stored value includes any of the currently selected tags.
  */
-function matchesSelectedTags(value) {
-    if (!areTagsEnabled() || !focusState.selectedTags.size)
-        return false;
+function matchesSelectedTags(value: MessageValue) {
+    if (!areTagsEnabled() || !focusState.selectedTags.size) return false;
     const tags = Array.isArray(value?.tags) ? value.tags : [];
-    if (!tags.length)
-        return false;
+    if (!tags.length) return false;
     return tags.some(tag => focusState.selectedTags.has(tag));
 }
+
 /**
  * Performs a text match against the active search query for the supplied node.
  */
-function matchesSearchQuery(el) {
+function matchesSearchQuery(el: HTMLElement) {
     const query = focusState.searchQueryLower;
-    if (!query)
-        return false;
+    if (!query) return false;
     const text = normalizeText(el?.innerText || '').toLowerCase();
     return text.includes(query);
 }
+
 /**
  * Tests whether a message should be considered part of the active focus set.
  */
-function isMessageFocused(el, value) {
+function isMessageFocused(el: HTMLElement, value: MessageValue) {
     switch (focusState.mode) {
         case FOCUS_MODES.TAGS:
             return matchesSelectedTags(value);
@@ -328,17 +365,16 @@ function isMessageFocused(el, value) {
             return !!value?.starred;
     }
 }
+
 /**
  * Synchronizes the per-message focus button with star/search/tag state.
  */
-function updateFocusButton(el, value) {
-    const btn = el.querySelector('.ext-toolbar .ext-focus-button');
-    if (!btn)
-        return;
+function updateFocusButton(el: HTMLElement, value: MessageValue) {
+    const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
+    if (!btn) return;
     const active = isMessageFocused(el, value);
     const glyph = getFocusGlyph(active);
-    if (btn.textContent !== glyph)
-        btn.textContent = glyph;
+    if (btn.textContent !== glyph) btn.textContent = glyph;
     const pressed = String(active);
     if (btn.getAttribute('aria-pressed') !== pressed) {
         btn.setAttribute('aria-pressed', pressed);
@@ -349,8 +385,7 @@ function updateFocusButton(el, value) {
     if (btn.disabled !== disabled) {
         if (disabled) {
             btn.setAttribute('disabled', 'true');
-        }
-        else {
+        } else {
             btn.removeAttribute('disabled');
         }
     }
@@ -360,8 +395,7 @@ function updateFocusButton(el, value) {
             btn.title = title;
             btn.setAttribute('aria-label', title);
         }
-    }
-    else {
+    } else {
         const title = active ? `Matches ${focusDesc}` : `Does not match ${focusDesc}`;
         if (btn.title !== title) {
             btn.title = title;
@@ -369,6 +403,7 @@ function updateFocusButton(el, value) {
         }
     }
 }
+
 /**
  * Recomputes toolbar button labels for every tracked message node.
  */
@@ -381,6 +416,7 @@ function refreshFocusButtons() {
         updateFocusButton(el, value || {});
     });
 }
+
 /**
  * Re-evaluates which focus mode is active and updates dependent UI affordances.
  */
@@ -391,10 +427,11 @@ function syncFocusMode() {
     updateFocusControlsUI();
     syncTagSidebarSelectionUI();
 }
+
 /**
  * Returns the list of DOM nodes that currently match the focus filter.
  */
-function getFocusMatches() {
+function getFocusMatches(): HTMLElement[] {
     const nodes = [];
     messageState.forEach(({ value }, el) => {
         if (document.contains(el) && isMessageFocused(el, value || {})) {
@@ -403,6 +440,7 @@ function getFocusMatches() {
     });
     return nodes;
 }
+
 /**
  * Returns a short user-facing label for whichever focus type is active.
  */
@@ -416,12 +454,12 @@ function focusSetLabel() {
             return 'starred message';
     }
 }
+
 /**
  * Updates the main navigation controls so their icons/titles match focus state.
  */
 function updateFocusControlsUI() {
-    if (!pageControls)
-        return;
+    if (!pageControls) return;
     const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
     const desc = focusSetLabel();
     if (pageControls.focusPrev) {
@@ -445,69 +483,82 @@ function updateFocusControlsUI() {
         pageControls.exportFocus.title = `Copy Markdown for current ${desc}s`;
     }
 }
+
 /**
  * Highlights any tag rows in the sidebar that belong to the selected tag set.
  */
 function syncTagSidebarSelectionUI() {
-    if (!tagListEl)
-        return;
-    tagListEl.querySelectorAll('.ext-tag-sidebar-row').forEach(row => {
+    if (!tagListEl) return;
+    tagListEl.querySelectorAll<HTMLElement>('.ext-tag-sidebar-row').forEach(row => {
         const tag = row.dataset.tag;
         row.classList.toggle('ext-tag-selected', !!(tag && focusState.selectedTags.has(tag)));
     });
 }
+
 /**
  * Handles updates from the search input and re-syncs focus mode.
  */
-function handleSearchInput(value) {
-    if (!isSearchEnabled())
-        return;
+function handleSearchInput(value: string) {
+    if (!isSearchEnabled()) return;
     const normalized = (value || '').trim();
     focusState.searchQuery = normalized;
     focusState.searchQueryLower = normalized.toLowerCase();
     syncFocusMode();
 }
+
 /**
  * Adds or removes a tag from the selected set, then recalculates focus mode.
  */
-function toggleTagSelection(tag) {
-    if (!areTagsEnabled())
-        return;
-    if (!tag)
-        return;
+function toggleTagSelection(tag: string) {
+    if (!areTagsEnabled()) return;
+    if (!tag) return;
     if (focusState.selectedTags.has(tag)) {
         focusState.selectedTags.delete(tag);
-    }
-    else {
+    } else {
         focusState.selectedTags.add(tag);
     }
     syncFocusMode();
 }
+
 // ------------------------ Inline Editors ------------------------
-let activeTagEditor = null;
-let activeNoteEditor = null;
-let tagListEl = null;
-let topPanelsEl = null;
-let searchInputEl = null;
+let activeTagEditor: ActiveEditor | null = null;
+let activeNoteEditor: ActiveEditor | null = null;
+let tagListEl: HTMLElement | null = null;
+let topPanelsEl: HTMLElement | null = null;
+let searchInputEl: HTMLInputElement | null = null;
+
 const FOCUS_MODES = Object.freeze({
     STARS: 'stars',
     TAGS: 'tags',
     SEARCH: 'search',
-});
-const focusGlyphs = {
+} as const);
+
+type FocusMode = typeof FOCUS_MODES[keyof typeof FOCUS_MODES];
+
+const focusGlyphs: Record<FocusMode, { empty: string; filled: string }> = {
     [FOCUS_MODES.STARS]: { empty: '☆', filled: '★' },
     [FOCUS_MODES.TAGS]: { empty: '○', filled: '●' },
     [FOCUS_MODES.SEARCH]: { empty: '□', filled: '■' },
 };
-const focusState = {
+
+type FocusState = {
+    mode: FocusMode;
+    selectedTags: Set<string>;
+    searchQuery: string;
+    searchQueryLower: string;
+};
+
+const focusState: FocusState = {
     mode: FOCUS_MODES.STARS,
-    selectedTags: new Set(),
+    selectedTags: new Set<string>(),
     searchQuery: '',
     searchQueryLower: '',
 };
-const messageState = new Map();
-let pageControls = null;
+
+const messageState = new Map<HTMLElement, MessageMeta>();
+let pageControls: PageControls | null = null;
 let focusNavIndex = -1;
+
 /**
  * Closes any open inline tag editor and resets associated state.
  */
@@ -517,6 +568,7 @@ function closeActiveTagEditor() {
         activeTagEditor = null;
     }
 }
+
 /**
  * Closes any open inline note editor and resets associated state.
  */
@@ -526,6 +578,7 @@ function closeActiveNoteEditor() {
         activeNoteEditor = null;
     }
 }
+
 /**
  * Removes extension DOM nodes and clears transient editor state.
  */
@@ -539,29 +592,31 @@ function teardownUI() {
     document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
     tagListEl = null;
     const controls = document.getElementById('ext-page-controls');
-    if (controls)
-        controls.remove();
+    if (controls) controls.remove();
     if (topPanelsEl) {
         topPanelsEl.remove();
         topPanelsEl = null;
     }
     resetFocusState();
-    const boot = bootstrap;
+    const boot = bootstrap as BootstrapWithMeta;
     if (boot._observer) {
         boot._observer.disconnect();
         boot._observer = null;
     }
 }
-async function openInlineTagEditor(messageEl, threadKey) {
+
+async function openInlineTagEditor(messageEl: HTMLElement, threadKey: string) {
     if (activeTagEditor?.message === messageEl) {
         closeActiveTagEditor();
         return;
     }
     closeActiveTagEditor();
+
     const key = `${threadKey}:${keyForMessage(messageEl)}`;
     const store = await getStore([key]);
     const cur = store[key] || {};
     const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
+
     const editor = document.createElement('div');
     editor.className = 'ext-tag-editor';
     markExtNode(editor);
@@ -572,22 +627,24 @@ async function openInlineTagEditor(messageEl, threadKey) {
             <button type="button" class="ext-tag-editor-cancel">Cancel</button>
         </div>
     `;
-    const input = editor.querySelector('.ext-tag-editor-input');
-    if (!input)
-        return;
+
+    const input = editor.querySelector<HTMLElement>('.ext-tag-editor-input');
+    if (!input) return;
     input.textContent = existing;
-    const toolbar = messageEl.querySelector('.ext-toolbar');
-    const detachFloating = mountFloatingEditor(editor, (toolbar || messageEl));
+
+    const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
+    const detachFloating = mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
     messageEl.classList.add('ext-tag-editing');
     input.focus();
     placeCaretAtEnd(input);
+
     const cleanup = () => {
         detachFloating();
         editor.remove();
         messageEl.classList.remove('ext-tag-editing');
-        if (activeTagEditor?.message === messageEl)
-            activeTagEditor = null;
+        if (activeTagEditor?.message === messageEl) activeTagEditor = null;
     };
+
     const save = async () => {
         const raw = input.innerText.replace(/\n+/g, ',');
         const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -596,19 +653,18 @@ async function openInlineTagEditor(messageEl, threadKey) {
         renderBadges(messageEl, threadKey, cur);
         cleanup();
     };
+
     const cancel = () => cleanup();
-    const saveBtn = editor.querySelector('.ext-tag-editor-save');
-    const cancelBtn = editor.querySelector('.ext-tag-editor-cancel');
-    if (saveBtn)
-        saveBtn.onclick = save;
-    if (cancelBtn)
-        cancelBtn.onclick = cancel;
+
+    const saveBtn = editor.querySelector<HTMLButtonElement>('.ext-tag-editor-save');
+    const cancelBtn = editor.querySelector<HTMLButtonElement>('.ext-tag-editor-cancel');
+    if (saveBtn) saveBtn.onclick = save;
+    if (cancelBtn) cancelBtn.onclick = cancel;
     editor.addEventListener('keydown', (evt) => {
         if (evt.key === 'Escape') {
             evt.preventDefault();
             cancel();
-        }
-        else if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
+        } else if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
             evt.preventDefault();
             save();
         }
@@ -621,18 +677,22 @@ async function openInlineTagEditor(messageEl, threadKey) {
         }
     };
     document.addEventListener('mousedown', outsideTag, true);
+
     activeTagEditor = { message: messageEl, cleanup };
 }
-async function openInlineNoteEditor(messageEl, threadKey) {
+
+async function openInlineNoteEditor(messageEl: HTMLElement, threadKey: string) {
     if (activeNoteEditor?.message === messageEl) {
         closeActiveNoteEditor();
         return;
     }
     closeActiveNoteEditor();
+
     const key = `${threadKey}:${keyForMessage(messageEl)}`;
     const store = await getStore([key]);
     const cur = store[key] || {};
     const existing = typeof cur.note === 'string' ? cur.note : '';
+
     const editor = document.createElement('div');
     editor.className = 'ext-note-editor';
     markExtNode(editor);
@@ -646,47 +706,47 @@ async function openInlineNoteEditor(messageEl, threadKey) {
             <button type="button" class="ext-note-cancel">Cancel</button>
         </div>
     `;
-    const input = editor.querySelector('.ext-note-input');
-    if (!input)
-        return;
+
+    const input = editor.querySelector<HTMLTextAreaElement>('.ext-note-input');
+    if (!input) return;
     input.value = existing;
-    const toolbar = messageEl.querySelector('.ext-toolbar');
-    const detachFloating = mountFloatingEditor(editor, (toolbar || messageEl));
+
+    const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
+    const detachFloating = mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
     messageEl.classList.add('ext-note-editing');
     input.focus();
     input.select();
+
     const cleanup = () => {
         detachFloating();
         editor.remove();
         messageEl.classList.remove('ext-note-editing');
-        if (activeNoteEditor?.message === messageEl)
-            activeNoteEditor = null;
+        if (activeNoteEditor?.message === messageEl) activeNoteEditor = null;
     };
+
     const save = async () => {
         const value = input.value.trim();
         if (value) {
             cur.note = value;
-        }
-        else {
+        } else {
             delete cur.note;
         }
         await setStore({ [key]: cur });
         renderBadges(messageEl, threadKey, cur);
         cleanup();
     };
+
     const cancel = () => cleanup();
-    const saveBtn = editor.querySelector('.ext-note-save');
-    const cancelBtn = editor.querySelector('.ext-note-cancel');
-    if (saveBtn)
-        saveBtn.onclick = save;
-    if (cancelBtn)
-        cancelBtn.onclick = cancel;
+
+    const saveBtn = editor.querySelector<HTMLButtonElement>('.ext-note-save');
+    const cancelBtn = editor.querySelector<HTMLButtonElement>('.ext-note-cancel');
+    if (saveBtn) saveBtn.onclick = save;
+    if (cancelBtn) cancelBtn.onclick = cancel;
     editor.addEventListener('keydown', (evt) => {
         if (evt.key === 'Escape') {
             evt.preventDefault();
             cancel();
-        }
-        else if ((evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
+        } else if ((evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
             evt.preventDefault();
             save();
         }
@@ -699,29 +759,33 @@ async function openInlineNoteEditor(messageEl, threadKey) {
         }
     };
     document.addEventListener('mousedown', outsideNote, true);
+
     activeNoteEditor = { message: messageEl, cleanup };
 }
+
 /**
  * Moves the caret to the end of a contenteditable element.
  */
-function placeCaretAtEnd(el) {
+function placeCaretAtEnd(el: HTMLElement) {
     const range = document.createRange();
     range.selectNodeContents(el);
     range.collapse(false);
     const sel = window.getSelection();
-    if (!sel)
-        return;
+    if (!sel) return;
     sel.removeAllRanges();
     sel.addRange(range);
 }
+
 /**
  * Positions floating editor UI relative to an anchor and keeps it in view.
  */
-function mountFloatingEditor(editor, anchor) {
+function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
     editor.classList.add('ext-floating-editor');
     markExtNode(editor);
     document.body.appendChild(editor);
-    const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
+
+    const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
     const update = () => {
         const rect = anchor.getBoundingClientRect();
         const width = Math.min(420, window.innerWidth - 32);
@@ -736,24 +800,28 @@ function mountFloatingEditor(editor, anchor) {
         editor.style.top = `${top}px`;
         editor.style.left = `${left}px`;
     };
+
     const onScroll = () => update();
     const onResize = () => update();
+
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onResize);
     update();
+
     return () => {
         window.removeEventListener('scroll', onScroll, true);
         window.removeEventListener('resize', onResize);
         editor.classList.remove('ext-floating-editor');
     };
 }
+
 // --------------------- Discovery & Enumeration -----------------
 /**
  * Finds the primary scrollable container that holds the conversation.
  */
-function findTranscriptRoot() {
-    const main = document.querySelector('main') || document.body;
-    const candidates = Array.from(main.querySelectorAll('*')).filter(el => {
+function findTranscriptRoot(): HTMLElement {
+    const main = (document.querySelector('main') as HTMLElement) || document.body;
+    const candidates = Array.from(main.querySelectorAll<HTMLElement>('*')).filter(el => {
         const s = getComputedStyle(el);
         const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll';
         return scrollable && el.clientHeight > 300 && el.children.length > 1;
@@ -761,44 +829,42 @@ function findTranscriptRoot() {
     // Pick the largest scrollable area; fallback to main
     return (candidates.sort((a, b) => b.clientHeight - a.clientHeight)[0]) || main;
 }
+
 /**
  * Heuristic message detector used only when the explicit role attribute is absent.
  */
-function isMessageNode(el) {
-    if (!el || !el.parentElement)
-        return false;
-    if (el.querySelector('form, textarea, [contenteditable="true"]'))
-        return false; // composer region
+function isMessageNode(el: HTMLElement) {
+    if (!el || !el.parentElement) return false;
+    if (el.querySelector('form, textarea, [contenteditable="true"]')) return false; // composer region
     const textLen = (el.innerText || '').trim().length;
-    if (textLen < 8)
-        return false;
+    if (textLen < 8) return false;
     // Heuristics: rich text or code, and likely large block
     return !!el.querySelector('pre, code, p, li, h1, h2, h3') || textLen > 80;
 }
+
 /**
  * Returns all message nodes, preferring the native role attribute.
  */
-function enumerateMessages(root) {
-    const attrMatches = Array.from(root.querySelectorAll('[data-message-author-role]'));
-    if (attrMatches.length)
-        return attrMatches;
+function enumerateMessages(root: HTMLElement): HTMLElement[] {
+    const attrMatches = Array.from(root.querySelectorAll<HTMLElement>('[data-message-author-role]'));
+    if (attrMatches.length) return attrMatches;
+
     // Fallback to heuristic block detection if the explicit attribute is absent.
     const out = [];
     for (const child of Array.from(root.children)) {
-        if (isMessageNode(child))
-            out.push(child);
+        if (isMessageNode(child as HTMLElement)) out.push(child as HTMLElement);
     }
     return out;
 }
+
 /**
  * Groups message DOM nodes into ordered (query, response) pairs.
  */
-function derivePairs(messages) {
-    const pairs = [];
+function derivePairs(messages: HTMLElement[]): TagalystPair[] {
+    const pairs: TagalystPair[] = [];
     for (let i = 0; i < messages.length; i += 2) {
         const query = messages[i];
-        if (!query)
-            break;
+        if (!query) break;
         const response = messages[i + 1] || null;
         pairs.push({
             query,
@@ -809,43 +875,45 @@ function derivePairs(messages) {
     }
     return pairs;
 }
+
 /**
  * Returns every (query, response) pair within the current thread container.
  */
-function getPairs(root) {
+function getPairs(root: HTMLElement): TagalystPair[] {
     return derivePairs(enumerateMessages(root));
 }
+
 /**
  * Returns only the prompt (user query) nodes.
  */
-function getPromptNodes(root) {
-    return getPairs(root).map(p => p.query).filter(Boolean);
+function getPromptNodes(root: HTMLElement): HTMLElement[] {
+    return getPairs(root).map(p => p.query).filter(Boolean) as HTMLElement[];
 }
+
 /**
  * Returns nodes used for navigation (prompts when available, otherwise all messages).
  */
-function getNavigationNodes(root) {
+function getNavigationNodes(root: HTMLElement): HTMLElement[] {
     const prompts = getPromptNodes(root);
-    if (prompts.length)
-        return prompts;
+    if (prompts.length) return prompts;
     return enumerateMessages(root);
 }
+
 /**
  * Returns the p-th pair (0-indexed) or null if it does not exist.
  */
-function getPair(root, idx) {
-    if (idx < 0)
-        return null;
+function getPair(root: HTMLElement, idx: number): TagalystPair | null {
+    if (idx < 0) return null;
     return getPairs(root)[idx] || null;
 }
+
 // ---------------------- UI Injection ---------------------------
 /**
  * Injects global page controls once per document.
  */
-function ensurePageControls(container, threadKey) {
+function ensurePageControls(container: HTMLElement, threadKey: string) {
     const existing = document.getElementById('ext-page-controls');
-    if (existing)
-        existing.remove();
+    if (existing) existing.remove();
     const box = document.createElement('div');
     box.id = 'ext-page-controls';
     markExtNode(box);
@@ -885,71 +953,62 @@ function ensurePageControls(container, threadKey) {
   `;
     document.documentElement.appendChild(box);
     syncTopPanelWidth();
+
     /**
      * Scrolls to the indexed node (or nearest valid node) within the supplied list.
      */
-    function scrollToNode(idx, block = 'center', list) {
+    function scrollToNode(idx: number, block: ScrollLogicalPosition = 'center', list?: HTMLElement[]) {
         const nodes = list || getNavigationNodes(container);
-        if (!nodes.length)
-            return;
+        if (!nodes.length) return;
         const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
         const target = nodes[clamped];
-        if (target)
-            target.scrollIntoView({ behavior: 'smooth', block });
+        if (target) target.scrollIntoView({ behavior: 'smooth', block });
     }
+
     /**
      * Moves the focus navigation cursor forward/backward and scrolls into view.
      */
-    function scrollFocus(delta) {
+    function scrollFocus(delta: number) {
         const nodes = getFocusMatches();
-        if (!nodes.length)
-            return;
+        if (!nodes.length) return;
         if (focusNavIndex < 0 || focusNavIndex >= nodes.length) {
             focusNavIndex = delta >= 0 ? 0 : nodes.length - 1;
-        }
-        else {
+        } else {
             focusNavIndex = Math.max(0, Math.min(focusNavIndex + delta, nodes.length - 1));
         }
         const target = nodes[focusNavIndex];
-        if (target)
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-    const jumpFirstBtn = box.querySelector('#ext-jump-first');
-    const jumpLastBtn = box.querySelector('#ext-jump-last');
-    const jumpStarPrevBtn = box.querySelector('#ext-jump-star-prev');
-    const jumpStarNextBtn = box.querySelector('#ext-jump-star-next');
-    const collapseAllBtn = box.querySelector('#ext-collapse-all');
-    const collapseUnstarredBtn = box.querySelector('#ext-collapse-unstarred');
-    const expandAllBtn = box.querySelector('#ext-expand-all');
-    const expandStarredBtn = box.querySelector('#ext-expand-starred');
-    const exportAllBtn = box.querySelector('#ext-export-all');
-    const exportStarredBtn = box.querySelector('#ext-export-starred');
-    if (jumpFirstBtn)
-        jumpFirstBtn.onclick = () => scrollToNode(0, 'start');
+
+    const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');
+    const jumpLastBtn = box.querySelector<HTMLButtonElement>('#ext-jump-last');
+    const jumpStarPrevBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-prev');
+    const jumpStarNextBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-next');
+    const collapseAllBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-all');
+    const collapseUnstarredBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-unstarred');
+    const expandAllBtn = box.querySelector<HTMLButtonElement>('#ext-expand-all');
+    const expandStarredBtn = box.querySelector<HTMLButtonElement>('#ext-expand-starred');
+    const exportAllBtn = box.querySelector<HTMLButtonElement>('#ext-export-all');
+    const exportStarredBtn = box.querySelector<HTMLButtonElement>('#ext-export-starred');
+
+    if (jumpFirstBtn) jumpFirstBtn.onclick = () => scrollToNode(0, 'start');
     if (jumpLastBtn) {
         jumpLastBtn.onclick = () => {
             const nodes = getNavigationNodes(container);
-            if (!nodes.length)
-                return;
+            if (!nodes.length) return;
             scrollToNode(nodes.length - 1, 'end', nodes);
         };
     }
-    if (jumpStarPrevBtn)
-        jumpStarPrevBtn.onclick = () => { scrollFocus(-1); };
-    if (jumpStarNextBtn)
-        jumpStarNextBtn.onclick = () => { scrollFocus(1); };
-    if (collapseAllBtn)
-        collapseAllBtn.onclick = () => toggleAll(container, true);
-    if (collapseUnstarredBtn)
-        collapseUnstarredBtn.onclick = () => collapseByFocus(container, 'out', true);
-    if (expandAllBtn)
-        expandAllBtn.onclick = () => toggleAll(container, false);
-    if (expandStarredBtn)
-        expandStarredBtn.onclick = () => collapseByFocus(container, 'in', false);
-    if (exportAllBtn)
-        exportAllBtn.onclick = () => runExport(container, false);
-    if (exportStarredBtn)
-        exportStarredBtn.onclick = () => runExport(container, true);
+    if (jumpStarPrevBtn) jumpStarPrevBtn.onclick = () => { scrollFocus(-1); };
+    if (jumpStarNextBtn) jumpStarNextBtn.onclick = () => { scrollFocus(1); };
+    if (collapseAllBtn) collapseAllBtn.onclick = () => toggleAll(container, true);
+    if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => collapseByFocus(container, 'out', true);
+    if (expandAllBtn) expandAllBtn.onclick = () => toggleAll(container, false);
+    if (expandStarredBtn) expandStarredBtn.onclick = () => collapseByFocus(container, 'in', false);
+
+    if (exportAllBtn) exportAllBtn.onclick = () => runExport(container, false);
+    if (exportStarredBtn) exportStarredBtn.onclick = () => runExport(container, true);
+
     pageControls = {
         root: box,
         focusPrev: jumpStarPrevBtn,
@@ -960,21 +1019,22 @@ function ensurePageControls(container, threadKey) {
     };
     updateFocusControlsUI();
 }
+
 /**
  * Prepends the per-message toolbar and wires its handlers.
  */
-function injectToolbar(el, threadKey) {
-    let toolbar = el.querySelector('.ext-toolbar');
+function injectToolbar(el: HTMLElement, threadKey: string) {
+    let toolbar = el.querySelector<HTMLElement>('.ext-toolbar');
     if (toolbar) {
         if (toolbar.dataset.threadKey !== threadKey) {
             toolbar.closest('.ext-toolbar-row')?.remove();
             toolbar = null;
-        }
-        else {
+        } else {
             updateCollapseVisibility(el);
             return; // already wired for this thread
         }
     }
+
     const row = document.createElement('div');
     row.className = 'ext-toolbar-row';
     markExtNode(row);
@@ -989,18 +1049,19 @@ function injectToolbar(el, threadKey) {
     <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
   `;
     row.appendChild(wrap);
+
     // Events
-    const collapseBtn = wrap.querySelector('.ext-collapse');
-    const focusBtn = wrap.querySelector('.ext-focus-button');
-    const tagBtn = wrap.querySelector('.ext-tag');
-    const noteBtn = wrap.querySelector('.ext-note');
+    const collapseBtn = wrap.querySelector<HTMLButtonElement>('.ext-collapse');
+    const focusBtn = wrap.querySelector<HTMLButtonElement>('.ext-focus-button');
+    const tagBtn = wrap.querySelector<HTMLButtonElement>('.ext-tag');
+    const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
+
     if (collapseBtn) {
         collapseBtn.onclick = () => collapse(el, !el.classList.contains('ext-collapsed'));
     }
     if (focusBtn) {
         focusBtn.onclick = async () => {
-            if (focusState.mode !== FOCUS_MODES.STARS)
-                return;
+            if (focusState.mode !== FOCUS_MODES.STARS) return;
             const k = `${threadKey}:${keyForMessage(el)}`;
             const cur = (await getStore([k]))[k] || {};
             cur.starred = !cur.starred;
@@ -1009,10 +1070,9 @@ function injectToolbar(el, threadKey) {
             updateFocusControlsUI();
         };
     }
-    if (tagBtn)
-        tagBtn.onclick = () => openInlineTagEditor(el, threadKey);
-    if (noteBtn)
-        noteBtn.onclick = () => openInlineNoteEditor(el, threadKey);
+    if (tagBtn) tagBtn.onclick = () => openInlineTagEditor(el, threadKey);
+    if (noteBtn) noteBtn.onclick = () => openInlineNoteEditor(el, threadKey);
+
     wrap.dataset.threadKey = threadKey;
     el.prepend(row);
     toolbar = wrap;
@@ -1020,19 +1080,21 @@ function injectToolbar(el, threadKey) {
     updateCollapseVisibility(el);
     syncCollapseButton(el);
 }
+
 /**
  * Reads star/tag data for a message and updates its badges + CSS state.
  */
-function renderBadges(el, threadKey, value) {
+function renderBadges(el: HTMLElement, threadKey: string, value: MessageValue) {
     const k = `${threadKey}:${keyForMessage(el)}`;
     const cur = value || {};
     setMessageMeta(el, { key: k, value: cur });
-    const badges = el.querySelector('.ext-badges');
-    if (!badges)
-        return;
+    const badges = el.querySelector<HTMLElement>('.ext-badges');
+    if (!badges) return;
+
     // starred visual state
     const starred = !!cur.starred;
     el.classList.toggle('ext-starred', starred);
+
     // render tags
     badges.innerHTML = '';
     const tags = Array.isArray(cur.tags) ? cur.tags : [];
@@ -1042,6 +1104,7 @@ function renderBadges(el, threadKey, value) {
         span.textContent = t;
         badges.appendChild(span);
     }
+
     const note = typeof cur.note === 'string' ? cur.note.trim() : '';
     if (note) {
         const noteChip = document.createElement('span');
@@ -1052,29 +1115,28 @@ function renderBadges(el, threadKey, value) {
     }
     updateFocusButton(el, cur);
 }
+
 /**
  * Placeholder handler fired when the per-user custom toolbar button is pressed.
  */
-function handleUserToolbarButtonClick(messageEl) {
+function handleUserToolbarButtonClick(messageEl: HTMLElement) {
     const messageKey = keyForMessage(messageEl);
     console.info('[Tagalyst] User toolbar button clicked', { messageKey });
 }
+
 /**
  * Adds a user-only toolbar button to a message when applicable.
  */
-function ensureUserToolbarButton(el) {
-    const row = el.querySelector('.ext-toolbar-row');
-    if (!row)
-        return null;
+function ensureUserToolbarButton(el: HTMLElement): HTMLButtonElement | null {
+    const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
+    if (!row) return null;
     const role = el?.getAttribute?.('data-message-author-role');
-    const existing = row.querySelector('.ext-user-toolbar-button');
+    const existing = row.querySelector<HTMLButtonElement>('.ext-user-toolbar-button');
     if (role !== 'user') {
-        if (existing)
-            existing.remove();
+        if (existing) existing.remove();
         return null;
     }
-    if (existing)
-        return existing;
+    if (existing) return existing;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ext-user-toolbar-button';
@@ -1088,30 +1150,28 @@ function ensureUserToolbarButton(el) {
     row.appendChild(btn);
     return btn;
 }
+
 /**
  * Renders the left-aligned pair index badge for user messages.
  */
-function ensurePairNumber(el, pairIndex) {
+function ensurePairNumber(el: HTMLElement, pairIndex: number | null) {
     const role = el?.getAttribute?.('data-message-author-role');
     ensureUserToolbarButton(el);
     if (role !== 'user') {
-        const wrap = el.querySelector('.ext-pair-number-wrap');
-        if (wrap)
-            wrap.remove();
+        const wrap = el.querySelector<HTMLElement>('.ext-pair-number-wrap');
+        if (wrap) wrap.remove();
         return;
     }
-    if (typeof pairIndex !== 'number')
-        return;
-    const row = el.querySelector('.ext-toolbar-row');
-    if (!row)
-        return;
-    let wrap = row.querySelector('.ext-pair-number-wrap');
+    if (typeof pairIndex !== 'number') return;
+    const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
+    if (!row) return;
+    let wrap = row.querySelector<HTMLElement>('.ext-pair-number-wrap');
     if (!wrap) {
         wrap = document.createElement('div');
         wrap.className = 'ext-pair-number-wrap';
         row.insertBefore(wrap, row.firstChild);
     }
-    let badge = wrap.querySelector('.ext-pair-number');
+    let badge = wrap.querySelector<HTMLElement>('.ext-pair-number');
     if (!badge) {
         badge = document.createElement('span');
         badge.className = 'ext-pair-number';
@@ -1119,51 +1179,52 @@ function ensurePairNumber(el, pairIndex) {
     }
     badge.textContent = `${pairIndex + 1}.`;
 }
+
 /**
  * Toggles the collapse control visibility based on heuristics for the message.
  */
-function updateCollapseVisibility(el) {
-    const btn = el.querySelector('.ext-toolbar .ext-collapse');
-    if (!btn)
-        return;
+function updateCollapseVisibility(el: HTMLElement) {
+    const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
+    if (!btn) return;
     const show = shouldShowCollapseControl(el);
     btn.style.display = show ? '' : 'none';
 }
+
 /**
  * Updates collapse button glyph/title so it reflects the message state.
  */
-function syncCollapseButton(el) {
-    const btn = el.querySelector('.ext-toolbar .ext-collapse');
-    if (!btn)
-        return;
+function syncCollapseButton(el: HTMLElement) {
+    const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
+    if (!btn) return;
     const collapsed = el.classList.contains('ext-collapsed');
     btn.textContent = collapsed ? '+' : '−';
     btn.setAttribute('title', collapsed ? 'Expand message' : 'Collapse message');
     btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
     btn.setAttribute('aria-expanded', String(!collapsed));
 }
+
 /**
  * Toggles the collapsed state for one message block.
  */
-function collapse(el, yes) {
+function collapse(el: HTMLElement, yes: boolean) {
     el.classList.toggle('ext-collapsed', !!yes);
     syncCollapseButton(el);
 }
+
 /**
  * Applies collapse/expand state to every discovered message.
  */
-function toggleAll(container, yes) {
+function toggleAll(container: HTMLElement, yes: boolean) {
     const msgs = enumerateMessages(container);
-    for (const m of msgs)
-        collapse(m, !!yes);
+    for (const m of msgs) collapse(m, !!yes);
 }
+
 /**
  * Applies collapse state against the current focus subset.
  */
-function collapseByFocus(container, target, collapseState) {
+function collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
     const matches = getFocusMatches();
-    if (!matches.length)
-        return;
+    if (!matches.length) return;
     const matchSet = new Set(matches);
     for (const el of enumerateMessages(container)) {
         const isMatch = matchSet.has(el);
@@ -1172,21 +1233,25 @@ function collapseByFocus(container, target, collapseState) {
         }
     }
 }
+
 // ---------------------- Orchestration --------------------------
 /**
  * Entry point: finds the thread, injects UI, and watches for updates.
  */
-async function bootstrap() {
+async function bootstrap(): Promise<void> {
     // Wait a moment for the app shell to mount
     await sleep(600);
     await ensureConfigLoaded();
     teardownUI();
     const container = findTranscriptRoot();
+
     const threadKey = getThreadKey();
     ensurePageControls(container, threadKey);
     ensureTopPanels();
+
     let refreshRunning = false;
     let refreshQueued = false;
+
     async function refresh() {
         if (refreshRunning) {
             refreshQueued = true;
@@ -1197,24 +1262,21 @@ async function bootstrap() {
             do {
                 refreshQueued = false;
                 const msgs = enumerateMessages(container);
-                const pairMap = new Map();
+                const pairMap = new Map<HTMLElement, number>();
                 const pairs = getPairs(container);
                 pairs.forEach((pair, idx) => {
-                    if (pair.query)
-                        pairMap.set(pair.query, idx);
-                    if (pair.response)
-                        pairMap.set(pair.response, idx);
+                    if (pair.query) pairMap.set(pair.query, idx);
+                    if (pair.response) pairMap.set(pair.response, idx);
                 });
                 const entries = msgs.map(el => ({
                     el,
                     key: `${threadKey}:${keyForMessage(el)}`,
                     pairIndex: pairMap.get(el)
                 }));
-                if (!entries.length)
-                    break;
+                if (!entries.length) break;
                 const keys = entries.map(e => e.key);
                 const store = await getStore(keys);
-                const tagCounts = new Map();
+                const tagCounts = new Map<string, number>();
                 messageState.clear();
                 for (const { el, key, pairIndex } of entries) {
                     injectToolbar(el, threadKey);
@@ -1223,8 +1285,7 @@ async function bootstrap() {
                     setMessageMeta(el, { key, value, pairIndex });
                     if (value && Array.isArray(value.tags)) {
                         for (const t of value.tags) {
-                            if (!t)
-                                continue;
+                            if (!t) continue;
                             tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
                         }
                     }
@@ -1236,29 +1297,29 @@ async function bootstrap() {
                 updateTagList(sortedTags);
                 refreshFocusButtons();
             } while (refreshQueued);
-        }
-        finally {
+        } finally {
             refreshRunning = false;
         }
     }
+
     const requestRefresh = () => {
-        const boot = bootstrap;
-        if (boot._raf)
-            cancelAnimationFrame(boot._raf);
+        const boot = bootstrap as BootstrapWithMeta;
+        if (boot._raf) cancelAnimationFrame(boot._raf);
         boot._raf = requestAnimationFrame(refresh);
     };
-    const boot = bootstrap;
+    const boot = bootstrap as BootstrapWithMeta;
     boot._requestRefresh = requestRefresh;
+
     // Initial pass and observe for changes
     refresh();
     const mo = new MutationObserver((records) => {
-        if (!records.some(mutationTouchesExternal))
-            return;
+        if (!records.some(mutationTouchesExternal)) return;
         requestRefresh();
     });
     mo.observe(container, { childList: true, subtree: true });
     boot._observer = mo;
 }
+
 // Some pages use SPA routing; re-bootstrap on URL changes
 let lastHref = location.href;
 new MutationObserver(() => {
@@ -1267,25 +1328,26 @@ new MutationObserver(() => {
         bootstrap();
     }
 }).observe(document, { subtree: true, childList: true });
+
 // Surface a minimal pairing API for scripts / devtools.
 window.__tagalyst = Object.assign(window.__tagalyst || {}, {
-    getThreadPairs: () => {
+    getThreadPairs: (): TagalystPair[] => {
         const root = findTranscriptRoot();
         return getPairs(root);
     },
-    getThreadPair: (idx) => {
+    getThreadPair: (idx: number): TagalystPair | null => {
         const root = findTranscriptRoot();
         return getPair(root, idx);
     },
-});
+}) as TagalystApi;
+
 // First boot
 bootstrap();
 /**
  * Creates or returns the floating Search/Tags panel container.
  */
-function ensureTopPanels() {
-    if (topPanelsEl)
-        return topPanelsEl;
+function ensureTopPanels(): HTMLElement {
+    if (topPanelsEl) return topPanelsEl;
     const wrap = document.createElement('div');
     wrap.id = 'ext-top-panels';
     wrap.innerHTML = `
@@ -1301,12 +1363,12 @@ function ensureTopPanels() {
     markExtNode(wrap);
     document.body.appendChild(wrap);
     topPanelsEl = wrap;
-    tagListEl = wrap.querySelector('#ext-tag-list');
-    searchInputEl = wrap.querySelector('.ext-search-input');
+    tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
+    searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
     if (searchInputEl) {
         searchInputEl.value = focusState.searchQuery;
         searchInputEl.addEventListener('input', (evt) => {
-            const target = evt.target;
+            const target = evt.target as HTMLInputElement;
             handleSearchInput(target.value);
         });
     }
@@ -1314,13 +1376,13 @@ function ensureTopPanels() {
     syncTopPanelWidth();
     return wrap;
 }
+
 /**
  * Rebuilds the tag list UI with the latest frequency counts.
  */
-function updateTagList(counts) {
+function updateTagList(counts: Array<{ tag: string; count: number }>) {
     ensureTopPanels();
-    if (!tagListEl)
-        return;
+    if (!tagListEl) return;
     tagListEl.innerHTML = '';
     tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
     if (!counts.length) {
@@ -1347,29 +1409,29 @@ function updateTagList(counts) {
     }
     syncTagSidebarSelectionUI();
 }
+
 /**
  * Generates Markdown for the current thread and writes it to the clipboard.
  */
-function runExport(container, focusOnly) {
+function runExport(container: HTMLElement, focusOnly: boolean) {
     try {
         const md = exportThreadToMarkdown(container, focusOnly);
         navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
-    }
-    catch (err) {
+    } catch (err) {
         console.error('Export failed', err);
     }
 }
+
 /**
  * Builds a Markdown document for the thread, optionally limited to focus matches.
  */
-function exportThreadToMarkdown(container, focusOnly) {
+function exportThreadToMarkdown(container: HTMLElement, focusOnly: boolean): string {
     const pairs = getPairs(container);
     const sections = [];
     pairs.forEach((pair, idx) => {
         const num = idx + 1;
         const isFocused = focusOnly ? isPairFocused(pair) : true;
-        if (focusOnly && !isFocused)
-            return;
+        if (focusOnly && !isFocused) return;
         const query = pair.query ? pair.query.innerText.trim() : '';
         const response = pair.response ? pair.response.innerText.trim() : '';
         const lines = [];
@@ -1377,47 +1439,43 @@ function exportThreadToMarkdown(container, focusOnly) {
             lines.push(`### ${num}. Prompt`, '', query);
         }
         if (response) {
-            if (lines.length)
-                lines.push('');
+            if (lines.length) lines.push('');
             lines.push(`### ${num}. Response`, '', response);
         }
-        if (lines.length)
-            sections.push(lines.join('\n'));
+        if (lines.length) sections.push(lines.join('\n'));
     });
     return sections.join('\n\n');
 }
+
 /**
  * Determines whether any node within a (query, response) pair is currently focused.
  */
-function isPairFocused(pair) {
+function isPairFocused(pair: TagalystPair) {
     const nodes = [];
-    if (pair.query)
-        nodes.push(pair.query);
-    if (pair.response)
-        nodes.push(pair.response);
+    if (pair.query) nodes.push(pair.query);
+    if (pair.response) nodes.push(pair.response);
     return nodes.some(node => {
         const meta = messageState.get(node);
         return isMessageFocused(node, meta?.value || {});
     });
 }
+
 /**
  * Keeps the Search/Tags panel width aligned with the bottom controls.
  */
 function syncTopPanelWidth() {
-    if (!topPanelsEl)
-        return;
+    if (!topPanelsEl) return;
     const controls = document.getElementById('ext-page-controls');
     const refWidth = controls ? controls.getBoundingClientRect().width : null;
     const width = refWidth && refWidth > 0 ? refWidth : topPanelsEl.getBoundingClientRect().width || 200;
     topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
 }
+
 if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'local')
-            return;
+        if (areaName !== 'local') return;
         const change = changes[CONTENT_CONFIG_STORAGE_KEY];
-        if (!change)
-            return;
+        if (!change) return;
         applyConfigObject(change.newValue);
     });
 }
