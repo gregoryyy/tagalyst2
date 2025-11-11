@@ -28,11 +28,11 @@ declare global {
      */
     interface ThreadAdapter {
         getTranscriptRoot(): HTMLElement | null;
-        getMessages(root: HTMLElement): HTMLElement[];
-        getPairs(root: HTMLElement): TagalystPair[];
-        getPromptNodes(root: HTMLElement): HTMLElement[];
-        getNavigationNodes(root: HTMLElement): HTMLElement[];
-        getPair(root: HTMLElement, index: number): TagalystPair | null;
+        getMessages(root: HTMLElement): MessageAdapter[];
+        getPairs(root: HTMLElement): PairAdapter[];
+        getPromptMessages(root: HTMLElement): MessageAdapter[];
+        getNavigationMessages(root: HTMLElement): MessageAdapter[];
+        getPairAt(root: HTMLElement, index: number): PairAdapter | null;
         observe(root: HTMLElement, callback: MutationCallback): void;
         disconnect(): void;
     }

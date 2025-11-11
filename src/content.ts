@@ -847,7 +847,9 @@ function isMessageNode(el: HTMLElement) {
  * Returns all message nodes, preferring the native role attribute.
  */
 function enumerateMessages(root: HTMLElement): HTMLElement[] {
-    return activeThreadAdapter?.getMessages(root) ?? defaultEnumerateMessages(root);
+    const adapters = activeThreadAdapter?.getMessages(root);
+    if (adapters) return adapters.map(adapter => adapter.element);
+    return defaultEnumerateMessages(root);
 }
 
 function defaultEnumerateMessages(root: HTMLElement): HTMLElement[] {
@@ -889,7 +891,9 @@ function defaultDerivePairs(messages: HTMLElement[]): TagalystPair[] {
  * Returns every (query, response) pair within the current thread container.
  */
 function getPairs(root: HTMLElement): TagalystPair[] {
-    return activeThreadAdapter?.getPairs(root) ?? defaultGetPairs(root);
+    const adapterPairs = activeThreadAdapter?.getPairs(root);
+    if (adapterPairs) return adapterPairs.map(toTagalystPair);
+    return defaultGetPairs(root);
 }
 
 function defaultGetPairs(root: HTMLElement): TagalystPair[] {
@@ -900,7 +904,9 @@ function defaultGetPairs(root: HTMLElement): TagalystPair[] {
  * Returns only the prompt (user query) nodes.
  */
 function getPromptNodes(root: HTMLElement): HTMLElement[] {
-    return activeThreadAdapter?.getPromptNodes(root) ?? defaultGetPromptNodes(root);
+    const adapters = activeThreadAdapter?.getPromptMessages(root);
+    if (adapters) return adapters.map(adapter => adapter.element);
+    return defaultGetPromptNodes(root);
 }
 
 function defaultGetPromptNodes(root: HTMLElement): HTMLElement[] {
@@ -911,7 +917,9 @@ function defaultGetPromptNodes(root: HTMLElement): HTMLElement[] {
  * Returns nodes used for navigation (prompts when available, otherwise all messages).
  */
 function getNavigationNodes(root: HTMLElement): HTMLElement[] {
-    return activeThreadAdapter?.getNavigationNodes(root) ?? defaultGetNavigationNodes(root);
+    const adapters = activeThreadAdapter?.getNavigationMessages(root);
+    if (adapters) return adapters.map(adapter => adapter.element);
+    return defaultGetNavigationNodes(root);
 }
 
 function defaultGetNavigationNodes(root: HTMLElement): HTMLElement[] {
@@ -924,12 +932,55 @@ function defaultGetNavigationNodes(root: HTMLElement): HTMLElement[] {
  * Returns the p-th pair (0-indexed) or null if it does not exist.
  */
 function getPair(root: HTMLElement, idx: number): TagalystPair | null {
-    return activeThreadAdapter?.getPair(root, idx) ?? defaultGetPair(root, idx);
+    const adapterPair = activeThreadAdapter?.getPairAt(root, idx);
+    if (adapterPair) return toTagalystPair(adapterPair);
+    return defaultGetPair(root, idx);
 }
 
 function defaultGetPair(root: HTMLElement, idx: number): TagalystPair | null {
     if (idx < 0) return null;
     return defaultGetPairs(root)[idx] || null;
+}
+
+function toTagalystPair(pair: PairAdapter): TagalystPair {
+    const queryEl = pair.query?.element || null;
+    const responseEl = pair.response?.element || null;
+    return {
+        query: queryEl,
+        response: responseEl,
+        queryId: queryEl ? getMessageId(queryEl) : null,
+        responseId: responseEl ? getMessageId(responseEl) : null,
+    };
+}
+
+class DomMessageAdapter implements MessageAdapter {
+    readonly key: string;
+    readonly role: string;
+
+    constructor(readonly element: HTMLElement) {
+        this.key = keyForMessage(element);
+        this.role = element.getAttribute('data-message-author-role') || 'unknown';
+    }
+
+    getText(): string {
+        return normalizeText(this.element.innerText || '');
+    }
+
+    shouldShowCollapse(): boolean {
+        return shouldShowCollapseControl(this.element);
+    }
+}
+
+class DomPairAdapter implements PairAdapter {
+    constructor(
+        readonly index: number,
+        readonly query: MessageAdapter | null,
+        readonly response: MessageAdapter | null,
+    ) { }
+
+    getMessages(): MessageAdapter[] {
+        return [this.query, this.response].filter(Boolean) as MessageAdapter[];
+    }
 }
 
 class ChatGptThreadAdapter implements ThreadAdapter {
@@ -939,24 +990,30 @@ class ChatGptThreadAdapter implements ThreadAdapter {
         return defaultFindTranscriptRoot();
     }
 
-    getMessages(root: HTMLElement): HTMLElement[] {
-        return defaultEnumerateMessages(root);
+    getMessages(root: HTMLElement): MessageAdapter[] {
+        return this.buildMessageAdapters(root);
     }
 
-    getPairs(root: HTMLElement): TagalystPair[] {
-        return defaultGetPairs(root);
+    getPairs(root: HTMLElement): PairAdapter[] {
+        return this.buildPairAdapters(root);
     }
 
-    getPromptNodes(root: HTMLElement): HTMLElement[] {
-        return defaultGetPromptNodes(root);
+    getPromptMessages(root: HTMLElement): MessageAdapter[] {
+        return this.buildPairAdapters(root)
+            .map(pair => pair.query)
+            .filter(Boolean) as MessageAdapter[];
     }
 
-    getNavigationNodes(root: HTMLElement): HTMLElement[] {
-        return defaultGetNavigationNodes(root);
+    getNavigationMessages(root: HTMLElement): MessageAdapter[] {
+        const prompts = this.getPromptMessages(root);
+        if (prompts.length) return prompts;
+        return this.buildMessageAdapters(root);
     }
 
-    getPair(root: HTMLElement, index: number): TagalystPair | null {
-        return defaultGetPair(root, index);
+    getPairAt(root: HTMLElement, index: number): PairAdapter | null {
+        const pairs = this.buildPairAdapters(root);
+        if (index < 0 || index >= pairs.length) return null;
+        return pairs[index];
     }
 
     observe(root: HTMLElement, callback: MutationCallback): void {
@@ -970,6 +1027,21 @@ class ChatGptThreadAdapter implements ThreadAdapter {
             this.observer.disconnect();
             this.observer = null;
         }
+    }
+
+    private buildMessageAdapters(root: HTMLElement): DomMessageAdapter[] {
+        return defaultEnumerateMessages(root).map(el => new DomMessageAdapter(el));
+    }
+
+    private buildPairAdapters(root: HTMLElement): DomPairAdapter[] {
+        const messages = this.buildMessageAdapters(root);
+        const pairs: DomPairAdapter[] = [];
+        for (let i = 0; i < messages.length; i += 2) {
+            const query = messages[i] || null;
+            const response = messages[i + 1] || null;
+            pairs.push(new DomPairAdapter(pairs.length, query, response));
+        }
+        return pairs;
     }
 }
 
