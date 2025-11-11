@@ -210,14 +210,17 @@ function requestRefresh() {
  * Applies config toggles to in-memory focus state and any existing inputs.
  */
 function enforceConfigState() {
+    let changed = false;
     if (!isSearchEnabled()) {
-        focusState.searchQuery = '';
-        focusState.searchQueryLower = '';
+        focusService.setSearchQuery('');
         if (searchInputEl) searchInputEl.value = '';
+        changed = true;
     }
     if (!areTagsEnabled()) {
-        focusState.selectedTags.clear();
+        focusService.clearTags();
+        changed = true;
     }
+    if (changed) syncFocusMode();
 }
 
 /**
@@ -266,44 +269,24 @@ function updateConfigUI() {
  * Clears focus-related caches and returns the UI to its default state.
  */
 function resetFocusState() {
-    focusState.selectedTags.clear();
-    focusState.searchQuery = '';
-    focusState.searchQueryLower = '';
-    focusState.mode = FOCUS_MODES.STARS;
+    focusService.reset();
     searchInputEl = null;
     pageControls = null;
     messageState.clear();
 }
 
 /**
- * Determines which focus mode should drive navigation and filtering.
- */
-function computeFocusMode() {
-    if (isSearchEnabled() && focusState.searchQueryLower) return FOCUS_MODES.SEARCH;
-    if (areTagsEnabled() && focusState.selectedTags.size) return FOCUS_MODES.TAGS;
-    return FOCUS_MODES.STARS;
-}
-
-/**
  * Provides a human-readable label for the current focus mode.
  */
 function describeFocusMode() {
-    switch (focusState.mode) {
-        case FOCUS_MODES.TAGS:
-            return 'selected tags';
-        case FOCUS_MODES.SEARCH:
-            return 'search results';
-        default:
-            return 'starred items';
-    }
+    return focusService.describeMode();
 }
 
 /**
  * Returns the glyph pair (empty/filled) for the given mode plus toggle state.
  */
 function getFocusGlyph(isFilled: boolean) {
-    const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
-    return isFilled ? glyph.filled : glyph.empty;
+    return focusService.getGlyph(isFilled);
 }
 
 /**
@@ -347,47 +330,10 @@ function resolveAdapterForElement(el: HTMLElement): MessageAdapter {
 /**
  * Determines whether the stored value includes any of the currently selected tags.
  */
-function matchesSelectedTags(value: MessageValue) {
-    if (!areTagsEnabled() || !focusState.selectedTags.size) return false;
-    const tags = Array.isArray(value?.tags) ? value.tags : [];
-    if (!tags.length) return false;
-    return tags.some(tag => focusState.selectedTags.has(tag));
-}
-
-/**
- * Performs a text match against the active search query for the supplied node.
- */
-function matchesSearchQuery(meta: MessageMeta, el: HTMLElement) {
-    const query = focusState.searchQueryLower;
-    if (!query) return false;
-    const adapter = meta.adapter;
-    const textSource = adapter ? adapter.getText() : normalizeText(el?.innerText || '');
-    const text = textSource.toLowerCase();
-    return text.includes(query);
-}
-
-/**
- * Tests whether a message should be considered part of the active focus set.
- */
-function isMessageFocused(meta: MessageMeta, el: HTMLElement) {
-    const value = meta.value;
-    switch (focusState.mode) {
-        case FOCUS_MODES.TAGS:
-            return matchesSelectedTags(value);
-        case FOCUS_MODES.SEARCH:
-            return matchesSearchQuery(meta, el);
-        default:
-            return !!value?.starred;
-    }
-}
-
-/**
- * Synchronizes the per-message focus button with star/search/tag state.
- */
 function updateFocusButton(el: HTMLElement, meta: MessageMeta) {
     const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
     if (!btn) return;
-    const active = isMessageFocused(meta, el);
+    const active = focusService.isMessageFocused(meta, el);
     const glyph = getFocusGlyph(active);
     if (btn.textContent !== glyph) btn.textContent = glyph;
     const pressed = String(active);
@@ -395,7 +341,7 @@ function updateFocusButton(el: HTMLElement, meta: MessageMeta) {
         btn.setAttribute('aria-pressed', pressed);
     }
     const focusDesc = describeFocusMode();
-    const interactive = focusState.mode === FOCUS_MODES.STARS;
+    const interactive = focusService.getMode() === FOCUS_MODES.STARS;
     const disabled = !interactive;
     if (btn.disabled !== disabled) {
         if (disabled) {
@@ -439,8 +385,7 @@ function refreshFocusButtons() {
  * Re-evaluates which focus mode is active and updates dependent UI affordances.
  */
 function syncFocusMode() {
-    focusState.mode = computeFocusMode();
-    focusNavIndex = -1;
+    focusService.syncMode();
     refreshFocusButtons();
     updateFocusControlsUI();
     syncTagSidebarSelectionUI();
@@ -450,32 +395,14 @@ function syncFocusMode() {
  * Returns the list of message adapters that currently match the focus filter.
  */
 function getFocusMatches(): MessageAdapter[] {
-    const nodes: MessageAdapter[] = [];
-    messageState.forEach((meta, el) => {
-        if (!document.contains(el)) {
-            messageState.delete(el);
-            return;
-        }
-        const adapter = meta.adapter || resolveAdapterForElement(el);
-        if (isMessageFocused(meta, el)) {
-            nodes.push(adapter);
-        }
-    });
-    return nodes;
+    return focusService.getMatches(messageState);
 }
 
 /**
  * Returns a short user-facing label for whichever focus type is active.
  */
 function focusSetLabel() {
-    switch (focusState.mode) {
-        case FOCUS_MODES.TAGS:
-            return 'tagged message';
-        case FOCUS_MODES.SEARCH:
-            return 'search hit';
-        default:
-            return 'starred message';
-    }
+    return focusService.getModeLabel();
 }
 
 /**
@@ -483,7 +410,8 @@ function focusSetLabel() {
  */
 function updateFocusControlsUI() {
     if (!pageControls) return;
-    const glyph = focusGlyphs[focusState.mode] || focusGlyphs[FOCUS_MODES.STARS];
+    const mode = focusService.getMode();
+    const glyph = focusGlyphs[mode] || focusGlyphs[FOCUS_MODES.STARS];
     const desc = focusSetLabel();
     if (pageControls.focusPrev) {
         pageControls.focusPrev.textContent = `${glyph.filled}↑`;
@@ -514,7 +442,7 @@ function syncTagSidebarSelectionUI() {
     if (!tagListEl) return;
     tagListEl.querySelectorAll<HTMLElement>('.ext-tag-sidebar-row').forEach(row => {
         const tag = row.dataset.tag;
-        row.classList.toggle('ext-tag-selected', !!(tag && focusState.selectedTags.has(tag)));
+        row.classList.toggle('ext-tag-selected', !!(tag && focusService.isTagSelected(tag)));
     });
 }
 
@@ -523,9 +451,7 @@ function syncTagSidebarSelectionUI() {
  */
 function handleSearchInput(value: string) {
     if (!isSearchEnabled()) return;
-    const normalized = (value || '').trim();
-    focusState.searchQuery = normalized;
-    focusState.searchQueryLower = normalized.toLowerCase();
+    focusService.setSearchQuery(value || '');
     syncFocusMode();
 }
 
@@ -534,12 +460,7 @@ function handleSearchInput(value: string) {
  */
 function toggleTagSelection(tag: string) {
     if (!areTagsEnabled()) return;
-    if (!tag) return;
-    if (focusState.selectedTags.has(tag)) {
-        focusState.selectedTags.delete(tag);
-    } else {
-        focusState.selectedTags.add(tag);
-    }
+    focusService.toggleTag(tag);
     syncFocusMode();
 }
 
@@ -564,23 +485,155 @@ const focusGlyphs: Record<FocusMode, { empty: string; filled: string }> = {
     [FOCUS_MODES.SEARCH]: { empty: '□', filled: '■' },
 };
 
-type FocusState = {
-    mode: FocusMode;
-    selectedTags: Set<string>;
-    searchQuery: string;
-    searchQueryLower: string;
-};
+class FocusService {
+    private mode: FocusMode = FOCUS_MODES.STARS;
+    private readonly selectedTags = new Set<string>();
+    private searchQuery = '';
+    private searchQueryLower = '';
+    private navIndex = -1;
 
-const focusState: FocusState = {
-    mode: FOCUS_MODES.STARS,
-    selectedTags: new Set<string>(),
-    searchQuery: '',
-    searchQueryLower: '',
-};
+    reset() {
+        this.selectedTags.clear();
+        this.searchQuery = '';
+        this.searchQueryLower = '';
+        this.mode = FOCUS_MODES.STARS;
+        this.navIndex = -1;
+    }
+
+    setSearchQuery(raw: string) {
+        const normalized = (raw || '').trim();
+        this.searchQuery = normalized;
+        this.searchQueryLower = normalized.toLowerCase();
+    }
+
+    toggleTag(tag: string) {
+        if (!tag) return;
+        if (this.selectedTags.has(tag)) {
+            this.selectedTags.delete(tag);
+        } else {
+            this.selectedTags.add(tag);
+        }
+    }
+
+    clearTags() {
+        if (this.selectedTags.size) {
+            this.selectedTags.clear();
+        }
+    }
+
+    isTagSelected(tag: string): boolean {
+        return this.selectedTags.has(tag);
+    }
+
+    getTags(): string[] {
+        return Array.from(this.selectedTags);
+    }
+
+    getSearchQuery(): string {
+        return this.searchQuery;
+    }
+
+    getMode(): FocusMode {
+        return this.mode;
+    }
+
+    describeMode(): string {
+        switch (this.mode) {
+            case FOCUS_MODES.TAGS:
+                return 'selected tags';
+            case FOCUS_MODES.SEARCH:
+                return 'search results';
+            default:
+                return 'starred items';
+        }
+    }
+
+    getModeLabel(): string {
+        switch (this.mode) {
+            case FOCUS_MODES.TAGS:
+                return 'tagged message';
+            case FOCUS_MODES.SEARCH:
+                return 'search hit';
+            default:
+                return 'starred message';
+        }
+    }
+
+    getGlyph(isFilled: boolean): string {
+        const glyph = focusGlyphs[this.mode] || focusGlyphs[FOCUS_MODES.STARS];
+        return isFilled ? glyph.filled : glyph.empty;
+    }
+
+    computeMode(): FocusMode {
+        if (isSearchEnabled() && this.searchQueryLower) return FOCUS_MODES.SEARCH;
+        if (areTagsEnabled() && this.selectedTags.size) return FOCUS_MODES.TAGS;
+        return FOCUS_MODES.STARS;
+    }
+
+    syncMode() {
+        this.mode = this.computeMode();
+        this.navIndex = -1;
+    }
+
+    isMessageFocused(meta: MessageMeta, el: HTMLElement): boolean {
+        switch (this.mode) {
+            case FOCUS_MODES.TAGS:
+                return this.matchesSelectedTags(meta.value);
+            case FOCUS_MODES.SEARCH:
+                return this.matchesSearch(meta, el);
+            default:
+                return !!meta.value?.starred;
+        }
+    }
+
+    getMatches(state: Map<HTMLElement, MessageMeta>): MessageAdapter[] {
+        const matches: MessageAdapter[] = [];
+        state.forEach((meta, el) => {
+            if (!document.contains(el)) {
+                state.delete(el);
+                return;
+            }
+            const adapter = meta.adapter || resolveAdapterForElement(el);
+            if (this.isMessageFocused(meta, el)) {
+                matches.push(adapter);
+            }
+        });
+        return matches;
+    }
+
+    adjustNav(delta: number, total: number): number {
+        if (total <= 0) {
+            this.navIndex = -1;
+            return this.navIndex;
+        }
+        if (this.navIndex < 0 || this.navIndex >= total) {
+            this.navIndex = delta >= 0 ? 0 : total - 1;
+        } else {
+            this.navIndex = Math.max(0, Math.min(this.navIndex + delta, total - 1));
+        }
+        return this.navIndex;
+    }
+
+    private matchesSelectedTags(value: MessageValue): boolean {
+        if (!areTagsEnabled() || !this.selectedTags.size) return false;
+        const tags = Array.isArray(value?.tags) ? value.tags : [];
+        if (!tags.length) return false;
+        return tags.some(tag => this.selectedTags.has(tag));
+    }
+
+    private matchesSearch(meta: MessageMeta, el: HTMLElement): boolean {
+        if (!this.searchQueryLower) return false;
+        const adapter = meta.adapter;
+        const textSource = adapter ? adapter.getText() : normalizeText(el?.innerText || '');
+        const text = textSource.toLowerCase();
+        return text.includes(this.searchQueryLower);
+    }
+}
+
+const focusService = new FocusService();
 
 const messageState = new Map<HTMLElement, MessageMeta>();
 let pageControls: PageControls | null = null;
-let focusNavIndex = -1;
 
 /**
  * Closes any open inline tag editor and resets associated state.
@@ -1142,12 +1195,9 @@ function ensurePageControls(container: HTMLElement, threadKey: string) {
     function scrollFocus(delta: number) {
         const adapters = getFocusMatches();
         if (!adapters.length) return;
-        if (focusNavIndex < 0 || focusNavIndex >= adapters.length) {
-            focusNavIndex = delta >= 0 ? 0 : adapters.length - 1;
-        } else {
-            focusNavIndex = Math.max(0, Math.min(focusNavIndex + delta, adapters.length - 1));
-        }
-        const target = adapters[focusNavIndex];
+        const idx = focusService.adjustNav(delta, adapters.length);
+        if (idx < 0 || idx >= adapters.length) return;
+        const target = adapters[idx];
         if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -1232,7 +1282,7 @@ function injectToolbar(el: HTMLElement, threadKey: string) {
     }
     if (focusBtn) {
         focusBtn.onclick = async () => {
-            if (focusState.mode !== FOCUS_MODES.STARS) return;
+            if (focusService.getMode() !== FOCUS_MODES.STARS) return;
             const adapter = resolveAdapterForElement(el);
             const k = `${threadKey}:${adapter.key}`;
             const cur = (await getStore([k]))[k] || {};
@@ -1544,7 +1594,7 @@ function ensureTopPanels(): HTMLElement {
     tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
     searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
     if (searchInputEl) {
-        searchInputEl.value = focusState.searchQuery;
+        searchInputEl.value = focusService.getSearchQuery();
         searchInputEl.addEventListener('input', (evt) => {
             const target = evt.target as HTMLInputElement;
             handleSearchInput(target.value);
@@ -1581,7 +1631,7 @@ function updateTagList(counts: Array<{ tag: string; count: number }>) {
         badge.className = 'ext-tag-sidebar-count';
         badge.textContent = String(count);
         row.append(label, badge);
-        row.classList.toggle('ext-tag-selected', focusState.selectedTags.has(tag));
+        row.classList.toggle('ext-tag-selected', focusService.isTagSelected(tag));
         row.addEventListener('click', () => toggleTagSelection(tag));
         tagListEl.appendChild(row);
     }
@@ -1635,7 +1685,7 @@ function isPairFocused(pair: TagalystPair) {
     return nodes.some(node => {
         const meta = messageState.get(node);
         if (!meta) return false;
-        return isMessageFocused(meta, node);
+        return focusService.isMessageFocused(meta, node);
     });
 }
 
