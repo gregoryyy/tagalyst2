@@ -37,7 +37,7 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 
 ## Development
 - Install deps: `npm install` (brings in TypeScript + Chrome types only).
-- Source of truth lives in `src/content.ts` and `options/options.ts`. The emitted `.js` siblings (`content/content.js`, `options/options.js`) are what MV3 actually loads, so remember to rebuild after edits.
+- Source of truth lives in `src/content.ts` and `src/options.ts`. The emitted `.js` siblings (`content/content.js`, `options/options.js`) are what MV3 actually loads, so remember to rebuild after edits.
 - Build once: `npm run build` (runs `tsc -b` to compile both the content + options projects and rewrite the JS artifacts in-place).
 - Live edit loop: `npm run watch` to keep `tsc -b` running, then hit “Reload” on the Chrome extensions page when files update.
 - Ambient Chrome + window globals are declared in `src/types/globals.d.ts`. Update that file if you add new surface APIs so `tsc` stays happy.

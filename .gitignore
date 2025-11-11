@@ -6,5 +6,5 @@ package-lock.json
 *.tsbuildinfo
 .tsbuild/
 # remove js
-#options/options.js
-#content/content.js
+options/options.js
+content/content.js
