@@ -3,6 +3,7 @@
   "version": "0.1.5",
   "private": true,
   "scripts": {
+    "clean": "rm -rf .tsbuild content/content.js options/options.js",
     "build": "tsc -b",
     "watch": "tsc -b --watch --preserveWatchOutput"
   },

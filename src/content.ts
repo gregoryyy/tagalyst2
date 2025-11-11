@@ -104,12 +104,12 @@ let config = { ...contentDefaultConfig };
 let configLoaded = false;
 let searchToggleEl: HTMLElement | null = null;
 let tagToggleEl: HTMLElement | null = null;
+let activeThreadAdapter: ThreadAdapter | null = null;
 
 /**
  * Augments the bootstrap function with stateful fields used across modules.
  */
 type BootstrapWithMeta = ((...args: unknown[]) => Promise<void>) & {
-    _observer?: MutationObserver | null;
     _requestRefresh?: () => void;
     _raf?: number;
 };
@@ -598,11 +598,8 @@ function teardownUI() {
         topPanelsEl = null;
     }
     resetFocusState();
-    const boot = bootstrap as BootstrapWithMeta;
-    if (boot._observer) {
-        boot._observer.disconnect();
-        boot._observer = null;
-    }
+    activeThreadAdapter?.disconnect();
+    activeThreadAdapter = null;
 }
 
 async function openInlineTagEditor(messageEl: HTMLElement, threadKey: string) {
@@ -820,6 +817,10 @@ function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => vo
  * Finds the primary scrollable container that holds the conversation.
  */
 function findTranscriptRoot(): HTMLElement {
+    return activeThreadAdapter?.getTranscriptRoot() ?? defaultFindTranscriptRoot();
+}
+
+function defaultFindTranscriptRoot(): HTMLElement {
     const main = (document.querySelector('main') as HTMLElement) || document.body;
     const candidates = Array.from(main.querySelectorAll<HTMLElement>('*')).filter(el => {
         const s = getComputedStyle(el);
@@ -846,6 +847,10 @@ function isMessageNode(el: HTMLElement) {
  * Returns all message nodes, preferring the native role attribute.
  */
 function enumerateMessages(root: HTMLElement): HTMLElement[] {
+    return activeThreadAdapter?.getMessages(root) ?? defaultEnumerateMessages(root);
+}
+
+function defaultEnumerateMessages(root: HTMLElement): HTMLElement[] {
     const attrMatches = Array.from(root.querySelectorAll<HTMLElement>('[data-message-author-role]'));
     if (attrMatches.length) return attrMatches;
 
@@ -861,6 +866,10 @@ function enumerateMessages(root: HTMLElement): HTMLElement[] {
  * Groups message DOM nodes into ordered (query, response) pairs.
  */
 function derivePairs(messages: HTMLElement[]): TagalystPair[] {
+    return defaultDerivePairs(messages);
+}
+
+function defaultDerivePairs(messages: HTMLElement[]): TagalystPair[] {
     const pairs: TagalystPair[] = [];
     for (let i = 0; i < messages.length; i += 2) {
         const query = messages[i];
@@ -880,31 +889,88 @@ function derivePairs(messages: HTMLElement[]): TagalystPair[] {
  * Returns every (query, response) pair within the current thread container.
  */
 function getPairs(root: HTMLElement): TagalystPair[] {
-    return derivePairs(enumerateMessages(root));
+    return activeThreadAdapter?.getPairs(root) ?? defaultGetPairs(root);
+}
+
+function defaultGetPairs(root: HTMLElement): TagalystPair[] {
+    return defaultDerivePairs(defaultEnumerateMessages(root));
 }
 
 /**
  * Returns only the prompt (user query) nodes.
  */
 function getPromptNodes(root: HTMLElement): HTMLElement[] {
-    return getPairs(root).map(p => p.query).filter(Boolean) as HTMLElement[];
+    return activeThreadAdapter?.getPromptNodes(root) ?? defaultGetPromptNodes(root);
+}
+
+function defaultGetPromptNodes(root: HTMLElement): HTMLElement[] {
+    return defaultGetPairs(root).map(p => p.query).filter(Boolean) as HTMLElement[];
 }
 
 /**
  * Returns nodes used for navigation (prompts when available, otherwise all messages).
  */
 function getNavigationNodes(root: HTMLElement): HTMLElement[] {
-    const prompts = getPromptNodes(root);
+    return activeThreadAdapter?.getNavigationNodes(root) ?? defaultGetNavigationNodes(root);
+}
+
+function defaultGetNavigationNodes(root: HTMLElement): HTMLElement[] {
+    const prompts = defaultGetPromptNodes(root);
     if (prompts.length) return prompts;
-    return enumerateMessages(root);
+    return defaultEnumerateMessages(root);
 }
 
 /**
  * Returns the p-th pair (0-indexed) or null if it does not exist.
  */
 function getPair(root: HTMLElement, idx: number): TagalystPair | null {
+    return activeThreadAdapter?.getPair(root, idx) ?? defaultGetPair(root, idx);
+}
+
+function defaultGetPair(root: HTMLElement, idx: number): TagalystPair | null {
     if (idx < 0) return null;
-    return getPairs(root)[idx] || null;
+    return defaultGetPairs(root)[idx] || null;
+}
+
+class ChatGptThreadAdapter implements ThreadAdapter {
+    private observer: MutationObserver | null = null;
+
+    getTranscriptRoot(): HTMLElement | null {
+        return defaultFindTranscriptRoot();
+    }
+
+    getMessages(root: HTMLElement): HTMLElement[] {
+        return defaultEnumerateMessages(root);
+    }
+
+    getPairs(root: HTMLElement): TagalystPair[] {
+        return defaultGetPairs(root);
+    }
+
+    getPromptNodes(root: HTMLElement): HTMLElement[] {
+        return defaultGetPromptNodes(root);
+    }
+
+    getNavigationNodes(root: HTMLElement): HTMLElement[] {
+        return defaultGetNavigationNodes(root);
+    }
+
+    getPair(root: HTMLElement, index: number): TagalystPair | null {
+        return defaultGetPair(root, index);
+    }
+
+    observe(root: HTMLElement, callback: MutationCallback): void {
+        this.disconnect();
+        this.observer = new MutationObserver(callback);
+        this.observer.observe(root, { childList: true, subtree: true });
+    }
+
+    disconnect(): void {
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+    }
 }
 
 // ---------------------- UI Injection ---------------------------
@@ -1243,6 +1309,8 @@ async function bootstrap(): Promise<void> {
     await sleep(600);
     await ensureConfigLoaded();
     teardownUI();
+    const adapter = new ChatGptThreadAdapter();
+    activeThreadAdapter = adapter;
     const container = findTranscriptRoot();
 
     const threadKey = getThreadKey();
@@ -1312,12 +1380,10 @@ async function bootstrap(): Promise<void> {
 
     // Initial pass and observe for changes
     refresh();
-    const mo = new MutationObserver((records) => {
+    adapter.observe(container, (records) => {
         if (!records.some(mutationTouchesExternal)) return;
         requestRefresh();
     });
-    mo.observe(container, { childList: true, subtree: true });
-    boot._observer = mo;
 }
 
 // Some pages use SPA routing; re-bootstrap on URL changes

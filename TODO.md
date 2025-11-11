@@ -4,7 +4,14 @@
 Refactor to ts:
 - like for like
 - iterative changes
-- 
+  - create key classes, e.g.,
+    - (dom-related concepts)
+    - thread, pair, message (query, response)
+    - toolbar (navigation, collapse, expand, mdcopy, )
+    - editor (tag, annotation)
+    - storage
+    - config
+  - encapsulate chatgpt dom: extract the functionality that depends on chatgpt changes and create a adapter
 
 
 Behavioral Bugs:
