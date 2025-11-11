@@ -82,7 +82,7 @@ function shouldShowCollapseControl(el: HTMLElement) {
 /**
  * Promise-wrapped chrome.storage.local get.
  */
-async function getStore(keys: string[]): Promise<Record<string, MessageValue>> {
+async function getStore(keys: string[]): Promise<Record<string, any>> {
     if (!Array.isArray(keys) || !keys.length) return {};
     return new Promise(resolve => chrome.storage.local.get(keys, resolve));
 }
@@ -90,9 +90,37 @@ async function getStore(keys: string[]): Promise<Record<string, MessageValue>> {
 /**
  * Promise-wrapped chrome.storage.local set.
  */
-async function setStore(obj: Record<string, MessageValue>): Promise<void> {
+async function setStore(obj: Record<string, any>): Promise<void> {
     return new Promise(resolve => chrome.storage.local.set(obj, () => resolve()));
 }
+
+class StorageService {
+    async read(keys: string[]): Promise<Record<string, MessageValue>> {
+        return getStore(keys);
+    }
+
+    async write(record: Record<string, MessageValue>): Promise<void> {
+        if (!record || !Object.keys(record).length) return;
+        await setStore(record);
+    }
+
+    keyForMessage(threadKey: string, adapter: MessageAdapter): string {
+        return adapter.storageKey(threadKey);
+    }
+
+    async readMessage(threadKey: string, adapter: MessageAdapter): Promise<MessageValue> {
+        const key = this.keyForMessage(threadKey, adapter);
+        const record = await this.read([key]);
+        return record[key] || {};
+    }
+
+    async writeMessage(threadKey: string, adapter: MessageAdapter, value: MessageValue): Promise<void> {
+        const key = this.keyForMessage(threadKey, adapter);
+        await this.write({ [key]: value });
+    }
+}
+
+const storageService = new StorageService();
 
 const EXT_ATTR = 'data-ext-owned';
 const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
@@ -686,9 +714,7 @@ async function openInlineTagEditor(messageEl: HTMLElement, threadKey: string) {
     closeActiveTagEditor();
 
     const adapter = resolveAdapterForElement(messageEl);
-    const key = `${threadKey}:${adapter.key}`;
-    const store = await getStore([key]);
-    const cur = store[key] || {};
+    const cur = await storageService.readMessage(threadKey, adapter);
     const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
 
     const editor = document.createElement('div');
@@ -723,7 +749,7 @@ async function openInlineTagEditor(messageEl: HTMLElement, threadKey: string) {
         const raw = input.innerText.replace(/\n+/g, ',');
         const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
         cur.tags = tags;
-        await setStore({ [key]: cur });
+        await storageService.writeMessage(threadKey, adapter, cur);
         renderBadges(messageEl, threadKey, cur, adapter);
         cleanup();
     };
@@ -763,9 +789,7 @@ async function openInlineNoteEditor(messageEl: HTMLElement, threadKey: string) {
     closeActiveNoteEditor();
 
     const adapter = resolveAdapterForElement(messageEl);
-    const key = `${threadKey}:${adapter.key}`;
-    const store = await getStore([key]);
-    const cur = store[key] || {};
+    const cur = await storageService.readMessage(threadKey, adapter);
     const existing = typeof cur.note === 'string' ? cur.note : '';
 
     const editor = document.createElement('div');
@@ -806,7 +830,7 @@ async function openInlineNoteEditor(messageEl: HTMLElement, threadKey: string) {
         } else {
             delete cur.note;
         }
-        await setStore({ [key]: cur });
+        await storageService.writeMessage(threadKey, adapter, cur);
         renderBadges(messageEl, threadKey, cur, adapter);
         cleanup();
     };
@@ -1284,10 +1308,9 @@ function injectToolbar(el: HTMLElement, threadKey: string) {
         focusBtn.onclick = async () => {
             if (focusService.getMode() !== FOCUS_MODES.STARS) return;
             const adapter = resolveAdapterForElement(el);
-            const k = `${threadKey}:${adapter.key}`;
-            const cur = (await getStore([k]))[k] || {};
+            const cur = await storageService.readMessage(threadKey, adapter);
             cur.starred = !cur.starred;
-            await setStore({ [k]: cur });
+            await storageService.writeMessage(threadKey, adapter, cur);
             renderBadges(el, threadKey, cur, adapter);
             updateFocusControlsUI();
         };
@@ -1505,7 +1528,7 @@ async function bootstrap(): Promise<void> {
     }));
                 if (!entries.length) break;
                 const keys = entries.map(e => e.key);
-                const store = await getStore(keys);
+                const store = await storageService.read(keys);
                 const tagCounts = new Map<string, number>();
                 messageState.clear();
                 for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
