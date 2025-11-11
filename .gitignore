@@ -4,6 +4,7 @@ unversioned/
 node_modules/
 package-lock.json
 *.tsbuildinfo
+.tsbuild/
 # remove js
 #options/options.js
 #content/content.js

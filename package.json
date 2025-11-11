@@ -3,8 +3,8 @@
   "version": "0.1.5",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -w -p tsconfig.json"
+    "build": "tsc -b",
+    "watch": "tsc -b --watch --preserveWatchOutput"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.255",
