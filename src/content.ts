@@ -1155,57 +1155,93 @@ class ChatGptThreadAdapter implements ThreadAdapter {
     }
 }
 
-// ---------------------- UI Injection ---------------------------
-/**
- * Injects global page controls once per document.
- */
-function ensurePageControls(container: HTMLElement, threadKey: string) {
-    const existing = document.getElementById('ext-page-controls');
-    if (existing) existing.remove();
-    const box = document.createElement('div');
-    box.id = 'ext-page-controls';
-    markExtNode(box);
-    box.innerHTML = `
-    <div class="ext-nav-frame">
-        <span class="ext-nav-label">Navigate</span>
-        <div class="ext-nav-buttons">
-            <button id="ext-jump-first" title="Jump to first prompt">⤒</button>
-            <button id="ext-jump-last" title="Jump to last prompt">⤓</button>
-        </div>
-        <div class="ext-nav-buttons">
-            <button id="ext-jump-star-prev" title="Previous starred message">★↑</button>
-            <button id="ext-jump-star-next" title="Next starred message">★↓</button>
-        </div>
-    </div>
-    <div class="ext-batch-frame">
-        <span class="ext-nav-label">Collapse</span>
-        <div class="ext-batch-buttons">
-            <button id="ext-collapse-all" title="Collapse all prompts">All</button>
-            <button id="ext-collapse-unstarred" title="Collapse unstarred prompts">☆</button>
-        </div>
-    </div>
-    <div class="ext-batch-frame">
-        <span class="ext-nav-label">Expand</span>
-        <div class="ext-batch-buttons">
-            <button id="ext-expand-all" title="Expand all prompts">All</button>
-            <button id="ext-expand-starred" title="Expand starred prompts">★</button>
-        </div>
-    </div>
-    <div class="ext-export-frame">
-        <span class="ext-nav-label">MD Copy</span>
-        <div class="ext-export-buttons">
-            <button id="ext-export-all" class="ext-export-button">All</button>
-            <button id="ext-export-starred" class="ext-export-button">★</button>
-        </div>
-    </div>
-  `;
-    document.documentElement.appendChild(box);
-    syncTopPanelWidth();
+class ToolbarController {
+    constructor(private readonly focus: FocusService, private readonly storage: StorageService) { }
 
-    /**
-     * Scrolls to the indexed node (or nearest valid node) within the supplied list.
-     */
-    function scrollToNode(idx: number, block: ScrollLogicalPosition = 'center', list?: HTMLElement[]) {
+    ensurePageControls(container: HTMLElement, threadKey: string) {
+        const existing = document.getElementById('ext-page-controls');
+        if (existing) existing.remove();
+        const box = document.createElement('div');
+        box.id = 'ext-page-controls';
+        markExtNode(box);
+        box.innerHTML = `
+        <div class="ext-nav-frame">
+            <span class="ext-nav-label">Navigate</span>
+            <div class="ext-nav-buttons">
+                <button id="ext-jump-first" title="Jump to first prompt">⤒</button>
+                <button id="ext-jump-last" title="Jump to last prompt">⤓</button>
+            </div>
+            <div class="ext-nav-buttons">
+                <button id="ext-jump-star-prev" title="Previous starred message">★↑</button>
+                <button id="ext-jump-star-next" title="Next starred message">★↓</button>
+            </div>
+        </div>
+        <div class="ext-batch-frame">
+            <span class="ext-nav-label">Collapse</span>
+            <div class="ext-batch-buttons">
+                <button id="ext-collapse-all" title="Collapse all prompts">All</button>
+                <button id="ext-collapse-unstarred" title="Collapse unstarred prompts">☆</button>
+            </div>
+        </div>
+        <div class="ext-batch-frame">
+            <span class="ext-nav-label">Expand</span>
+            <div class="ext-batch-buttons">
+                <button id="ext-expand-all" title="Expand all prompts">All</button>
+                <button id="ext-expand-starred" title="Expand starred prompts">★</button>
+            </div>
+        </div>
+        <div class="ext-export-frame">
+            <span class="ext-nav-label">MD Copy</span>
+            <div class="ext-export-buttons">
+                <button id="ext-export-all" class="ext-export-button">All</button>
+                <button id="ext-export-starred" class="ext-export-button">★</button>
+            </div>
+        </div>
+      `;
+        document.documentElement.appendChild(box);
+        syncTopPanelWidth();
+
+        const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');
+        const jumpLastBtn = box.querySelector<HTMLButtonElement>('#ext-jump-last');
+        const jumpStarPrevBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-prev');
+        const jumpStarNextBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-next');
+        const collapseAllBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-all');
+        const collapseUnstarredBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-unstarred');
+        const expandAllBtn = box.querySelector<HTMLButtonElement>('#ext-expand-all');
+        const expandStarredBtn = box.querySelector<HTMLButtonElement>('#ext-expand-starred');
+        const exportAllBtn = box.querySelector<HTMLButtonElement>('#ext-export-all');
+        const exportStarredBtn = box.querySelector<HTMLButtonElement>('#ext-export-starred');
+
+        if (jumpFirstBtn) jumpFirstBtn.onclick = () => this.scrollToNode(container, 0, 'start');
+        if (jumpLastBtn) {
+            jumpLastBtn.onclick = () => {
+                const nodes = getNavigationNodes(container);
+                if (!nodes.length) return;
+                this.scrollToNode(container, nodes.length - 1, 'end', nodes);
+            };
+        }
+        if (jumpStarPrevBtn) jumpStarPrevBtn.onclick = () => { this.scrollFocus(-1); };
+        if (jumpStarNextBtn) jumpStarNextBtn.onclick = () => { this.scrollFocus(1); };
+        if (collapseAllBtn) collapseAllBtn.onclick = () => toggleAll(container, true);
+        if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => collapseByFocus(container, 'out', true);
+        if (expandAllBtn) expandAllBtn.onclick = () => toggleAll(container, false);
+        if (expandStarredBtn) expandStarredBtn.onclick = () => collapseByFocus(container, 'in', false);
+
+        if (exportAllBtn) exportAllBtn.onclick = () => runExport(container, false);
+        if (exportStarredBtn) exportStarredBtn.onclick = () => runExport(container, true);
+
+        pageControls = {
+            root: box,
+            focusPrev: jumpStarPrevBtn,
+            focusNext: jumpStarNextBtn,
+            collapseNonFocus: collapseUnstarredBtn,
+            expandFocus: expandStarredBtn,
+            exportFocus: exportStarredBtn,
+        };
+        updateFocusControlsUI();
+    }
+
+    private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'center', list?: HTMLElement[]) {
         const nodes = list || getNavigationNodes(container);
         if (!nodes.length) return;
         const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
@@ -1213,118 +1249,73 @@ function ensurePageControls(container: HTMLElement, threadKey: string) {
         if (target) target.scrollIntoView({ behavior: 'smooth', block });
     }
 
-    /**
-     * Moves the focus navigation cursor forward/backward and scrolls into view.
-     */
-    function scrollFocus(delta: number) {
+    private scrollFocus(delta: number) {
         const adapters = getFocusMatches();
         if (!adapters.length) return;
-        const idx = focusService.adjustNav(delta, adapters.length);
+        const idx = this.focus.adjustNav(delta, adapters.length);
         if (idx < 0 || idx >= adapters.length) return;
         const target = adapters[idx];
         if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');
-    const jumpLastBtn = box.querySelector<HTMLButtonElement>('#ext-jump-last');
-    const jumpStarPrevBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-prev');
-    const jumpStarNextBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-next');
-    const collapseAllBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-all');
-    const collapseUnstarredBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-unstarred');
-    const expandAllBtn = box.querySelector<HTMLButtonElement>('#ext-expand-all');
-    const expandStarredBtn = box.querySelector<HTMLButtonElement>('#ext-expand-starred');
-    const exportAllBtn = box.querySelector<HTMLButtonElement>('#ext-export-all');
-    const exportStarredBtn = box.querySelector<HTMLButtonElement>('#ext-export-starred');
-
-    if (jumpFirstBtn) jumpFirstBtn.onclick = () => scrollToNode(0, 'start');
-    if (jumpLastBtn) {
-        jumpLastBtn.onclick = () => {
-            const nodes = getNavigationNodes(container);
-            if (!nodes.length) return;
-            scrollToNode(nodes.length - 1, 'end', nodes);
-        };
-    }
-    if (jumpStarPrevBtn) jumpStarPrevBtn.onclick = () => { scrollFocus(-1); };
-    if (jumpStarNextBtn) jumpStarNextBtn.onclick = () => { scrollFocus(1); };
-    if (collapseAllBtn) collapseAllBtn.onclick = () => toggleAll(container, true);
-    if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => collapseByFocus(container, 'out', true);
-    if (expandAllBtn) expandAllBtn.onclick = () => toggleAll(container, false);
-    if (expandStarredBtn) expandStarredBtn.onclick = () => collapseByFocus(container, 'in', false);
-
-    if (exportAllBtn) exportAllBtn.onclick = () => runExport(container, false);
-    if (exportStarredBtn) exportStarredBtn.onclick = () => runExport(container, true);
-
-    pageControls = {
-        root: box,
-        focusPrev: jumpStarPrevBtn,
-        focusNext: jumpStarNextBtn,
-        collapseNonFocus: collapseUnstarredBtn,
-        expandFocus: expandStarredBtn,
-        exportFocus: exportStarredBtn,
-    };
-    updateFocusControlsUI();
-}
-
-/**
- * Prepends the per-message toolbar and wires its handlers.
- */
-function injectToolbar(el: HTMLElement, threadKey: string) {
-    let toolbar = el.querySelector<HTMLElement>('.ext-toolbar');
-    if (toolbar) {
-        if (toolbar.dataset.threadKey !== threadKey) {
-            toolbar.closest('.ext-toolbar-row')?.remove();
-            toolbar = null;
-        } else {
-            updateCollapseVisibility(el);
-            return; // already wired for this thread
+    injectToolbar(el: HTMLElement, threadKey: string) {
+        let toolbar = el.querySelector<HTMLElement>('.ext-toolbar');
+        if (toolbar) {
+            if (toolbar.dataset.threadKey !== threadKey) {
+                toolbar.closest('.ext-toolbar-row')?.remove();
+                toolbar = null;
+            } else {
+                updateCollapseVisibility(el);
+                return;
+            }
         }
+
+        const row = document.createElement('div');
+        row.className = 'ext-toolbar-row';
+        markExtNode(row);
+        const wrap = document.createElement('div');
+        wrap.className = 'ext-toolbar';
+        markExtNode(wrap);
+        wrap.innerHTML = `
+        <span class="ext-badges"></span>
+        <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
+        <button class="ext-note" title="Add annotation" aria-label="Add annotation"><span class="ext-btn-icon">✎<small>A</small></span></button>
+        <button class="ext-focus-button" title="Bookmark" aria-pressed="false">☆</button>
+        <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
+      `;
+        row.appendChild(wrap);
+
+        const collapseBtn = wrap.querySelector<HTMLButtonElement>('.ext-collapse');
+        const focusBtn = wrap.querySelector<HTMLButtonElement>('.ext-focus-button');
+        const tagBtn = wrap.querySelector<HTMLButtonElement>('.ext-tag');
+        const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
+
+        if (collapseBtn) {
+            collapseBtn.onclick = () => collapse(el, !el.classList.contains('ext-collapsed'));
+        }
+        if (focusBtn) {
+            focusBtn.onclick = async () => {
+                if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
+                const adapter = resolveAdapterForElement(el);
+                const cur = await this.storage.readMessage(threadKey, adapter);
+                cur.starred = !cur.starred;
+                await this.storage.writeMessage(threadKey, adapter, cur);
+                renderBadges(el, threadKey, cur, adapter);
+                updateFocusControlsUI();
+            };
+        }
+        if (tagBtn) tagBtn.onclick = () => openInlineTagEditor(el, threadKey);
+        if (noteBtn) noteBtn.onclick = () => openInlineNoteEditor(el, threadKey);
+
+        wrap.dataset.threadKey = threadKey;
+        el.prepend(row);
+        ensureUserToolbarButton(el);
+        updateCollapseVisibility(el);
+        syncCollapseButton(el);
     }
-
-    const row = document.createElement('div');
-    row.className = 'ext-toolbar-row';
-    markExtNode(row);
-    const wrap = document.createElement('div');
-    wrap.className = 'ext-toolbar';
-    markExtNode(wrap);
-    wrap.innerHTML = `
-    <span class="ext-badges"></span>
-    <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
-    <button class="ext-note" title="Add annotation" aria-label="Add annotation"><span class="ext-btn-icon">✎<small>A</small></span></button>
-    <button class="ext-focus-button" title="Bookmark" aria-pressed="false">☆</button>
-    <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
-  `;
-    row.appendChild(wrap);
-
-    // Events
-    const collapseBtn = wrap.querySelector<HTMLButtonElement>('.ext-collapse');
-    const focusBtn = wrap.querySelector<HTMLButtonElement>('.ext-focus-button');
-    const tagBtn = wrap.querySelector<HTMLButtonElement>('.ext-tag');
-    const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
-
-    if (collapseBtn) {
-        collapseBtn.onclick = () => collapse(el, !el.classList.contains('ext-collapsed'));
-    }
-    if (focusBtn) {
-        focusBtn.onclick = async () => {
-            if (focusService.getMode() !== FOCUS_MODES.STARS) return;
-            const adapter = resolveAdapterForElement(el);
-            const cur = await storageService.readMessage(threadKey, adapter);
-            cur.starred = !cur.starred;
-            await storageService.writeMessage(threadKey, adapter, cur);
-            renderBadges(el, threadKey, cur, adapter);
-            updateFocusControlsUI();
-        };
-    }
-    if (tagBtn) tagBtn.onclick = () => openInlineTagEditor(el, threadKey);
-    if (noteBtn) noteBtn.onclick = () => openInlineNoteEditor(el, threadKey);
-
-    wrap.dataset.threadKey = threadKey;
-    el.prepend(row);
-    toolbar = wrap;
-    ensureUserToolbarButton(el);
-    updateCollapseVisibility(el);
-    syncCollapseButton(el);
 }
+
+const toolbarController = new ToolbarController(focusService, storageService);
 
 /**
  * Reads star/tag data for a message and updates its badges + CSS state.
@@ -1494,7 +1485,7 @@ async function bootstrap(): Promise<void> {
     const container = findTranscriptRoot();
 
     const threadKey = getThreadKey();
-    ensurePageControls(container, threadKey);
+    toolbarController.ensurePageControls(container, threadKey);
     ensureTopPanels();
 
     let refreshRunning = false;
@@ -1532,7 +1523,7 @@ async function bootstrap(): Promise<void> {
                 const tagCounts = new Map<string, number>();
                 messageState.clear();
                 for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-                    injectToolbar(el, threadKey);
+                    toolbarController.injectToolbar(el, threadKey);
                     ensurePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
                     const value = store[key] || {};
                     setMessageMeta(el, { key, value, pairIndex, adapter: messageAdapter });
