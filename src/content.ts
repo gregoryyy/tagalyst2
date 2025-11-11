@@ -120,6 +120,7 @@ type MessageMeta = {
     key: string | null;
     value: MessageValue;
     pairIndex: number | null;
+    adapter: MessageAdapter | null;
 };
 
 type ActiveEditor = {
@@ -308,21 +309,22 @@ function getFocusGlyph(isFilled: boolean) {
 /**
  * Ensures each message node has tracked metadata (storage key, tag data, etc.).
  */
-function ensureMessageMeta(el: HTMLElement, key?: string | null) {
+function ensureMessageMeta(el: HTMLElement, key?: string | null, adapter?: MessageAdapter | null) {
     let meta = messageState.get(el);
     if (!meta) {
-        meta = { key: key || null, value: {}, pairIndex: null };
+        meta = { key: key || null, value: {}, pairIndex: null, adapter: adapter || null };
         messageState.set(el, meta);
     }
     if (key) meta.key = key;
+    if (adapter) meta.adapter = adapter;
     return meta;
 }
 
 /**
  * Updates cached metadata for a message node and returns the stored entry.
  */
-function setMessageMeta(el: HTMLElement, { key, value, pairIndex }: { key?: string | null; value?: MessageValue; pairIndex?: number | null } = {}) {
-    const meta = ensureMessageMeta(el, key || null);
+function setMessageMeta(el: HTMLElement, { key, value, pairIndex, adapter }: { key?: string | null; value?: MessageValue; pairIndex?: number | null; adapter?: MessageAdapter | null } = {}) {
+    const meta = ensureMessageMeta(el, key || null, adapter ?? null);
     if (typeof pairIndex === 'number') {
         meta.pairIndex = pairIndex;
     } else if (pairIndex === null) {
@@ -330,6 +332,16 @@ function setMessageMeta(el: HTMLElement, { key, value, pairIndex }: { key?: stri
     }
     if (value) meta.value = value;
     return meta;
+}
+
+function resolveAdapterForElement(el: HTMLElement): MessageAdapter {
+    const meta = ensureMessageMeta(el);
+    if (meta.adapter && meta.adapter.element === el) {
+        return meta.adapter;
+    }
+    const adapter = new DomMessageAdapter(el);
+    meta.adapter = adapter;
+    return adapter;
 }
 
 /**
@@ -345,22 +357,25 @@ function matchesSelectedTags(value: MessageValue) {
 /**
  * Performs a text match against the active search query for the supplied node.
  */
-function matchesSearchQuery(el: HTMLElement) {
+function matchesSearchQuery(meta: MessageMeta, el: HTMLElement) {
     const query = focusState.searchQueryLower;
     if (!query) return false;
-    const text = normalizeText(el?.innerText || '').toLowerCase();
+    const adapter = meta.adapter;
+    const textSource = adapter ? adapter.getText() : normalizeText(el?.innerText || '');
+    const text = textSource.toLowerCase();
     return text.includes(query);
 }
 
 /**
  * Tests whether a message should be considered part of the active focus set.
  */
-function isMessageFocused(el: HTMLElement, value: MessageValue) {
+function isMessageFocused(meta: MessageMeta, el: HTMLElement) {
+    const value = meta.value;
     switch (focusState.mode) {
         case FOCUS_MODES.TAGS:
             return matchesSelectedTags(value);
         case FOCUS_MODES.SEARCH:
-            return matchesSearchQuery(el);
+            return matchesSearchQuery(meta, el);
         default:
             return !!value?.starred;
     }
@@ -369,10 +384,10 @@ function isMessageFocused(el: HTMLElement, value: MessageValue) {
 /**
  * Synchronizes the per-message focus button with star/search/tag state.
  */
-function updateFocusButton(el: HTMLElement, value: MessageValue) {
+function updateFocusButton(el: HTMLElement, meta: MessageMeta) {
     const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
     if (!btn) return;
-    const active = isMessageFocused(el, value);
+    const active = isMessageFocused(meta, el);
     const glyph = getFocusGlyph(active);
     if (btn.textContent !== glyph) btn.textContent = glyph;
     const pressed = String(active);
@@ -408,12 +423,15 @@ function updateFocusButton(el: HTMLElement, value: MessageValue) {
  * Recomputes toolbar button labels for every tracked message node.
  */
 function refreshFocusButtons() {
-    messageState.forEach(({ value }, el) => {
+    messageState.forEach((meta, el) => {
         if (!document.contains(el)) {
             messageState.delete(el);
             return;
         }
-        updateFocusButton(el, value || {});
+        if (!meta.adapter) {
+            meta.adapter = new DomMessageAdapter(el);
+        }
+        updateFocusButton(el, meta);
     });
 }
 
@@ -429,13 +447,18 @@ function syncFocusMode() {
 }
 
 /**
- * Returns the list of DOM nodes that currently match the focus filter.
+ * Returns the list of message adapters that currently match the focus filter.
  */
-function getFocusMatches(): HTMLElement[] {
-    const nodes = [];
-    messageState.forEach(({ value }, el) => {
-        if (document.contains(el) && isMessageFocused(el, value || {})) {
-            nodes.push(el);
+function getFocusMatches(): MessageAdapter[] {
+    const nodes: MessageAdapter[] = [];
+    messageState.forEach((meta, el) => {
+        if (!document.contains(el)) {
+            messageState.delete(el);
+            return;
+        }
+        const adapter = meta.adapter || resolveAdapterForElement(el);
+        if (isMessageFocused(meta, el)) {
+            nodes.push(adapter);
         }
     });
     return nodes;
@@ -609,7 +632,8 @@ async function openInlineTagEditor(messageEl: HTMLElement, threadKey: string) {
     }
     closeActiveTagEditor();
 
-    const key = `${threadKey}:${keyForMessage(messageEl)}`;
+    const adapter = resolveAdapterForElement(messageEl);
+    const key = `${threadKey}:${adapter.key}`;
     const store = await getStore([key]);
     const cur = store[key] || {};
     const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
@@ -647,7 +671,7 @@ async function openInlineTagEditor(messageEl: HTMLElement, threadKey: string) {
         const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
         cur.tags = tags;
         await setStore({ [key]: cur });
-        renderBadges(messageEl, threadKey, cur);
+        renderBadges(messageEl, threadKey, cur, adapter);
         cleanup();
     };
 
@@ -685,7 +709,8 @@ async function openInlineNoteEditor(messageEl: HTMLElement, threadKey: string) {
     }
     closeActiveNoteEditor();
 
-    const key = `${threadKey}:${keyForMessage(messageEl)}`;
+    const adapter = resolveAdapterForElement(messageEl);
+    const key = `${threadKey}:${adapter.key}`;
     const store = await getStore([key]);
     const cur = store[key] || {};
     const existing = typeof cur.note === 'string' ? cur.note : '';
@@ -729,7 +754,7 @@ async function openInlineNoteEditor(messageEl: HTMLElement, threadKey: string) {
             delete cur.note;
         }
         await setStore({ [key]: cur });
-        renderBadges(messageEl, threadKey, cur);
+        renderBadges(messageEl, threadKey, cur, adapter);
         cleanup();
     };
 
@@ -983,6 +1008,16 @@ class DomPairAdapter implements PairAdapter {
     }
 }
 
+function buildDomPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
+    const pairs: DomPairAdapter[] = [];
+    for (let i = 0; i < messages.length; i += 2) {
+        const query = messages[i] || null;
+        const response = messages[i + 1] || null;
+        pairs.push(new DomPairAdapter(pairs.length, query, response));
+    }
+    return pairs;
+}
+
 class ChatGptThreadAdapter implements ThreadAdapter {
     private observer: MutationObserver | null = null;
 
@@ -1035,13 +1070,7 @@ class ChatGptThreadAdapter implements ThreadAdapter {
 
     private buildPairAdapters(root: HTMLElement): DomPairAdapter[] {
         const messages = this.buildMessageAdapters(root);
-        const pairs: DomPairAdapter[] = [];
-        for (let i = 0; i < messages.length; i += 2) {
-            const query = messages[i] || null;
-            const response = messages[i + 1] || null;
-            pairs.push(new DomPairAdapter(pairs.length, query, response));
-        }
-        return pairs;
+        return buildDomPairAdaptersFromMessages(messages);
     }
 }
 
@@ -1107,15 +1136,15 @@ function ensurePageControls(container: HTMLElement, threadKey: string) {
      * Moves the focus navigation cursor forward/backward and scrolls into view.
      */
     function scrollFocus(delta: number) {
-        const nodes = getFocusMatches();
-        if (!nodes.length) return;
-        if (focusNavIndex < 0 || focusNavIndex >= nodes.length) {
-            focusNavIndex = delta >= 0 ? 0 : nodes.length - 1;
+        const adapters = getFocusMatches();
+        if (!adapters.length) return;
+        if (focusNavIndex < 0 || focusNavIndex >= adapters.length) {
+            focusNavIndex = delta >= 0 ? 0 : adapters.length - 1;
         } else {
-            focusNavIndex = Math.max(0, Math.min(focusNavIndex + delta, nodes.length - 1));
+            focusNavIndex = Math.max(0, Math.min(focusNavIndex + delta, adapters.length - 1));
         }
-        const target = nodes[focusNavIndex];
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const target = adapters[focusNavIndex];
+        if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');
@@ -1200,11 +1229,12 @@ function injectToolbar(el: HTMLElement, threadKey: string) {
     if (focusBtn) {
         focusBtn.onclick = async () => {
             if (focusState.mode !== FOCUS_MODES.STARS) return;
-            const k = `${threadKey}:${keyForMessage(el)}`;
+            const adapter = resolveAdapterForElement(el);
+            const k = `${threadKey}:${adapter.key}`;
             const cur = (await getStore([k]))[k] || {};
             cur.starred = !cur.starred;
             await setStore({ [k]: cur });
-            renderBadges(el, threadKey, cur);
+            renderBadges(el, threadKey, cur, adapter);
             updateFocusControlsUI();
         };
     }
@@ -1222,10 +1252,11 @@ function injectToolbar(el: HTMLElement, threadKey: string) {
 /**
  * Reads star/tag data for a message and updates its badges + CSS state.
  */
-function renderBadges(el: HTMLElement, threadKey: string, value: MessageValue) {
-    const k = `${threadKey}:${keyForMessage(el)}`;
+function renderBadges(el: HTMLElement, threadKey: string, value: MessageValue, adapter?: MessageAdapter | null) {
+    const adapterRef = adapter ?? resolveAdapterForElement(el);
+    const k = `${threadKey}:${adapterRef.key}`;
     const cur = value || {};
-    setMessageMeta(el, { key: k, value: cur });
+    const meta = setMessageMeta(el, { key: k, value: cur, adapter: adapterRef });
     const badges = el.querySelector<HTMLElement>('.ext-badges');
     if (!badges) return;
 
@@ -1251,7 +1282,7 @@ function renderBadges(el: HTMLElement, threadKey: string, value: MessageValue) {
         noteChip.title = note;
         badges.appendChild(noteChip);
     }
-    updateFocusButton(el, cur);
+    updateFocusButton(el, meta);
 }
 
 /**
@@ -1363,7 +1394,7 @@ function toggleAll(container: HTMLElement, yes: boolean) {
 function collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
     const matches = getFocusMatches();
     if (!matches.length) return;
-    const matchSet = new Set(matches);
+    const matchSet = new Set(matches.map(adapter => adapter.element));
     for (const el of enumerateMessages(container)) {
         const isMatch = matchSet.has(el);
         if (target === 'in' ? isMatch : !isMatch) {
@@ -1401,35 +1432,40 @@ async function bootstrap(): Promise<void> {
         try {
             do {
                 refreshQueued = false;
-                const msgs = enumerateMessages(container);
-                const pairMap = new Map<HTMLElement, number>();
-                const pairs = getPairs(container);
-                pairs.forEach((pair, idx) => {
-                    if (pair.query) pairMap.set(pair.query, idx);
-                    if (pair.response) pairMap.set(pair.response, idx);
+                const threadAdapter = activeThreadAdapter;
+                const messageAdapters = threadAdapter
+                    ? threadAdapter.getMessages(container)
+                    : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el));
+                const pairAdapters = threadAdapter
+                    ? threadAdapter.getPairs(container)
+                    : buildDomPairAdaptersFromMessages(messageAdapters);
+                const pairMap = new Map<MessageAdapter, number>();
+                pairAdapters.forEach((pair, idx) => {
+                    pair.getMessages().forEach(msg => pairMap.set(msg, idx));
                 });
-                const entries = msgs.map(el => ({
-                    el,
-                    key: `${threadKey}:${keyForMessage(el)}`,
-                    pairIndex: pairMap.get(el)
+                const entries = messageAdapters.map(messageAdapter => ({
+                    adapter: messageAdapter,
+                    el: messageAdapter.element,
+                    key: `${threadKey}:${messageAdapter.key}`,
+                    pairIndex: pairMap.get(messageAdapter) ?? null,
                 }));
                 if (!entries.length) break;
                 const keys = entries.map(e => e.key);
                 const store = await getStore(keys);
                 const tagCounts = new Map<string, number>();
                 messageState.clear();
-                for (const { el, key, pairIndex } of entries) {
+                for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
                     injectToolbar(el, threadKey);
-                    ensurePairNumber(el, pairIndex);
+                    ensurePairNumber(el, typeof pairIndex === 'number' ? pairIndex : null);
                     const value = store[key] || {};
-                    setMessageMeta(el, { key, value, pairIndex });
+                    setMessageMeta(el, { key, value, pairIndex, adapter: messageAdapter });
                     if (value && Array.isArray(value.tags)) {
                         for (const t of value.tags) {
                             if (!t) continue;
                             tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
                         }
                     }
-                    renderBadges(el, threadKey, value);
+                    renderBadges(el, threadKey, value, messageAdapter);
                 }
                 const sortedTags = Array.from(tagCounts.entries())
                     .map(([tag, count]) => ({ tag, count }))
@@ -1594,7 +1630,8 @@ function isPairFocused(pair: TagalystPair) {
     if (pair.response) nodes.push(pair.response);
     return nodes.some(node => {
         const meta = messageState.get(node);
-        return isMessageFocused(node, meta?.value || {});
+        if (!meta) return false;
+        return isMessageFocused(meta, node);
     });
 }
 

@@ -5,7 +5,7 @@ Refactor to ts:
 - like for like
 - iterative changes
   - create key classes, e.g.,
-    - (dom-related concepts)
+    - adapter logic to separate the chatgpt dom elements from extension logic
     - thread, pair, message (query, response)
     - toolbar (navigation, collapse, expand, mdcopy, )
     - editor (tag, annotation)
