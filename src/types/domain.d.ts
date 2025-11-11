@@ -10,6 +10,7 @@ declare global {
         readonly element: HTMLElement;
         getText(): string;
         shouldShowCollapse(): boolean;
+        storageKey(threadKey: string): string;
     }
 
     /**

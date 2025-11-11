@@ -994,6 +994,10 @@ class DomMessageAdapter implements MessageAdapter {
     shouldShowCollapse(): boolean {
         return shouldShowCollapseControl(this.element);
     }
+
+    storageKey(threadKey: string): string {
+        return `${threadKey}:${this.key}`;
+    }
 }
 
 class DomPairAdapter implements PairAdapter {
@@ -1289,7 +1293,7 @@ function renderBadges(el: HTMLElement, threadKey: string, value: MessageValue, a
  * Placeholder handler fired when the per-user custom toolbar button is pressed.
  */
 function handleUserToolbarButtonClick(messageEl: HTMLElement) {
-    const messageKey = keyForMessage(messageEl);
+    const messageKey = resolveAdapterForElement(messageEl).key;
     console.info('[Tagalyst] User toolbar button clicked', { messageKey });
 }
 
@@ -1323,10 +1327,10 @@ function ensureUserToolbarButton(el: HTMLElement): HTMLButtonElement | null {
 /**
  * Renders the left-aligned pair index badge for user messages.
  */
-function ensurePairNumber(el: HTMLElement, pairIndex: number | null) {
-    const role = el?.getAttribute?.('data-message-author-role');
+function ensurePairNumber(adapter: MessageAdapter, pairIndex: number | null) {
+    const el = adapter.element;
     ensureUserToolbarButton(el);
-    if (role !== 'user') {
+    if (adapter.role !== 'user') {
         const wrap = el.querySelector<HTMLElement>('.ext-pair-number-wrap');
         if (wrap) wrap.remove();
         return;
@@ -1433,22 +1437,22 @@ async function bootstrap(): Promise<void> {
             do {
                 refreshQueued = false;
                 const threadAdapter = activeThreadAdapter;
-                const messageAdapters = threadAdapter
+                const messageAdapters = (threadAdapter
                     ? threadAdapter.getMessages(container)
-                    : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el));
-                const pairAdapters = threadAdapter
+                    : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
+                const pairAdapters = (threadAdapter
                     ? threadAdapter.getPairs(container)
-                    : buildDomPairAdaptersFromMessages(messageAdapters);
+                    : buildDomPairAdaptersFromMessages(messageAdapters));
                 const pairMap = new Map<MessageAdapter, number>();
                 pairAdapters.forEach((pair, idx) => {
                     pair.getMessages().forEach(msg => pairMap.set(msg, idx));
                 });
-                const entries = messageAdapters.map(messageAdapter => ({
-                    adapter: messageAdapter,
-                    el: messageAdapter.element,
-                    key: `${threadKey}:${messageAdapter.key}`,
-                    pairIndex: pairMap.get(messageAdapter) ?? null,
-                }));
+    const entries = messageAdapters.map(messageAdapter => ({
+        adapter: messageAdapter,
+        el: messageAdapter.element,
+        key: messageAdapter.storageKey(threadKey),
+        pairIndex: pairMap.get(messageAdapter) ?? null,
+    }));
                 if (!entries.length) break;
                 const keys = entries.map(e => e.key);
                 const store = await getStore(keys);
@@ -1456,7 +1460,7 @@ async function bootstrap(): Promise<void> {
                 messageState.clear();
                 for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
                     injectToolbar(el, threadKey);
-                    ensurePairNumber(el, typeof pairIndex === 'number' ? pairIndex : null);
+                    ensurePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
                     const value = store[key] || {};
                     setMessageMeta(el, { key, value, pairIndex, adapter: messageAdapter });
                     if (value && Array.isArray(value.tags)) {
