@@ -1153,6 +1153,7 @@ function toTagalystPair(pair: PairAdapter): TagalystPair {
 class DomMessageAdapter implements MessageAdapter {
     readonly key: string;
     readonly role: string;
+    private textCache: string | null = null;
 
     constructor(readonly element: HTMLElement) {
         this.key = keyForMessage(element);
@@ -1160,7 +1161,10 @@ class DomMessageAdapter implements MessageAdapter {
     }
 
     getText(): string {
-        return Utils.normalizeText(this.element.innerText || '');
+        if (this.textCache !== null) return this.textCache;
+        const source = this.element.textContent ?? this.element.innerText ?? '';
+        this.textCache = Utils.normalizeText(source);
+        return this.textCache;
     }
 
     shouldShowCollapse(): boolean {
@@ -1658,7 +1662,8 @@ class BootstrapOrchestrator {
                 do {
                     this.refreshQueued = false;
                     const messageAdapters = this.resolveMessages(container);
-                    const pairMap = this.buildPairMap(container, messageAdapters);
+                    const pairAdapters = buildDomPairAdaptersFromMessages(messageAdapters);
+                    const pairMap = this.buildPairMap(pairAdapters);
                     const entries = messageAdapters.map(messageAdapter => ({
                         adapter: messageAdapter,
                         el: messageAdapter.element,
@@ -1709,11 +1714,7 @@ class BootstrapOrchestrator {
             : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
     }
 
-    private buildPairMap(container: HTMLElement, messages: MessageAdapter[]): Map<MessageAdapter, number> {
-        const threadAdapter = this.threadAdapter;
-        const pairAdapters = (threadAdapter
-            ? threadAdapter.getPairs(container)
-            : buildDomPairAdaptersFromMessages(messages));
+    private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
         const pairMap = new Map<MessageAdapter, number>();
         pairAdapters.forEach((pair, idx) => {
             pair.getMessages().forEach(msg => pairMap.set(msg, idx));
