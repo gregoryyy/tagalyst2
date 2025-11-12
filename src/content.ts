@@ -153,7 +153,7 @@ namespace Utils {
         }
         return false;
     }
-}
+} // Utils
 
 class StorageService {
     async read(keys: string[]): Promise<Record<string, MessageValue>> {
@@ -180,7 +180,7 @@ class StorageService {
         const key = this.keyForMessage(threadKey, adapter);
         await this.write({ [key]: value });
     }
-}
+} // StorageService
 
 const storageService = new StorageService();
 class ConfigService {
@@ -241,7 +241,7 @@ class ConfigService {
         }
         if (changed) focusController.syncMode();
     }
-}
+} // ConfigService
 
 const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
 const contentDefaultConfig = {
@@ -314,7 +314,7 @@ class MessageMetaRegistry {
     getStore() {
         return this.store;
     }
-}
+} // MessageMetaRegistry
 
 const messageMetaRegistry = new MessageMetaRegistry();
 
@@ -350,7 +350,7 @@ class RenderScheduler {
             target();
         });
     }
-}
+} // RenderScheduler
 
 const renderScheduler = new RenderScheduler();
 const configService = new ConfigService(storageService, renderScheduler);
@@ -517,7 +517,7 @@ class FocusService {
         if (note && note.includes(this.searchQueryLower)) return true;
         return false;
     }
-}
+} // FocusService
 
 const focusService = new FocusService();
 
@@ -651,7 +651,7 @@ class FocusController {
             return this.focus.isMessageFocused(meta, node);
         });
     }
-}
+} // FocusController
 
 const focusController = new FocusController(focusService, messageMetaRegistry);
 
@@ -783,7 +783,7 @@ class TopPanelController {
         }
         focusController.syncMode();
     }
-}
+} // TopPanelController
 
 const topPanelController = new TopPanelController();
 focusController.attachSelectionSync(() => topPanelController.syncSelectionUI());
@@ -972,10 +972,9 @@ class EditorController {
 
         this.activeNoteEditor = { message: messageEl, cleanup };
     }
-}
+} // EditorController
 
 const editorController = new EditorController(storageService);
-
 
 /**
  * Moves the caret to the end of a contenteditable element.
@@ -1020,7 +1019,7 @@ class DomMessageAdapter implements MessageAdapter {
     storageKey(threadKey: string): string {
         return `${threadKey}:${this.key}`;
     }
-}
+} // DomMessageAdapter
 
 class DomPairAdapter implements PairAdapter {
     constructor(
@@ -1032,7 +1031,7 @@ class DomPairAdapter implements PairAdapter {
     getMessages(): MessageAdapter[] {
         return [this.query, this.response].filter(Boolean) as MessageAdapter[];
     }
-}
+} // DomPairAdapter
 
 class ThreadDom {
     constructor(private readonly adapterProvider: () => ThreadAdapter | null) { }
@@ -1160,19 +1159,9 @@ class ThreadDom {
         }
         return pairs;
     }
-}
+} // ThreadDom
 
 const threadDom = new ThreadDom(() => activeThreadAdapter);
-
-function buildDomPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
-    const pairs: DomPairAdapter[] = [];
-    for (let i = 0; i < messages.length; i += 2) {
-        const query = messages[i] || null;
-        const response = messages[i + 1] || null;
-        pairs.push(new DomPairAdapter(pairs.length, query, response));
-    }
-    return pairs;
-}
 
 class ChatGptThreadAdapter implements ThreadAdapter {
     private observer: MutationObserver | null = null;
@@ -1228,7 +1217,7 @@ class ChatGptThreadAdapter implements ThreadAdapter {
         const messages = this.buildMessageAdapters(root);
         return ThreadDom.buildDomPairAdaptersFromMessages(messages);
     }
-}
+} // ChatGptThreadAdapter
 
 class ToolbarController {
     constructor(private readonly focus: FocusService, private readonly storage: StorageService) { }
@@ -1297,10 +1286,10 @@ class ToolbarController {
         }
         if (jumpStarPrevBtn) jumpStarPrevBtn.onclick = () => { this.scrollFocus(-1); };
         if (jumpStarNextBtn) jumpStarNextBtn.onclick = () => { this.scrollFocus(1); };
-        if (collapseAllBtn) collapseAllBtn.onclick = () => toggleAll(container, true);
-        if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => collapseByFocus(container, 'out', true);
-        if (expandAllBtn) expandAllBtn.onclick = () => toggleAll(container, false);
-        if (expandStarredBtn) expandStarredBtn.onclick = () => collapseByFocus(container, 'in', false);
+        if (collapseAllBtn) collapseAllBtn.onclick = () => threadActions.toggleAll(container, true);
+        if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => threadActions.collapseByFocus(container, 'out', true);
+        if (expandAllBtn) expandAllBtn.onclick = () => threadActions.toggleAll(container, false);
+        if (expandStarredBtn) expandStarredBtn.onclick = () => threadActions.collapseByFocus(container, 'in', false);
 
         if (exportAllBtn) exportAllBtn.onclick = () => exportController.copyThread(container, false);
         if (exportStarredBtn) exportStarredBtn.onclick = () => exportController.copyThread(container, true);
@@ -1366,7 +1355,7 @@ class ToolbarController {
         const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
 
         if (collapseBtn) {
-            collapseBtn.onclick = () => collapse(el, !el.classList.contains('ext-collapsed'));
+            collapseBtn.onclick = () => threadActions.collapse(el, !el.classList.contains('ext-collapsed'));
         }
         if (focusBtn) {
             focusBtn.onclick = async () => {
@@ -1455,7 +1444,7 @@ class ToolbarController {
         // Placeholder for future per-user actions. Intentionally disabled to avoid extra UI clutter.
         return null;
     }
-}
+} // ToolbarController
 
 
 class ThreadActions {
@@ -1474,17 +1463,26 @@ class ThreadActions {
         btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
         btn.setAttribute('aria-expanded', String(!collapsed));
     }
-
+    
+    /**
+     * Toggles the collapsed state for one message block.
+     */
     collapse(el: HTMLElement, yes: boolean) {
         el.classList.toggle('ext-collapsed', !!yes);
         this.syncCollapseButton(el);
     }
-
+    
+    /**
+     * Applies collapse/expand state to every discovered message.
+     */
     toggleAll(container: HTMLElement, yes: boolean) {
         const msgs = threadDom.enumerateMessages(container);
         for (const m of msgs) this.collapse(m, !!yes);
     }
-
+    
+    /**
+     * Applies collapse state against the current focus subset.
+     */
     collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
         const matches = focusController.getMatches();
         if (!matches.length) return;
@@ -1500,31 +1498,9 @@ class ThreadActions {
     private getCollapseButton(el: HTMLElement) {
         return el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
     }
-}
+} // ThreadActions
 
 const threadActions = new ThreadActions();
-
-/**
- * Toggles the collapsed state for one message block.
- */
-function collapse(el: HTMLElement, yes: boolean) {
-    threadActions.collapse(el, yes);
-}
-
-/**
- * Applies collapse/expand state to every discovered message.
- */
-function toggleAll(container: HTMLElement, yes: boolean) {
-    threadActions.toggleAll(container, yes);
-}
-
-/**
- * Applies collapse state against the current focus subset.
- */
-function collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
-    threadActions.collapseByFocus(container, target, collapseState);
-}
-
 class ExportController {
     copyThread(container: HTMLElement, focusOnly: boolean) {
         try {
@@ -1556,7 +1532,7 @@ class ExportController {
         });
         return sections.join('\n\n');
     }
-}
+} // ExportController
 
 const exportController = new ExportController();
 
@@ -1671,7 +1647,7 @@ class BootstrapOrchestrator {
         this.threadAdapter?.disconnect();
         activeThreadAdapter = null;
     }
-}
+} // BootstrapOrchestrator
 
 const toolbarController = new ToolbarController(focusService, storageService);
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
