@@ -29,9 +29,12 @@ Features:
 - metadata:
   - cardinal numbers for pairs (left aligned for prompts, same y as query message toolbar) DONE
   - message size
+  - tag and search results size
 - navigate by highlighted item:
   - if search results or tags, this means navigation runs via these. DONE
+    - BUG: after search or tag selection, becomes unresponsive
   - export filters by focused items
+  - overview ruler
 - export without UI content but with:
   - links to graphics
   - mathematical content, i.e., KaTeX

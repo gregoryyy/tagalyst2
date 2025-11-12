@@ -653,7 +653,7 @@ class FocusService {
         if (!areTagsEnabled() || !this.selectedTags.size) return false;
         const tags = Array.isArray(value?.tags) ? value.tags : [];
         if (!tags.length) return false;
-        return tags.some(tag => this.selectedTags.has(tag));
+        return tags.some(tag => this.selectedTags.has(tag.toLowerCase()));
     }
 
     private matchesSearch(meta: MessageMeta, el: HTMLElement): boolean {
@@ -661,7 +661,12 @@ class FocusService {
         const adapter = meta.adapter;
         const textSource = adapter ? adapter.getText() : Utils.normalizeText(el?.innerText || '');
         const text = textSource.toLowerCase();
-        return text.includes(this.searchQueryLower);
+        if (text.includes(this.searchQueryLower)) return true;
+        const tags = Array.isArray(meta.value?.tags) ? meta.value.tags : [];
+        if (tags.some(tag => tag.toLowerCase().includes(this.searchQueryLower))) return true;
+        const note = typeof meta.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
+        if (note && note.includes(this.searchQueryLower)) return true;
+        return false;
     }
 }
 
@@ -825,6 +830,9 @@ class EditorController {
 
         const adapter = resolveAdapterForElement(messageEl);
         const cur = await this.storage.readMessage(threadKey, adapter);
+        if (Array.isArray(cur.tags)) {
+            cur.tags = cur.tags.map(tag => tag.toLowerCase());
+        }
         const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
 
         const editor = document.createElement('div');
@@ -858,7 +866,7 @@ class EditorController {
         const save = async () => {
             const raw = input.innerText.replace(/\n+/g, ',');
             const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
-            cur.tags = tags;
+            cur.tags = tags.map(tag => tag.toLowerCase());
             await this.storage.writeMessage(threadKey, adapter, cur);
             renderBadges(messageEl, threadKey, cur, adapter);
             cleanup();
