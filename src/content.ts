@@ -8,13 +8,15 @@
 const EXT_ATTR = 'data-ext-owned';
 
 // -------------------------- Utilities --------------------------
-/**
- * Small helper for delaying async flows without blocking the UI thread.
- */
-const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-
 namespace Utils {
     
+    /**
+     * Small helper for delaying async flows without blocking the UI thread.
+     */
+    export function sleep(ms: number) {
+        return new Promise<void>(resolve => setTimeout(resolve, ms));
+    }
+
     /**
      * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
      */
@@ -1549,7 +1551,7 @@ class BootstrapOrchestrator {
 
     async run() {
         // Wait a moment for the app shell to mount
-        await sleep(600);
+        await Utils.sleep(600);
         await configService.load();
         this.teardownUI();
         this.threadAdapter = new ChatGptThreadAdapter();
