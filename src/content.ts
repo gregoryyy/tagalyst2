@@ -137,10 +137,12 @@ let activeThreadAdapter: ThreadAdapter | null = null;
 /**
  * Augments the bootstrap function with stateful fields used across modules.
  */
-type BootstrapWithMeta = ((...args: unknown[]) => Promise<void>) & {
-    _requestRefresh?: () => void;
+type BootstrapMeta = {
     _raf?: number;
+    render?: () => Promise<void>;
 };
+
+let activeBootstrap: BootstrapMeta | null = null;
 
 type MessageValue = Record<string, any>;
 
@@ -227,11 +229,14 @@ function areTagsEnabled() {
 /**
  * Triggers a queued refresh run if the bootstrap helper exposes that hook.
  */
-function requestRefresh() {
-    const boot = bootstrap as BootstrapWithMeta;
-    if (typeof bootstrap === 'function' && typeof boot._requestRefresh === 'function') {
-        boot._requestRefresh();
-    }
+function requestRefresh(render?: () => Promise<void>) {
+    const target = render || activeBootstrap?.render;
+    if (!target) return;
+    if (activeBootstrap?._raf) cancelAnimationFrame(activeBootstrap._raf);
+    activeBootstrap = activeBootstrap || {};
+    activeBootstrap._raf = requestAnimationFrame(() => {
+        target();
+    });
 }
 
 /**
@@ -1321,8 +1326,6 @@ class ToolbarController {
     }
 }
 
-const toolbarController = new ToolbarController(focusService, storageService);
-
 /**
  * Reads star/tag data for a message and updates its badges + CSS state.
  */
@@ -1481,91 +1484,105 @@ function collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseS
 /**
  * Entry point: finds the thread, injects UI, and watches for updates.
  */
-async function bootstrap(): Promise<void> {
-    // Wait a moment for the app shell to mount
-    await sleep(600);
-    await ensureConfigLoaded();
-    teardownUI();
-    const adapter = new ChatGptThreadAdapter();
-    activeThreadAdapter = adapter;
-    const container = findTranscriptRoot();
+class BootstrapOrchestrator {
+    private refreshRunning = false;
+    private refreshQueued = false;
+    private threadAdapter: ThreadAdapter | null = null;
 
-    const threadKey = getThreadKey();
-    toolbarController.ensurePageControls(container, threadKey);
-    ensureTopPanels();
+    constructor(private readonly toolbar: ToolbarController, private readonly storage: StorageService) { }
 
-    let refreshRunning = false;
-    let refreshQueued = false;
+    async run() {
+        // Wait a moment for the app shell to mount
+        await sleep(600);
+        await ensureConfigLoaded();
+        teardownUI();
+        this.threadAdapter = new ChatGptThreadAdapter();
+        activeThreadAdapter = this.threadAdapter;
+        const container = findTranscriptRoot();
 
-    async function refresh() {
-        if (refreshRunning) {
-            refreshQueued = true;
-            return;
-        }
-        refreshRunning = true;
-        try {
-            do {
-                refreshQueued = false;
-                const threadAdapter = activeThreadAdapter;
-                const messageAdapters = (threadAdapter
-                    ? threadAdapter.getMessages(container)
-                    : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
-                const pairAdapters = (threadAdapter
-                    ? threadAdapter.getPairs(container)
-                    : buildDomPairAdaptersFromMessages(messageAdapters));
-                const pairMap = new Map<MessageAdapter, number>();
-                pairAdapters.forEach((pair, idx) => {
-                    pair.getMessages().forEach(msg => pairMap.set(msg, idx));
-                });
-    const entries = messageAdapters.map(messageAdapter => ({
-        adapter: messageAdapter,
-        el: messageAdapter.element,
-        key: messageAdapter.storageKey(threadKey),
-        pairIndex: pairMap.get(messageAdapter) ?? null,
-    }));
-                if (!entries.length) break;
-                const keys = entries.map(e => e.key);
-                const store = await storageService.read(keys);
-                const tagCounts = new Map<string, number>();
-                messageState.clear();
-                for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-                    toolbarController.injectToolbar(el, threadKey);
-                    ensurePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-                    const value = store[key] || {};
-                    setMessageMeta(el, { key, value, pairIndex, adapter: messageAdapter });
-                    if (value && Array.isArray(value.tags)) {
-                        for (const t of value.tags) {
-                            if (!t) continue;
-                            tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+        const threadKey = getThreadKey();
+        this.toolbar.ensurePageControls(container, threadKey);
+        ensureTopPanels();
+
+        const render = async () => {
+            if (this.refreshRunning) {
+                this.refreshQueued = true;
+                return;
+            }
+            this.refreshRunning = true;
+            try {
+                do {
+                    this.refreshQueued = false;
+                    const messageAdapters = this.resolveMessages(container);
+                    const pairMap = this.buildPairMap(container, messageAdapters);
+                    const entries = messageAdapters.map(messageAdapter => ({
+                        adapter: messageAdapter,
+                        el: messageAdapter.element,
+                        key: messageAdapter.storageKey(threadKey),
+                        pairIndex: pairMap.get(messageAdapter) ?? null,
+                    }));
+                    if (!entries.length) break;
+                    const keys = entries.map(e => e.key);
+                    const store = await this.storage.read(keys);
+                    const tagCounts = new Map<string, number>();
+                    messageState.clear();
+                    for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
+                        this.toolbar.injectToolbar(el, threadKey);
+                        ensurePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                        const value = store[key] || {};
+                        setMessageMeta(el, { key, value, pairIndex, adapter: messageAdapter });
+                        if (value && Array.isArray(value.tags)) {
+                            for (const t of value.tags) {
+                                if (!t) continue;
+                                tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+                            }
                         }
+                        renderBadges(el, threadKey, value, messageAdapter);
                     }
-                    renderBadges(el, threadKey, value, messageAdapter);
-                }
-                const sortedTags = Array.from(tagCounts.entries())
-                    .map(([tag, count]) => ({ tag, count }))
-                    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-                updateTagList(sortedTags);
-                refreshFocusButtons();
-            } while (refreshQueued);
-        } finally {
-            refreshRunning = false;
-        }
+                    const sortedTags = Array.from(tagCounts.entries())
+                        .map(([tag, count]) => ({ tag, count }))
+                        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+                    updateTagList(sortedTags);
+                    refreshFocusButtons();
+                } while (this.refreshQueued);
+            } finally {
+                this.refreshRunning = false;
+            }
+        };
+
+        activeBootstrap = { render };
+        await render();
+        this.threadAdapter.observe(container, (records) => {
+            if (!records.some(mutationTouchesExternal)) return;
+            requestRefresh(render);
+        });
     }
 
-    const requestRefresh = () => {
-        const boot = bootstrap as BootstrapWithMeta;
-        if (boot._raf) cancelAnimationFrame(boot._raf);
-        boot._raf = requestAnimationFrame(refresh);
-    };
-    const boot = bootstrap as BootstrapWithMeta;
-    boot._requestRefresh = requestRefresh;
+    private resolveMessages(container: HTMLElement): MessageAdapter[] {
+        const threadAdapter = this.threadAdapter;
+        return (threadAdapter
+            ? threadAdapter.getMessages(container)
+            : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
+    }
 
-    // Initial pass and observe for changes
-    refresh();
-    adapter.observe(container, (records) => {
-        if (!records.some(mutationTouchesExternal)) return;
-        requestRefresh();
-    });
+    private buildPairMap(container: HTMLElement, messages: MessageAdapter[]): Map<MessageAdapter, number> {
+        const threadAdapter = this.threadAdapter;
+        const pairAdapters = (threadAdapter
+            ? threadAdapter.getPairs(container)
+            : buildDomPairAdaptersFromMessages(messages));
+        const pairMap = new Map<MessageAdapter, number>();
+        pairAdapters.forEach((pair, idx) => {
+            pair.getMessages().forEach(msg => pairMap.set(msg, idx));
+        });
+        return pairMap;
+    }
+}
+
+const toolbarController = new ToolbarController(focusService, storageService);
+const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
+
+async function bootstrap(): Promise<void> {
+    await bootstrapOrchestrator.run();
 }
 
 // Some pages use SPA routing; re-bootstrap on URL changes
@@ -1591,6 +1608,7 @@ window.__tagalyst = Object.assign(window.__tagalyst || {}, {
 
 // First boot
 bootstrap();
+
 /**
  * Creates or returns the floating Search/Tags panel container.
  */
