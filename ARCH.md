@@ -1,38 +1,68 @@
-# Tagalyst 2 Architecture Overview
+# Tagalyst 2 Architecture
 
-This document explains how the current TypeScript rewrite is structured and how we are incrementally isolating ChatGPT‑specific DOM logic behind adapters so the rest of the extension can stay stable even if the site changes.
+This document tracks the ongoing refactor from a large procedural content script into composable services that isolate ChatGPT-specific DOM details and keep extension behavior stable as the site evolves.
 
-## High-Level Flow
+## Current Shape
 
 ```
-bootstrap()
- └─ ChatGptThreadAdapter discovers DOM → builds MessageAdapter / PairAdapter objects
-     ├─ Toolbar + focus UI injected into each message element
-     ├─ Storage metadata cached (stars, tags, notes)
-     ├─ FocusManager decides which adapters are “active”
-     └─ Editors / toolbar actions update storage + refresh badges
+BootstrapOrchestrator
+ ├─ ThreadAdapter (DOM discovery, MutationObserver)
+ ├─ ToolbarController (global + per-message controls)
+ ├─ EditorController (tag + note editors)
+ ├─ FocusService (search/tags/stars state + navigation)
+ ├─ StorageService (chrome.storage wrapper)
+ └─ DOM adapters (MessageAdapter / PairAdapter)
 ```
 
-The extension never re-parents ChatGPT nodes. Instead it overlays toolbars, editors, and floating panels on top of the existing DOM.
+### Thread Adapter + Adapters
+- `ChatGptThreadAdapter` owns DOM discovery and MutationObserver wiring. It builds `MessageAdapter` and `PairAdapter` objects so the rest of the code never couples to ChatGPT’s markup.
+- Fallback helpers still exist (e.g., `defaultEnumerateMessages`) but only run when the adapter is unavailable, keeping behavior identical while slimming the DOM surface area.
 
-## Current Refactoring Steps
+### Message / Pair Adapters
+- `DomMessageAdapter` exposes `key`, `role`, normalized text, collapse heuristics, and `storageKey(threadKey)`.
+- `DomPairAdapter` groups messages into (prompt,response) pairs and feeds navigation/export logic.
+- `messageState` stores adapters per element so focus/search/tag logic can reuse metadata. Navigation and collapse-by-focus now work with adapter lists, only touching `adapter.element` when scrolling/manipulating DOM.
 
-### 1. Thread Adapter Shell
-- Added `ChatGptThreadAdapter` with the sole job of finding the transcript root, enumerating message elements, deriving (query, response) pairs, and wiring MutationObservers.
-- The rest of the content script still called the classic helper functions, but those helpers were wired to defer to the adapter when available (`findTranscriptRoot`, `enumerateMessages`, `getPairs`, etc.). When the adapter is absent (during bootstrap teardown) we gracefully fall back to the old heuristics so behavior stays identical.
+### FocusService
+- Replaces the global focus state: tracks search query, tag selections, focus mode, and navigation index.
+- Provides helpers (`setSearchQuery`, `toggleTag`, `getMatches`, `isMessageFocused`, `adjustNav`) so controllers call the service rather than poking Sets/strings directly.
 
-### 2. Message / Pair Adapters
-- Introduced `DomMessageAdapter` and `DomPairAdapter` (along with ambient `MessageAdapter` / `PairAdapter` interfaces). These wrap each `HTMLElement`, exposing stable properties (`key`, `role`), normalized text, and collapse heuristics.
-- The thread adapter now returns adapters instead of raw elements. Helpers such as `getFocusMatches`, `renderBadges`, the editors, and collapse logic consult the adapter metadata rather than re-reading the DOM every time. They still touch `adapter.element` when they need to inject UI.
-- `messageState` stores adapters per element so focus/search/tag logic can reuse the same normalized text and identifiers (no more repeated `keyForMessage` calls).
-- Navigation (focus jump, collapse-by-focus) now works with adapter sets and only converts back to DOM when scrolling.
+### StorageService
+- Wraps `chrome.storage.local` with typed async helpers plus `readMessage` / `writeMessage`. Message-level storage goes through adapters, ensuring keys are consistent everywhere.
 
-These steps keep the external behavior unchanged—Chrome still loads `content/content.js` as a classic script—but drastically reduce the surface area that knows about ChatGPT’s internal structure.
+### ToolbarController
+- Handles both the global bottom-right controls and per-message toolbars.
+- Wires navigation scroll, collapse/expand/export buttons, bookmark toggles, and keeps focus glyphs in sync with `FocusService`.
+
+### ConfigService + TopPanelController
+- `ConfigService` now wraps all config reads/writes (`chrome.storage.local`) and notifies listeners when settings change. It enforces focus state invariants and schedules refreshes without leaking storage logic into UI layers.
+- `TopPanelController` builds and manages the floating Search/Tags panels, wires search input + tag row events to `FocusService`, keeps the UI in sync with config toggles, and exposes helpers for tag list refreshes and layout.
+
+### EditorController
+- Manages both tag and note editors: opening, closing, floating positioning, keyboard shortcuts, and storage updates.
+- `teardownUI` now just calls `editorController.teardown()` so active editors are cleaned up uniformly.
+
+### ThreadActions + ExportController
+- `ThreadActions` encapsulates collapse/expand operations (single message, all messages, focus-only). Controllers call its methods instead of touching DOM helpers directly.
+- `ExportController` owns Markdown export and clipboard writes so toolbar buttons simply ask it to copy the current thread/focus subset.
+
+### BootstrapOrchestrator
+- Coordinates startup: waits for page stabilization, loads config, instantiates the thread adapter, injects top panels + toolbars, and runs the refresh loop.
+- Refresh builds adapter caches, hydrates storage metadata, updates badges/tag counts, and uses `requestRefresh` for MutationObserver + SPA navigation.
+- `activeBootstrap` stores the current render callback, allowing config/UI updates to queue a refresh without reimplementing the logic.
+
+### Utilities
+- Pure helpers (hashing, text normalization, caret placement, floating editor layout) stay as standalone functions since they have no state or dependencies.
 
 ## Next Steps
 
-1. **Adapter-first Feature Modules** – Pass `MessageAdapter` instances directly into the toolbar and editor modules so they never recompute storage keys or scrape text manually.
-2. **Service Layer Separation** – Lift storage/config/focus logic into discrete services that operate purely on adapters, making them unit-testable without the DOM.
-3. **Pluggable DOM Adapters** – Once the feature layers depend only on adapters, we can implement alternative `ThreadAdapter` versions (e.g., for future ChatGPT layouts or other chat systems) without touching the UI logic.
+1. **Modularize Services**  
+   - Move each service/controller into its own file (e.g., `src/services/focus.ts`, `src/controllers/toolbar.ts`) so `content.ts` mainly orchestrates dependency wiring.
 
-Each refactoring should keep behavior 1:1, just like the previous steps, so we can ship incrementally without breaking the extension during the transition.
+2. **Config & Options Integration**  
+   - Have the Options page talk directly to `ConfigService` via a shared module so UI toggles stay in sync across the popup/options/content surfaces without duplicate logic.
+
+3. **Pluggable DOM Adapters**  
+   - Once modules are split, experiment with swapping `ThreadAdapter` implementations (e.g., for future ChatGPT layouts or other chat platforms) without touching higher-level controllers.
+
+These steps continue the same philosophy as earlier refactors: isolate ChatGPT-specific details, ensure behavior stays 1:1, and make every feature depend on adapters + services instead of raw DOM.

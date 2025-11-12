@@ -11,26 +11,72 @@
  */
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-/**
- * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
- */
-function hashString(s: string) {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < s.length; i++) {
-        h ^= s.charCodeAt(i);
-        h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+namespace Utils {
+    
+    /**
+     * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
+     */
+    export function hashString(s: string) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+        }
+        return ("0000000" + h.toString(16)).slice(-8);
     }
-    return ("0000000" + h.toString(16)).slice(-8);
-}
 
-/**
- * Strips excess whitespace and zero-width chars so hashes stay stable.
- */
-function normalizeText(t: string) {
-    return (t || "")
-        .replace(/\s+/g, " ")
-        .replace(/[\u200B-\u200D\uFEFF]/g, "")
-        .trim();
+    export function normalizeText(t: string) {
+        return (t || "")
+            .replace(/\s+/g, " ")
+            .replace(/[\u200B-\u200D\uFEFF]/g, "")
+            .trim();
+    }
+
+    export function placeCaretAtEnd(el: HTMLElement) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        if (!sel) return;
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    export function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
+        editor.classList.add('ext-floating-editor');
+        markExtNode(editor);
+        document.body.appendChild(editor);
+
+        const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
+        const update = () => {
+            const rect = anchor.getBoundingClientRect();
+            const width = Math.min(420, window.innerWidth - 32);
+            editor.style.width = `${width}px`;
+            const baseTop = window.scrollY + rect.top + 16;
+            const maxTop = window.scrollY + window.innerHeight - editor.offsetHeight - 16;
+            const top = clamp(baseTop, window.scrollY + 16, maxTop);
+            const baseLeft = window.scrollX + rect.right - width;
+            const minLeft = window.scrollX + 16;
+            const maxLeft = window.scrollX + window.innerWidth - width - 16;
+            const left = clamp(baseLeft, minLeft, maxLeft);
+            editor.style.top = `${top}px`;
+            editor.style.left = `${left}px`;
+        };
+
+        const onScroll = () => update();
+        const onResize = () => update();
+
+        window.addEventListener('scroll', onScroll, true);
+        window.addEventListener('resize', onResize);
+        update();
+
+        return () => {
+            window.removeEventListener('scroll', onScroll, true);
+            window.removeEventListener('resize', onResize);
+            editor.classList.remove('ext-floating-editor');
+        };
+    }
 }
 
 /**
@@ -42,7 +88,7 @@ function getThreadKey(): string {
         const u = new URL(location.href);
         if (u.pathname && u.pathname.length > 1) return u.pathname.replace(/\W+/g, "-");
     } catch { }
-    return hashString(document.title + location.host);
+    return Utils.hashString(document.title + location.host);
 }
 
 /**
@@ -58,9 +104,9 @@ function getMessageId(el: Element | null) {
 function keyForMessage(el: HTMLElement) {
     const domId = getMessageId(el);
     if (domId) return domId;
-    const text = normalizeText(el.innerText).slice(0, 4000); // perf cap
+    const text = Utils.normalizeText(el.innerText).slice(0, 4000); // perf cap
     const idx = Array.prototype.indexOf.call(el.parentElement?.children || [], el);
-    return hashString(text + "|" + idx);
+    return Utils.hashString(text + "|" + idx);
 }
 
 /**
@@ -79,29 +125,15 @@ function shouldShowCollapseControl(el: HTMLElement) {
     return text.length > 160 || text.includes('\n');
 }
 
-/**
- * Promise-wrapped chrome.storage.local get.
- */
-async function getStore(keys: string[]): Promise<Record<string, any>> {
-    if (!Array.isArray(keys) || !keys.length) return {};
-    return new Promise(resolve => chrome.storage.local.get(keys, resolve));
-}
-
-/**
- * Promise-wrapped chrome.storage.local set.
- */
-async function setStore(obj: Record<string, any>): Promise<void> {
-    return new Promise(resolve => chrome.storage.local.set(obj, () => resolve()));
-}
-
 class StorageService {
     async read(keys: string[]): Promise<Record<string, MessageValue>> {
-        return getStore(keys);
+        if (!Array.isArray(keys) || !keys.length) return {};
+        return new Promise(resolve => chrome.storage.local.get(keys, resolve));
     }
 
     async write(record: Record<string, MessageValue>): Promise<void> {
         if (!record || !Object.keys(record).length) return;
-        await setStore(record);
+        await new Promise<void>(resolve => chrome.storage.local.set(record, () => resolve()));
     }
 
     keyForMessage(threadKey: string, adapter: MessageAdapter): string {
@@ -121,6 +153,59 @@ class StorageService {
 }
 
 const storageService = new StorageService();
+class ConfigService {
+    private loaded = false;
+    private listeners = new Set<(cfg: typeof contentDefaultConfig) => void>();
+
+    constructor(private storage: StorageService) { }
+
+    async load(): Promise<typeof contentDefaultConfig> {
+        if (this.loaded) return config;
+        const store = await this.storage.read([CONTENT_CONFIG_STORAGE_KEY]);
+        this.apply(store[CONTENT_CONFIG_STORAGE_KEY]);
+        this.loaded = true;
+        return config;
+    }
+
+    apply(obj?: Partial<typeof contentDefaultConfig>) {
+        config = { ...contentDefaultConfig, ...(obj || {}) };
+        this.enforceState();
+        this.notify();
+        syncFocusMode();
+        requestRefresh();
+    }
+
+    async update(partial: Partial<typeof contentDefaultConfig>) {
+        const next = { ...config, ...partial };
+        await this.storage.write({ [CONTENT_CONFIG_STORAGE_KEY]: next });
+        this.apply(next);
+    }
+
+    onChange(listener: (cfg: typeof contentDefaultConfig) => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    private notify() {
+        this.listeners.forEach(listener => listener(config));
+    }
+
+    private enforceState() {
+        let changed = false;
+        if (!isSearchEnabled()) {
+            focusService.setSearchQuery('');
+            topPanelController.clearSearchInput();
+            changed = true;
+        }
+        if (!areTagsEnabled()) {
+            focusService.clearTags();
+            changed = true;
+        }
+        if (changed) syncFocusMode();
+    }
+}
+
+const configService = new ConfigService(storageService);
 
 const EXT_ATTR = 'data-ext-owned';
 const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
@@ -129,9 +214,6 @@ const contentDefaultConfig = {
     tagsEnabled: true,
 };
 let config = { ...contentDefaultConfig };
-let configLoaded = false;
-let searchToggleEl: HTMLElement | null = null;
-let tagToggleEl: HTMLElement | null = null;
 let activeThreadAdapter: ThreadAdapter | null = null;
 
 /**
@@ -233,7 +315,11 @@ function requestRefresh(render?: () => Promise<void>) {
     const target = render || activeBootstrap?.render;
     if (!target) return;
     if (activeBootstrap?._raf) cancelAnimationFrame(activeBootstrap._raf);
-    activeBootstrap = activeBootstrap || {};
+    if (!activeBootstrap) {
+        activeBootstrap = { render: target };
+    } else {
+        activeBootstrap.render = target;
+    }
     activeBootstrap._raf = requestAnimationFrame(() => {
         target();
     });
@@ -242,59 +328,8 @@ function requestRefresh(render?: () => Promise<void>) {
 /**
  * Applies config toggles to in-memory focus state and any existing inputs.
  */
-function enforceConfigState() {
-    let changed = false;
-    if (!isSearchEnabled()) {
-        focusService.setSearchQuery('');
-        if (searchInputEl) searchInputEl.value = '';
-        changed = true;
-    }
-    if (!areTagsEnabled()) {
-        focusService.clearTags();
-        changed = true;
-    }
-    if (changed) syncFocusMode();
-}
-
-/**
- * Loads config data into the runtime state and refreshes dependent UI.
- */
-function applyConfigObject(obj?: Partial<typeof contentDefaultConfig>) {
-    config = { ...contentDefaultConfig, ...(obj || {}) };
-    enforceConfigState();
-    updateConfigUI();
-    syncFocusMode();
-    requestRefresh();
-}
-
-/**
- * Lazily reads persisted config the first time it is requested.
- */
-async function ensureConfigLoaded(): Promise<typeof contentDefaultConfig> {
-    if (configLoaded) return config;
-    const store = await getStore([CONTENT_CONFIG_STORAGE_KEY]);
-    applyConfigObject(store[CONTENT_CONFIG_STORAGE_KEY]);
-    configLoaded = true;
-    return config;
-}
-
-/**
- * Syncs Search/Tag pane DOM visibility and states with the current config.
- */
 function updateConfigUI() {
-    const searchPanel = topPanelsEl?.querySelector<HTMLElement>('.ext-top-search');
-    const tagPanel = topPanelsEl?.querySelector<HTMLElement>('.ext-top-tags');
-    if (searchPanel) searchPanel.style.display = isSearchEnabled() ? '' : 'none';
-    if (tagPanel) tagPanel.style.display = areTagsEnabled() ? '' : 'none';
-    if (searchInputEl) {
-        const enabled = isSearchEnabled();
-        searchInputEl.disabled = !enabled;
-        searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
-        if (!enabled) searchInputEl.value = '';
-    }
-    if (tagListEl) {
-        tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
-    }
+    topPanelController.updateConfigUI();
 }
 
 // ------------------------ Focus State ------------------------
@@ -303,7 +338,6 @@ function updateConfigUI() {
  */
 function resetFocusState() {
     focusService.reset();
-    searchInputEl = null;
     pageControls = null;
     messageState.clear();
 }
@@ -315,9 +349,6 @@ function describeFocusMode() {
     return focusService.describeMode();
 }
 
-/**
- * Returns the glyph pair (empty/filled) for the given mode plus toggle state.
- */
 function getFocusGlyph(isFilled: boolean) {
     return focusService.getGlyph(isFilled);
 }
@@ -421,7 +452,7 @@ function syncFocusMode() {
     focusService.syncMode();
     refreshFocusButtons();
     updateFocusControlsUI();
-    syncTagSidebarSelectionUI();
+    topPanelController.syncSelectionUI();
 }
 
 /**
@@ -472,35 +503,8 @@ function updateFocusControlsUI() {
  * Highlights any tag rows in the sidebar that belong to the selected tag set.
  */
 function syncTagSidebarSelectionUI() {
-    if (!tagListEl) return;
-    tagListEl.querySelectorAll<HTMLElement>('.ext-tag-sidebar-row').forEach(row => {
-        const tag = row.dataset.tag;
-        row.classList.toggle('ext-tag-selected', !!(tag && focusService.isTagSelected(tag)));
-    });
+    topPanelController.syncSelectionUI();
 }
-
-/**
- * Handles updates from the search input and re-syncs focus mode.
- */
-function handleSearchInput(value: string) {
-    if (!isSearchEnabled()) return;
-    focusService.setSearchQuery(value || '');
-    syncFocusMode();
-}
-
-/**
- * Adds or removes a tag from the selected set, then recalculates focus mode.
- */
-function toggleTagSelection(tag: string) {
-    if (!areTagsEnabled()) return;
-    focusService.toggleTag(tag);
-    syncFocusMode();
-}
-
-// ------------------------ Inline Editors ------------------------
-let tagListEl: HTMLElement | null = null;
-let topPanelsEl: HTMLElement | null = null;
-let searchInputEl: HTMLInputElement | null = null;
 
 const FOCUS_MODES = Object.freeze({
     STARS: 'stars',
@@ -655,13 +659,133 @@ class FocusService {
     private matchesSearch(meta: MessageMeta, el: HTMLElement): boolean {
         if (!this.searchQueryLower) return false;
         const adapter = meta.adapter;
-        const textSource = adapter ? adapter.getText() : normalizeText(el?.innerText || '');
+        const textSource = adapter ? adapter.getText() : Utils.normalizeText(el?.innerText || '');
         const text = textSource.toLowerCase();
         return text.includes(this.searchQueryLower);
     }
 }
 
 const focusService = new FocusService();
+class TopPanelController {
+    private topPanelsEl: HTMLElement | null = null;
+    private tagListEl: HTMLElement | null = null;
+    private searchInputEl: HTMLInputElement | null = null;
+
+    ensurePanels(): HTMLElement {
+        if (this.topPanelsEl) return this.topPanelsEl;
+        const wrap = document.createElement('div');
+        wrap.id = 'ext-top-panels';
+        wrap.innerHTML = `
+            <div class="ext-top-frame ext-top-search">
+                <span class="ext-top-label">Search</span>
+                <input type="text" class="ext-search-input" placeholder="Search messages…" />
+            </div>
+            <div class="ext-top-frame ext-top-tags">
+                <span class="ext-top-label">Tags</span>
+                <div class="ext-tag-list" id="ext-tag-list"></div>
+            </div>
+        `;
+        markExtNode(wrap);
+        document.body.appendChild(wrap);
+        this.topPanelsEl = wrap;
+        this.tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
+        this.searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
+        if (this.searchInputEl) {
+            this.searchInputEl.value = focusService.getSearchQuery();
+            this.searchInputEl.addEventListener('input', (evt) => {
+                const target = evt.target as HTMLInputElement;
+                this.handleSearchInput(target.value);
+            });
+        }
+        this.updateConfigUI();
+        syncTopPanelWidth();
+        return wrap;
+    }
+
+    updateTagList(counts: Array<{ tag: string; count: number }>) {
+        this.ensurePanels();
+        if (!this.tagListEl) return;
+        this.tagListEl.innerHTML = '';
+        this.tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
+        if (!counts.length) {
+            const empty = document.createElement('div');
+            empty.className = 'ext-tag-sidebar-empty';
+            empty.textContent = 'No tags yet';
+            this.tagListEl.appendChild(empty);
+            return;
+        }
+        for (const { tag, count } of counts) {
+            const row = document.createElement('div');
+            row.className = 'ext-tag-sidebar-row';
+            row.dataset.tag = tag;
+            const label = document.createElement('span');
+            label.className = 'ext-tag-sidebar-tag';
+            label.textContent = tag;
+            const badge = document.createElement('span');
+            badge.className = 'ext-tag-sidebar-count';
+            badge.textContent = String(count);
+            row.append(label, badge);
+            row.classList.toggle('ext-tag-selected', focusService.isTagSelected(tag));
+            row.addEventListener('click', () => this.toggleTagSelection(tag));
+            this.tagListEl.appendChild(row);
+        }
+        this.syncSelectionUI();
+    }
+
+    syncSelectionUI() {
+        if (!this.tagListEl) return;
+        this.tagListEl.querySelectorAll<HTMLElement>('.ext-tag-sidebar-row').forEach(row => {
+            const tag = row.dataset.tag;
+            row.classList.toggle('ext-tag-selected', !!(tag && focusService.isTagSelected(tag)));
+        });
+    }
+
+    updateConfigUI() {
+        if (!this.topPanelsEl) return;
+        const searchPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-search');
+        const tagPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-tags');
+        if (searchPanel) searchPanel.style.display = isSearchEnabled() ? '' : 'none';
+        if (tagPanel) tagPanel.style.display = areTagsEnabled() ? '' : 'none';
+        if (this.searchInputEl) {
+            const enabled = isSearchEnabled();
+            this.searchInputEl.disabled = !enabled;
+            this.searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
+            if (!enabled) this.searchInputEl.value = '';
+        }
+        if (this.tagListEl) {
+            this.tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
+        }
+    }
+
+    clearSearchInput() {
+        if (this.searchInputEl) this.searchInputEl.value = '';
+    }
+
+    reset() {
+        this.topPanelsEl = null;
+        this.tagListEl = null;
+        this.searchInputEl = null;
+    }
+
+    getElement(): HTMLElement | null {
+        return this.topPanelsEl;
+    }
+
+    private handleSearchInput(value: string) {
+        if (!isSearchEnabled()) return;
+        focusService.setSearchQuery(value || '');
+        syncFocusMode();
+    }
+
+    private toggleTagSelection(tag: string) {
+        if (!areTagsEnabled()) return;
+        focusService.toggleTag(tag);
+        syncFocusMode();
+    }
+}
+
+const topPanelController = new TopPanelController();
+configService.onChange(() => topPanelController.updateConfigUI());
 
 class EditorController {
     private activeTagEditor: ActiveEditor | null = null;
@@ -715,10 +839,10 @@ class EditorController {
         input.textContent = existing;
 
         const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
-        const detachFloating = mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
+        const detachFloating = Utils.mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
         messageEl.classList.add('ext-tag-editing');
         input.focus();
-        placeCaretAtEnd(input);
+        Utils.placeCaretAtEnd(input);
 
         const cleanup = () => {
             detachFloating();
@@ -793,7 +917,7 @@ class EditorController {
         input.value = existing;
 
         const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
-        const detachFloating = mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
+        const detachFloating = Utils.mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
         messageEl.classList.add('ext-note-editing');
         input.focus();
         input.select();
@@ -860,13 +984,11 @@ function teardownUI() {
     document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
     document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
     document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
-    tagListEl = null;
     const controls = document.getElementById('ext-page-controls');
     if (controls) controls.remove();
-    if (topPanelsEl) {
-        topPanelsEl.remove();
-        topPanelsEl = null;
-    }
+    const panel = topPanelController.getElement();
+    if (panel) panel.remove();
+    topPanelController.reset();
     resetFocusState();
     activeThreadAdapter?.disconnect();
     activeThreadAdapter = null;
@@ -877,52 +999,14 @@ function teardownUI() {
  * Moves the caret to the end of a contenteditable element.
  */
 function placeCaretAtEnd(el: HTMLElement) {
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    const sel = window.getSelection();
-    if (!sel) return;
-    sel.removeAllRanges();
-    sel.addRange(range);
+    Utils.placeCaretAtEnd(el);
 }
 
 /**
  * Positions floating editor UI relative to an anchor and keeps it in view.
  */
 function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
-    editor.classList.add('ext-floating-editor');
-    markExtNode(editor);
-    document.body.appendChild(editor);
-
-    const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
-
-    const update = () => {
-        const rect = anchor.getBoundingClientRect();
-        const width = Math.min(420, window.innerWidth - 32);
-        editor.style.width = `${width}px`;
-        const baseTop = window.scrollY + rect.top + 16;
-        const maxTop = window.scrollY + window.innerHeight - editor.offsetHeight - 16;
-        const top = clamp(baseTop, window.scrollY + 16, maxTop);
-        const baseLeft = window.scrollX + rect.right - width;
-        const minLeft = window.scrollX + 16;
-        const maxLeft = window.scrollX + window.innerWidth - width - 16;
-        const left = clamp(baseLeft, minLeft, maxLeft);
-        editor.style.top = `${top}px`;
-        editor.style.left = `${left}px`;
-    };
-
-    const onScroll = () => update();
-    const onResize = () => update();
-
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onResize);
-    update();
-
-    return () => {
-        window.removeEventListener('scroll', onScroll, true);
-        window.removeEventListener('resize', onResize);
-        editor.classList.remove('ext-floating-editor');
-    };
+    return Utils.mountFloatingEditor(editor, anchor);
 }
 
 // --------------------- Discovery & Enumeration -----------------
@@ -1076,7 +1160,7 @@ class DomMessageAdapter implements MessageAdapter {
     }
 
     getText(): string {
-        return normalizeText(this.element.innerText || '');
+        return Utils.normalizeText(this.element.innerText || '');
     }
 
     shouldShowCollapse(): boolean {
@@ -1449,35 +1533,94 @@ function syncCollapseButton(el: HTMLElement) {
     btn.setAttribute('aria-expanded', String(!collapsed));
 }
 
+class ThreadActions {
+    collapse(el: HTMLElement, yes: boolean) {
+        el.classList.toggle('ext-collapsed', !!yes);
+        syncCollapseButton(el);
+    }
+
+    toggleAll(container: HTMLElement, yes: boolean) {
+        const msgs = enumerateMessages(container);
+        for (const m of msgs) this.collapse(m, !!yes);
+    }
+
+    collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
+        const matches = getFocusMatches();
+        if (!matches.length) return;
+        const matchSet = new Set(matches.map(adapter => adapter.element));
+        for (const el of enumerateMessages(container)) {
+            const isMatch = matchSet.has(el);
+            if (target === 'in' ? isMatch : !isMatch) {
+                this.collapse(el, collapseState);
+            }
+        }
+    }
+}
+
+const threadActions = new ThreadActions();
+
 /**
  * Toggles the collapsed state for one message block.
  */
 function collapse(el: HTMLElement, yes: boolean) {
-    el.classList.toggle('ext-collapsed', !!yes);
-    syncCollapseButton(el);
+    threadActions.collapse(el, yes);
 }
 
 /**
  * Applies collapse/expand state to every discovered message.
  */
 function toggleAll(container: HTMLElement, yes: boolean) {
-    const msgs = enumerateMessages(container);
-    for (const m of msgs) collapse(m, !!yes);
+    threadActions.toggleAll(container, yes);
 }
 
 /**
  * Applies collapse state against the current focus subset.
  */
 function collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
-    const matches = getFocusMatches();
-    if (!matches.length) return;
-    const matchSet = new Set(matches.map(adapter => adapter.element));
-    for (const el of enumerateMessages(container)) {
-        const isMatch = matchSet.has(el);
-        if (target === 'in' ? isMatch : !isMatch) {
-            collapse(el, collapseState);
+    threadActions.collapseByFocus(container, target, collapseState);
+}
+
+class ExportController {
+    copyThread(container: HTMLElement, focusOnly: boolean) {
+        try {
+            const md = this.buildMarkdown(container, focusOnly);
+            navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
+        } catch (err) {
+            console.error('Export failed', err);
         }
     }
+
+    buildMarkdown(container: HTMLElement, focusOnly: boolean): string {
+        const pairs = getPairs(container);
+        const sections: string[] = [];
+        pairs.forEach((pair, idx) => {
+            const num = idx + 1;
+            const isFocused = focusOnly ? isPairFocused(pair) : true;
+            if (focusOnly && !isFocused) return;
+            const query = pair.query ? pair.query.innerText.trim() : '';
+            const response = pair.response ? pair.response.innerText.trim() : '';
+            const lines: string[] = [];
+            if (query) {
+                lines.push(`### ${num}. Prompt`, '', query);
+            }
+            if (response) {
+                if (lines.length) lines.push('');
+                lines.push(`### ${num}. Response`, '', response);
+            }
+            if (lines.length) sections.push(lines.join('\n'));
+        });
+        return sections.join('\n\n');
+    }
+}
+
+const exportController = new ExportController();
+
+function runExport(container: HTMLElement, focusOnly: boolean) {
+    exportController.copyThread(container, focusOnly);
+}
+
+function exportThreadToMarkdown(container: HTMLElement, focusOnly: boolean): string {
+    return exportController.buildMarkdown(container, focusOnly);
 }
 
 // ---------------------- Orchestration --------------------------
@@ -1494,7 +1637,7 @@ class BootstrapOrchestrator {
     async run() {
         // Wait a moment for the app shell to mount
         await sleep(600);
-        await ensureConfigLoaded();
+        await configService.load();
         teardownUI();
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
@@ -1502,7 +1645,8 @@ class BootstrapOrchestrator {
 
         const threadKey = getThreadKey();
         this.toolbar.ensurePageControls(container, threadKey);
-        ensureTopPanels();
+        topPanelController.ensurePanels();
+        topPanelController.updateConfigUI();
 
         const render = async () => {
             if (this.refreshRunning) {
@@ -1539,11 +1683,11 @@ class BootstrapOrchestrator {
                         }
                         renderBadges(el, threadKey, value, messageAdapter);
                     }
-                    const sortedTags = Array.from(tagCounts.entries())
-                        .map(([tag, count]) => ({ tag, count }))
-                        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-                    updateTagList(sortedTags);
-                    refreshFocusButtons();
+                const sortedTags = Array.from(tagCounts.entries())
+                    .map(([tag, count]) => ({ tag, count }))
+                    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+                topPanelController.updateTagList(sortedTags);
+                refreshFocusButtons();
                 } while (this.refreshQueued);
             } finally {
                 this.refreshRunning = false;
@@ -1610,110 +1754,6 @@ window.__tagalyst = Object.assign(window.__tagalyst || {}, {
 bootstrap();
 
 /**
- * Creates or returns the floating Search/Tags panel container.
- */
-function ensureTopPanels(): HTMLElement {
-    if (topPanelsEl) return topPanelsEl;
-    const wrap = document.createElement('div');
-    wrap.id = 'ext-top-panels';
-    wrap.innerHTML = `
-        <div class="ext-top-frame ext-top-search">
-            <span class="ext-top-label">Search</span>
-            <input type="text" class="ext-search-input" placeholder="Search messages…" />
-        </div>
-        <div class="ext-top-frame ext-top-tags">
-            <span class="ext-top-label">Tags</span>
-            <div class="ext-tag-list" id="ext-tag-list"></div>
-        </div>
-    `;
-    markExtNode(wrap);
-    document.body.appendChild(wrap);
-    topPanelsEl = wrap;
-    tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
-    searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
-    if (searchInputEl) {
-        searchInputEl.value = focusService.getSearchQuery();
-        searchInputEl.addEventListener('input', (evt) => {
-            const target = evt.target as HTMLInputElement;
-            handleSearchInput(target.value);
-        });
-    }
-    updateConfigUI();
-    syncTopPanelWidth();
-    return wrap;
-}
-
-/**
- * Rebuilds the tag list UI with the latest frequency counts.
- */
-function updateTagList(counts: Array<{ tag: string; count: number }>) {
-    ensureTopPanels();
-    if (!tagListEl) return;
-    tagListEl.innerHTML = '';
-    tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
-    if (!counts.length) {
-        const empty = document.createElement('div');
-        empty.className = 'ext-tag-sidebar-empty';
-        empty.textContent = 'No tags yet';
-        tagListEl.appendChild(empty);
-        return;
-    }
-    for (const { tag, count } of counts) {
-        const row = document.createElement('div');
-        row.className = 'ext-tag-sidebar-row';
-        row.dataset.tag = tag;
-        const label = document.createElement('span');
-        label.className = 'ext-tag-sidebar-tag';
-        label.textContent = tag;
-        const badge = document.createElement('span');
-        badge.className = 'ext-tag-sidebar-count';
-        badge.textContent = String(count);
-        row.append(label, badge);
-        row.classList.toggle('ext-tag-selected', focusService.isTagSelected(tag));
-        row.addEventListener('click', () => toggleTagSelection(tag));
-        tagListEl.appendChild(row);
-    }
-    syncTagSidebarSelectionUI();
-}
-
-/**
- * Generates Markdown for the current thread and writes it to the clipboard.
- */
-function runExport(container: HTMLElement, focusOnly: boolean) {
-    try {
-        const md = exportThreadToMarkdown(container, focusOnly);
-        navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
-    } catch (err) {
-        console.error('Export failed', err);
-    }
-}
-
-/**
- * Builds a Markdown document for the thread, optionally limited to focus matches.
- */
-function exportThreadToMarkdown(container: HTMLElement, focusOnly: boolean): string {
-    const pairs = getPairs(container);
-    const sections = [];
-    pairs.forEach((pair, idx) => {
-        const num = idx + 1;
-        const isFocused = focusOnly ? isPairFocused(pair) : true;
-        if (focusOnly && !isFocused) return;
-        const query = pair.query ? pair.query.innerText.trim() : '';
-        const response = pair.response ? pair.response.innerText.trim() : '';
-        const lines = [];
-        if (query) {
-            lines.push(`### ${num}. Prompt`, '', query);
-        }
-        if (response) {
-            if (lines.length) lines.push('');
-            lines.push(`### ${num}. Response`, '', response);
-        }
-        if (lines.length) sections.push(lines.join('\n'));
-    });
-    return sections.join('\n\n');
-}
-
-/**
  * Determines whether any node within a (query, response) pair is currently focused.
  */
 function isPairFocused(pair: TagalystPair) {
@@ -1731,6 +1771,7 @@ function isPairFocused(pair: TagalystPair) {
  * Keeps the Search/Tags panel width aligned with the bottom controls.
  */
 function syncTopPanelWidth() {
+    const topPanelsEl = topPanelController.getElement();
     if (!topPanelsEl) return;
     const controls = document.getElementById('ext-page-controls');
     const refWidth = controls ? controls.getBoundingClientRect().width : null;
@@ -1743,6 +1784,6 @@ if (chrome?.storage?.onChanged) {
         if (areaName !== 'local') return;
         const change = changes[CONTENT_CONFIG_STORAGE_KEY];
         if (!change) return;
-        applyConfigObject(change.newValue);
+        configService.apply(change.newValue);
     });
 }
