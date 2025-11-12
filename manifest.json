@@ -1,7 +1,7 @@
 {
     "name": "Tagalyst 2",
-    "description": "Organize ChatGPT chats: bookmark, tag, note, filter, browse, export.",
-    "version": "0.2.0",
+    "description": "Basis: v0.1.5 with ts refactoring",
+    "version": "0.3.0",
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "permissions": [
@@ -18,9 +18,6 @@
                 "https://chatgpt.com/*"
             ],
             "js": [
-                "content/util.js",
-                "content/editors.js",
-                "content/view.js",
                 "content/content.js"
             ],
             "css": [

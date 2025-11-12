@@ -1,0 +1,1690 @@
+/**
+ * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
+ * - Defensive discovery with MutationObserver
+ * - Non-destructive overlays (no reparenting site nodes)
+ * - Local persistence via chrome.storage
+ */
+
+const EXT_ATTR = 'data-ext-owned';
+
+// -------------------------- Utilities --------------------------
+/**
+ * Small helper for delaying async flows without blocking the UI thread.
+ */
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+namespace Utils {
+    
+    /**
+     * Produces a deterministic 32-bit FNV-1a hash for lightweight keys.
+     */
+    export function hashString(s: string) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+        }
+        return ("0000000" + h.toString(16)).slice(-8);
+    }
+
+    export function normalizeText(t: string) {
+        return (t || "")
+            .replace(/\s+/g, " ")
+            .replace(/[\u200B-\u200D\uFEFF]/g, "")
+            .trim();
+    }
+
+    export function placeCaretAtEnd(el: HTMLElement) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        if (!sel) return;
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    export function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
+        editor.classList.add('ext-floating-editor');
+        markExtNode(editor);
+        document.body.appendChild(editor);
+
+        const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
+        const update = () => {
+            const rect = anchor.getBoundingClientRect();
+            const width = Math.min(420, window.innerWidth - 32);
+            editor.style.width = `${width}px`;
+            const baseTop = window.scrollY + rect.top + 16;
+            const maxTop = window.scrollY + window.innerHeight - editor.offsetHeight - 16;
+            const top = clamp(baseTop, window.scrollY + 16, maxTop);
+            const baseLeft = window.scrollX + rect.right - width;
+            const minLeft = window.scrollX + 16;
+            const maxLeft = window.scrollX + window.innerWidth - width - 16;
+            const left = clamp(baseLeft, minLeft, maxLeft);
+            editor.style.top = `${top}px`;
+            editor.style.left = `${left}px`;
+        };
+
+        const onScroll = () => update();
+        const onResize = () => update();
+
+        window.addEventListener('scroll', onScroll, true);
+        window.addEventListener('resize', onResize);
+        update();
+
+        return () => {
+            window.removeEventListener('scroll', onScroll, true);
+            window.removeEventListener('resize', onResize);
+            editor.classList.remove('ext-floating-editor');
+        };
+    }
+
+    /**
+     * Generates a thread-level key using the conversation ID when available.
+     */
+    export function getThreadKey(): string {
+        try {
+            const u = new URL(location.href);
+            if (u.pathname && u.pathname.length > 1) return u.pathname.replace(/\W+/g, "-");
+        } catch { /* noop */ }
+        return hashString(document.title + location.host);
+    }
+
+    /**
+     * Returns the DOM-provided message UUID if available.
+     */
+    export function getMessageId(el: Element | null) {
+        return el?.getAttribute?.('data-message-id') || null;
+    }
+
+    /**
+     * Stable-ish per-message key derived from ChatGPT IDs or fallback heuristics.
+     */
+    export function keyForMessage(el: HTMLElement) {
+        const domId = getMessageId(el);
+        if (domId) return domId;
+        const text = normalizeText(el.innerText).slice(0, 4000); // perf cap
+        const idx = Array.prototype.indexOf.call(el.parentElement?.children || [], el);
+        return hashString(text + "|" + idx);
+    }
+
+    /**
+     * Flags a DOM node as extension-managed so MutationObservers can ignore it.
+     */
+    export function markExtNode(el: Element | null) {
+        if (el?.setAttribute) {
+            el.setAttribute(EXT_ATTR, '1');
+        }
+    }
+
+    /**
+     * Walks up from the provided node to see if any ancestor belongs to the extension.
+     */
+    export function closestExtNode(node: Node | null) {
+        if (!node) return null;
+        if (node.nodeType === Node.ELEMENT_NODE && typeof (node as Element).closest === 'function') {
+            return (node as Element).closest(`[${EXT_ATTR}]`);
+        }
+        const parent = node.parentElement;
+        if (parent && typeof parent.closest === 'function') {
+            return parent.closest(`[${EXT_ATTR}]`);
+        }
+        return null;
+    }
+
+    /**
+     * Returns true when the supplied node is part of extension-owned UI.
+     */
+    export function isExtensionNode(node: Node | null) {
+        return !!closestExtNode(node);
+    }
+
+    /**
+     * Determines whether a mutation record affects host content rather than extension nodes.
+     */
+    export function mutationTouchesExternal(record: MutationRecord) {
+        if (!isExtensionNode(record.target)) return true;
+        for (const node of record.addedNodes) {
+            if (!isExtensionNode(node)) return true;
+        }
+        for (const node of record.removedNodes) {
+            if (!isExtensionNode(node)) return true;
+        }
+        return false;
+    }
+} // Utils
+
+class StorageService {
+    async read(keys: string[]): Promise<Record<string, MessageValue>> {
+        if (!Array.isArray(keys) || !keys.length) return {};
+        return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+    }
+
+    async write(record: Record<string, MessageValue>): Promise<void> {
+        if (!record || !Object.keys(record).length) return;
+        await new Promise<void>(resolve => chrome.storage.local.set(record, () => resolve()));
+    }
+
+    keyForMessage(threadKey: string, adapter: MessageAdapter): string {
+        return adapter.storageKey(threadKey);
+    }
+
+    async readMessage(threadKey: string, adapter: MessageAdapter): Promise<MessageValue> {
+        const key = this.keyForMessage(threadKey, adapter);
+        const record = await this.read([key]);
+        return record[key] || {};
+    }
+
+    async writeMessage(threadKey: string, adapter: MessageAdapter, value: MessageValue): Promise<void> {
+        const key = this.keyForMessage(threadKey, adapter);
+        await this.write({ [key]: value });
+    }
+} // StorageService
+
+const storageService = new StorageService();
+class ConfigService {
+    private loaded = false;
+    private listeners = new Set<(cfg: typeof contentDefaultConfig) => void>();
+
+    constructor(private storage: StorageService, private readonly scheduler: RenderScheduler) { }
+
+    async load(): Promise<typeof contentDefaultConfig> {
+        if (this.loaded) return config;
+        const store = await this.storage.read([CONTENT_CONFIG_STORAGE_KEY]);
+        this.apply(store[CONTENT_CONFIG_STORAGE_KEY]);
+        this.loaded = true;
+        return config;
+    }
+
+    apply(obj?: Partial<typeof contentDefaultConfig>) {
+        config = { ...contentDefaultConfig, ...(obj || {}) };
+        this.enforceState();
+        this.notify();
+        focusController.syncMode();
+        this.scheduler.request();
+    }
+
+    async update(partial: Partial<typeof contentDefaultConfig>) {
+        const next = { ...config, ...partial };
+        await this.storage.write({ [CONTENT_CONFIG_STORAGE_KEY]: next });
+        this.apply(next);
+    }
+
+    onChange(listener: (cfg: typeof contentDefaultConfig) => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    isSearchEnabled() {
+        return !!config.searchEnabled;
+    }
+
+    areTagsEnabled() {
+        return !!config.tagsEnabled;
+    }
+
+    private notify() {
+        this.listeners.forEach(listener => listener(config));
+    }
+
+    private enforceState() {
+        let changed = false;
+        if (!this.isSearchEnabled()) {
+            focusService.setSearchQuery('');
+            topPanelController.clearSearchInput();
+            changed = true;
+        }
+        if (!this.areTagsEnabled()) {
+            focusService.clearTags();
+            changed = true;
+        }
+        if (changed) focusController.syncMode();
+    }
+} // ConfigService
+
+const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
+const contentDefaultConfig = {
+    searchEnabled: true,
+    tagsEnabled: true,
+};
+let config = { ...contentDefaultConfig };
+let activeThreadAdapter: ThreadAdapter | null = null;
+
+type MessageValue = Record<string, any>;
+
+type MessageMeta = {
+    key: string | null;
+    value: MessageValue;
+    pairIndex: number | null;
+    adapter: MessageAdapter | null;
+};
+
+class MessageMetaRegistry {
+    private readonly store = new Map<HTMLElement, MessageMeta>();
+
+    clear() {
+        this.store.clear();
+    }
+
+    get(el: HTMLElement) {
+        return this.store.get(el) || null;
+    }
+
+    delete(el: HTMLElement) {
+        this.store.delete(el);
+    }
+
+    forEach(cb: (meta: MessageMeta, el: HTMLElement) => void) {
+        this.store.forEach(cb);
+    }
+
+    ensure(el: HTMLElement, key?: string | null, adapter?: MessageAdapter | null) {
+        let meta = this.store.get(el);
+        if (!meta) {
+            meta = { key: key || null, value: {}, pairIndex: null, adapter: adapter || null };
+            this.store.set(el, meta);
+        }
+        if (key) meta.key = key;
+        if (adapter) meta.adapter = adapter;
+        return meta;
+    }
+
+    update(el: HTMLElement, opts: { key?: string | null; value?: MessageValue; pairIndex?: number | null; adapter?: MessageAdapter | null } = {}) {
+        const meta = this.ensure(el, opts.key ?? null, opts.adapter ?? null);
+        if (typeof opts.pairIndex === 'number') {
+            meta.pairIndex = opts.pairIndex;
+        } else if (opts.pairIndex === null) {
+            meta.pairIndex = null;
+        }
+        if (opts.value) meta.value = opts.value;
+        return meta;
+    }
+
+    resolveAdapter(el: HTMLElement): MessageAdapter {
+        const meta = this.ensure(el);
+        if (meta.adapter && meta.adapter.element === el) {
+            return meta.adapter;
+        }
+        const adapter = new DomMessageAdapter(el);
+        meta.adapter = adapter;
+        return adapter;
+    }
+
+    getStore() {
+        return this.store;
+    }
+} // MessageMetaRegistry
+
+const messageMetaRegistry = new MessageMetaRegistry();
+
+type ActiveEditor = {
+    message: HTMLElement;
+    cleanup: () => void;
+};
+
+type PageControls = {
+    root: HTMLElement;
+    focusPrev: HTMLButtonElement | null;
+    focusNext: HTMLButtonElement | null;
+    collapseNonFocus: HTMLButtonElement | null;
+    expandFocus: HTMLButtonElement | null;
+    exportFocus: HTMLButtonElement | null;
+};
+
+class RenderScheduler {
+    private rafId: number | null = null;
+    private renderer: (() => Promise<void>) | null = null;
+
+    setRenderer(renderer: () => Promise<void>) {
+        this.renderer = renderer;
+    }
+
+    request(renderer?: () => Promise<void>) {
+        if (renderer) this.renderer = renderer;
+        const target = renderer ?? this.renderer;
+        if (!target) return;
+        if (this.rafId) cancelAnimationFrame(this.rafId);
+        this.rafId = requestAnimationFrame(() => {
+            this.rafId = null;
+            target();
+        });
+    }
+} // RenderScheduler
+
+const renderScheduler = new RenderScheduler();
+const configService = new ConfigService(storageService, renderScheduler);
+
+const FOCUS_MODES = Object.freeze({
+    STARS: 'stars',
+    TAGS: 'tags',
+    SEARCH: 'search',
+} as const);
+
+type FocusMode = typeof FOCUS_MODES[keyof typeof FOCUS_MODES];
+
+const focusGlyphs: Record<FocusMode, { empty: string; filled: string }> = {
+    [FOCUS_MODES.STARS]: { empty: '☆', filled: '★' },
+    [FOCUS_MODES.TAGS]: { empty: '○', filled: '●' },
+    [FOCUS_MODES.SEARCH]: { empty: '□', filled: '■' },
+};
+
+class FocusService {
+    private mode: FocusMode = FOCUS_MODES.STARS;
+    private readonly selectedTags = new Set<string>();
+    private searchQuery = '';
+    private searchQueryLower = '';
+    private navIndex = -1;
+
+    reset() {
+        this.selectedTags.clear();
+        this.searchQuery = '';
+        this.searchQueryLower = '';
+        this.mode = FOCUS_MODES.STARS;
+        this.navIndex = -1;
+    }
+
+    setSearchQuery(raw: string) {
+        const normalized = (raw || '').trim();
+        this.searchQuery = normalized;
+        this.searchQueryLower = normalized.toLowerCase();
+    }
+
+    toggleTag(tag: string) {
+        if (!tag) return;
+        if (this.selectedTags.has(tag)) {
+            this.selectedTags.delete(tag);
+        } else {
+            this.selectedTags.add(tag);
+        }
+    }
+
+    clearTags() {
+        if (this.selectedTags.size) {
+            this.selectedTags.clear();
+        }
+    }
+
+    isTagSelected(tag: string): boolean {
+        return this.selectedTags.has(tag);
+    }
+
+    getTags(): string[] {
+        return Array.from(this.selectedTags);
+    }
+
+    getSearchQuery(): string {
+        return this.searchQuery;
+    }
+
+    getMode(): FocusMode {
+        return this.mode;
+    }
+
+    describeMode(): string {
+        switch (this.mode) {
+            case FOCUS_MODES.TAGS:
+                return 'selected tags';
+            case FOCUS_MODES.SEARCH:
+                return 'search results';
+            default:
+                return 'starred items';
+        }
+    }
+
+    getModeLabel(): string {
+        switch (this.mode) {
+            case FOCUS_MODES.TAGS:
+                return 'tagged message';
+            case FOCUS_MODES.SEARCH:
+                return 'search hit';
+            default:
+                return 'starred message';
+        }
+    }
+
+    getGlyph(isFilled: boolean): string {
+        const glyph = focusGlyphs[this.mode] || focusGlyphs[FOCUS_MODES.STARS];
+        return isFilled ? glyph.filled : glyph.empty;
+    }
+
+    computeMode(): FocusMode {
+        if (configService.isSearchEnabled() && this.searchQueryLower) return FOCUS_MODES.SEARCH;
+        if (configService.areTagsEnabled() && this.selectedTags.size) return FOCUS_MODES.TAGS;
+        return FOCUS_MODES.STARS;
+    }
+
+    syncMode() {
+        this.mode = this.computeMode();
+        this.navIndex = -1;
+    }
+
+    isMessageFocused(meta: MessageMeta, el: HTMLElement): boolean {
+        switch (this.mode) {
+            case FOCUS_MODES.TAGS:
+                return this.matchesSelectedTags(meta.value);
+            case FOCUS_MODES.SEARCH:
+                return this.matchesSearch(meta, el);
+            default:
+                return !!meta.value?.starred;
+        }
+    }
+
+    getMatches(store: MessageMetaRegistry): MessageAdapter[] {
+        const matches: MessageAdapter[] = [];
+        store.forEach((meta, el) => {
+            if (!document.contains(el)) {
+                store.delete(el);
+                return;
+            }
+            const adapter = meta.adapter || store.resolveAdapter(el);
+            if (this.isMessageFocused(meta, el)) {
+                matches.push(adapter);
+            }
+        });
+        return matches;
+    }
+
+    adjustNav(delta: number, total: number): number {
+        if (total <= 0) {
+            this.navIndex = -1;
+            return this.navIndex;
+        }
+        if (this.navIndex < 0 || this.navIndex >= total) {
+            this.navIndex = delta >= 0 ? 0 : total - 1;
+        } else {
+            this.navIndex = Math.max(0, Math.min(this.navIndex + delta, total - 1));
+        }
+        return this.navIndex;
+    }
+
+    private matchesSelectedTags(value: MessageValue): boolean {
+        if (!configService.areTagsEnabled() || !this.selectedTags.size) return false;
+        const tags = Array.isArray(value?.tags) ? value.tags : [];
+        if (!tags.length) return false;
+        return tags.some(tag => this.selectedTags.has(tag.toLowerCase()));
+    }
+
+    private matchesSearch(meta: MessageMeta, el: HTMLElement): boolean {
+        if (!this.searchQueryLower) return false;
+        const adapter = meta.adapter;
+        const textSource = adapter ? adapter.getText() : Utils.normalizeText(el?.innerText || '');
+        const text = textSource.toLowerCase();
+        if (text.includes(this.searchQueryLower)) return true;
+        const tags = Array.isArray(meta.value?.tags) ? meta.value.tags : [];
+        if (tags.some(tag => tag.toLowerCase().includes(this.searchQueryLower))) return true;
+        const note = typeof meta.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
+        if (note && note.includes(this.searchQueryLower)) return true;
+        return false;
+    }
+} // FocusService
+
+const focusService = new FocusService();
+
+class FocusController {
+    private pageControls: PageControls | null = null;
+    private selectionSync: (() => void) | null = null;
+
+    constructor(private readonly focus: FocusService, private readonly messages: MessageMetaRegistry) { }
+
+    reset() {
+        this.focus.reset();
+        this.pageControls = null;
+        this.messages.clear();
+    }
+
+    attachSelectionSync(handler: () => void) {
+        this.selectionSync = handler;
+    }
+
+    setPageControls(controls: PageControls | null) {
+        this.pageControls = controls;
+        this.updateControlsUI();
+    }
+
+    updateMessageButton(el: HTMLElement, meta: MessageMeta) {
+        const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
+        if (!btn) return;
+        const active = this.focus.isMessageFocused(meta, el);
+        const glyph = this.getGlyph(active);
+        if (btn.textContent !== glyph) btn.textContent = glyph;
+        const pressed = String(active);
+        if (btn.getAttribute('aria-pressed') !== pressed) {
+            btn.setAttribute('aria-pressed', pressed);
+        }
+        const focusDesc = this.describeMode();
+        const interactive = this.focus.getMode() === FOCUS_MODES.STARS;
+        const disabled = !interactive;
+        if (btn.disabled !== disabled) {
+            if (disabled) {
+                btn.setAttribute('disabled', 'true');
+            } else {
+                btn.removeAttribute('disabled');
+            }
+        }
+        if (interactive) {
+            const title = active ? 'Remove bookmark' : 'Bookmark message';
+            if (btn.title !== title) {
+                btn.title = title;
+                btn.setAttribute('aria-label', title);
+            }
+        } else {
+            const title = active ? `Matches ${focusDesc}` : `Does not match ${focusDesc}`;
+            if (btn.title !== title) {
+                btn.title = title;
+                btn.setAttribute('aria-label', title);
+            }
+        }
+    }
+
+    refreshButtons() {
+        this.messages.forEach((meta, el) => {
+            if (!document.contains(el)) {
+                this.messages.delete(el);
+                return;
+            }
+            if (!meta.adapter) {
+                meta.adapter = new DomMessageAdapter(el);
+            }
+            this.updateMessageButton(el, meta);
+        });
+    }
+
+    syncMode() {
+        this.focus.syncMode();
+        this.refreshButtons();
+        this.updateControlsUI();
+        this.selectionSync?.();
+    }
+
+    getMatches(): MessageAdapter[] {
+        return this.focus.getMatches(this.messages);
+    }
+
+    getGlyph(isFilled: boolean) {
+        return this.focus.getGlyph(isFilled);
+    }
+
+    describeMode() {
+        return this.focus.describeMode();
+    }
+
+    getModeLabel() {
+        return this.focus.getModeLabel();
+    }
+
+    updateControlsUI() {
+        if (!this.pageControls) return;
+        const mode = this.focus.getMode();
+        const glyph = focusGlyphs[mode] || focusGlyphs[FOCUS_MODES.STARS];
+        const desc = this.getModeLabel();
+        if (this.pageControls.focusPrev) {
+            this.pageControls.focusPrev.textContent = `${glyph.filled}↑`;
+            this.pageControls.focusPrev.title = `Previous ${desc}`;
+        }
+        if (this.pageControls.focusNext) {
+            this.pageControls.focusNext.textContent = `${glyph.filled}↓`;
+            this.pageControls.focusNext.title = `Next ${desc}`;
+        }
+        if (this.pageControls.collapseNonFocus) {
+            this.pageControls.collapseNonFocus.textContent = glyph.empty;
+            this.pageControls.collapseNonFocus.title = `Collapse messages outside current ${desc}s`;
+        }
+        if (this.pageControls.expandFocus) {
+            this.pageControls.expandFocus.textContent = `${glyph.filled}`;
+            this.pageControls.expandFocus.title = `Expand current ${desc}s`;
+        }
+        if (this.pageControls.exportFocus) {
+            this.pageControls.exportFocus.textContent = glyph.filled;
+            this.pageControls.exportFocus.title = `Copy Markdown for current ${desc}s`;
+        }
+    }
+
+    isPairFocused(pair: TagalystPair) {
+        const nodes: HTMLElement[] = [];
+        if (pair.query) nodes.push(pair.query);
+        if (pair.response) nodes.push(pair.response);
+        return nodes.some(node => {
+            if (!node) return false;
+            const meta = this.messages.get(node);
+            if (!meta) return false;
+            return this.focus.isMessageFocused(meta, node);
+        });
+    }
+} // FocusController
+
+const focusController = new FocusController(focusService, messageMetaRegistry);
+
+class TopPanelController {
+    private topPanelsEl: HTMLElement | null = null;
+    private tagListEl: HTMLElement | null = null;
+    private searchInputEl: HTMLInputElement | null = null;
+
+    ensurePanels(): HTMLElement {
+        if (this.topPanelsEl) return this.topPanelsEl;
+        const wrap = document.createElement('div');
+        wrap.id = 'ext-top-panels';
+        wrap.innerHTML = `
+            <div class="ext-top-frame ext-top-search">
+                <span class="ext-top-label">Search</span>
+                <input type="text" class="ext-search-input" placeholder="Search messages…" />
+            </div>
+            <div class="ext-top-frame ext-top-tags">
+                <span class="ext-top-label">Tags</span>
+                <div class="ext-tag-list" id="ext-tag-list"></div>
+            </div>
+        `;
+        Utils.markExtNode(wrap);
+        document.body.appendChild(wrap);
+        this.topPanelsEl = wrap;
+        this.tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
+        this.searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
+        if (this.searchInputEl) {
+            this.searchInputEl.value = focusService.getSearchQuery();
+            this.searchInputEl.addEventListener('input', (evt) => {
+                const target = evt.target as HTMLInputElement;
+                this.handleSearchInput(target.value);
+            });
+        }
+        this.updateConfigUI();
+        this.syncWidth();
+        return wrap;
+    }
+
+    updateTagList(counts: Array<{ tag: string; count: number }>) {
+        this.ensurePanels();
+        if (!this.tagListEl) return;
+        this.tagListEl.innerHTML = '';
+        this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
+        if (!counts.length) {
+            const empty = document.createElement('div');
+            empty.className = 'ext-tag-sidebar-empty';
+            empty.textContent = 'No tags yet';
+            this.tagListEl.appendChild(empty);
+            return;
+        }
+        for (const { tag, count } of counts) {
+            const row = document.createElement('div');
+            row.className = 'ext-tag-sidebar-row';
+            row.dataset.tag = tag;
+            const label = document.createElement('span');
+            label.className = 'ext-tag-sidebar-tag';
+            label.textContent = tag;
+            const badge = document.createElement('span');
+            badge.className = 'ext-tag-sidebar-count';
+            badge.textContent = String(count);
+            row.append(label, badge);
+            row.classList.toggle('ext-tag-selected', focusService.isTagSelected(tag));
+            row.addEventListener('click', () => this.toggleTagSelection(tag, row));
+            this.tagListEl.appendChild(row);
+        }
+        this.syncSelectionUI();
+    }
+
+    syncSelectionUI() {
+        if (!this.tagListEl) return;
+        this.tagListEl.querySelectorAll<HTMLElement>('.ext-tag-sidebar-row').forEach(row => {
+            const tag = row.dataset.tag;
+            row.classList.toggle('ext-tag-selected', !!(tag && focusService.isTagSelected(tag)));
+        });
+    }
+
+    updateConfigUI() {
+        if (!this.topPanelsEl) return;
+        const searchPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-search');
+        const tagPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-tags');
+        if (searchPanel) searchPanel.style.display = configService.isSearchEnabled() ? '' : 'none';
+        if (tagPanel) tagPanel.style.display = configService.areTagsEnabled() ? '' : 'none';
+        if (this.searchInputEl) {
+            const enabled = configService.isSearchEnabled();
+            this.searchInputEl.disabled = !enabled;
+            this.searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
+            if (!enabled) this.searchInputEl.value = '';
+        }
+        if (this.tagListEl) {
+            this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
+        }
+    }
+
+    clearSearchInput() {
+        if (this.searchInputEl) this.searchInputEl.value = '';
+    }
+
+    syncWidth() {
+        if (!this.topPanelsEl) return;
+        const controls = document.getElementById('ext-page-controls');
+        const refWidth = controls ? controls.getBoundingClientRect().width : null;
+        const width = refWidth && refWidth > 0 ? refWidth : this.topPanelsEl.getBoundingClientRect().width || 200;
+        this.topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
+    }
+
+    reset() {
+        this.topPanelsEl = null;
+        this.tagListEl = null;
+        this.searchInputEl = null;
+    }
+
+    getElement(): HTMLElement | null {
+        return this.topPanelsEl;
+    }
+
+    private handleSearchInput(value: string) {
+        if (!configService.isSearchEnabled()) return;
+        focusService.setSearchQuery(value || '');
+        focusController.syncMode();
+    }
+
+    private toggleTagSelection(tag: string, row?: HTMLElement) {
+        if (!configService.areTagsEnabled()) return;
+        const willSelect = !focusService.isTagSelected(tag);
+        focusService.toggleTag(tag);
+        if (row) {
+            row.classList.toggle('ext-tag-selected', willSelect);
+        }
+        focusController.syncMode();
+    }
+} // TopPanelController
+
+const topPanelController = new TopPanelController();
+focusController.attachSelectionSync(() => topPanelController.syncSelectionUI());
+configService.onChange(() => topPanelController.updateConfigUI());
+
+class EditorController {
+    private activeTagEditor: ActiveEditor | null = null;
+    private activeNoteEditor: ActiveEditor | null = null;
+
+    constructor(private readonly storage: StorageService) { }
+
+    teardown() {
+        this.closeTagEditor();
+        this.closeNoteEditor();
+    }
+
+    private closeTagEditor() {
+        if (this.activeTagEditor) {
+            this.activeTagEditor.cleanup();
+            this.activeTagEditor = null;
+        }
+    }
+
+    private closeNoteEditor() {
+        if (this.activeNoteEditor) {
+            this.activeNoteEditor.cleanup();
+            this.activeNoteEditor = null;
+        }
+    }
+
+    async openTagEditor(messageEl: HTMLElement, threadKey: string) {
+        if (this.activeTagEditor?.message === messageEl) {
+            this.closeTagEditor();
+            return;
+        }
+        this.closeTagEditor();
+
+        const adapter = messageMetaRegistry.resolveAdapter(messageEl);
+        const cur = await this.storage.readMessage(threadKey, adapter);
+        if (Array.isArray(cur.tags)) {
+            cur.tags = cur.tags.map(tag => tag.toLowerCase());
+        }
+        const existing = Array.isArray(cur.tags) ? cur.tags.join(', ') : '';
+
+        const editor = document.createElement('div');
+        editor.className = 'ext-tag-editor';
+        Utils.markExtNode(editor);
+        editor.innerHTML = `
+            <div class="ext-tag-editor-input" contenteditable="true" role="textbox" aria-label="Edit tags" data-placeholder="Add tags…"></div>
+            <div class="ext-tag-editor-actions">
+                <button type="button" class="ext-tag-editor-save">Save</button>
+                <button type="button" class="ext-tag-editor-cancel">Cancel</button>
+            </div>
+        `;
+
+        const input = editor.querySelector<HTMLElement>('.ext-tag-editor-input');
+        if (!input) return;
+        input.textContent = existing;
+
+        const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
+        const detachFloating = Utils.mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
+        messageEl.classList.add('ext-tag-editing');
+        input.focus();
+        Utils.placeCaretAtEnd(input);
+
+        const cleanup = () => {
+            detachFloating();
+            editor.remove();
+            messageEl.classList.remove('ext-tag-editing');
+            if (this.activeTagEditor?.message === messageEl) this.activeTagEditor = null;
+        };
+
+        const save = async () => {
+            const raw = input.innerText.replace(/\n+/g, ',');
+            const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
+            cur.tags = tags.map(tag => tag.toLowerCase());
+            await this.storage.writeMessage(threadKey, adapter, cur);
+            toolbarController.updateBadges(messageEl, threadKey, cur, adapter);
+            cleanup();
+        };
+
+        const cancel = () => cleanup();
+
+        const saveBtn = editor.querySelector<HTMLButtonElement>('.ext-tag-editor-save');
+        const cancelBtn = editor.querySelector<HTMLButtonElement>('.ext-tag-editor-cancel');
+        if (saveBtn) saveBtn.onclick = save;
+        if (cancelBtn) cancelBtn.onclick = cancel;
+        editor.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Escape') {
+                evt.preventDefault();
+                cancel();
+            } else if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
+                evt.preventDefault();
+                save();
+            }
+        });
+        editor.addEventListener('mousedown', evt => evt.stopPropagation());
+        const outsideTag = (evt: MouseEvent) => {
+            if (!editor.contains(evt.target as Node)) {
+                cancel();
+                document.removeEventListener('mousedown', outsideTag, true);
+            }
+        };
+        document.addEventListener('mousedown', outsideTag, true);
+
+        this.activeTagEditor = { message: messageEl, cleanup };
+    }
+
+    async openNoteEditor(messageEl: HTMLElement, threadKey: string) {
+        if (this.activeNoteEditor?.message === messageEl) {
+            this.closeNoteEditor();
+            return;
+        }
+        this.closeNoteEditor();
+
+        const adapter = messageMetaRegistry.resolveAdapter(messageEl);
+        const cur = await this.storage.readMessage(threadKey, adapter);
+        const existing = typeof cur.note === 'string' ? cur.note : '';
+
+        const editor = document.createElement('div');
+        editor.className = 'ext-note-editor';
+        Utils.markExtNode(editor);
+        editor.innerHTML = `
+            <label class="ext-note-label">
+                Annotation
+                <textarea class="ext-note-input" rows="3" placeholder="Add details…"></textarea>
+            </label>
+            <div class="ext-note-actions">
+                <button type="button" class="ext-note-save">Save</button>
+                <button type="button" class="ext-note-cancel">Cancel</button>
+            </div>
+        `;
+
+        const input = editor.querySelector<HTMLTextAreaElement>('.ext-note-input');
+        if (!input) return;
+        input.value = existing;
+
+        const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
+        const detachFloating = Utils.mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
+        messageEl.classList.add('ext-note-editing');
+        input.focus();
+        input.select();
+
+        const cleanup = () => {
+            detachFloating();
+            editor.remove();
+            messageEl.classList.remove('ext-note-editing');
+            if (this.activeNoteEditor?.message === messageEl) this.activeNoteEditor = null;
+        };
+
+        const save = async () => {
+            const value = input.value.trim();
+            if (value) {
+                cur.note = value;
+            } else {
+                delete cur.note;
+            }
+            await this.storage.writeMessage(threadKey, adapter, cur);
+            toolbarController.updateBadges(messageEl, threadKey, cur, adapter);
+            cleanup();
+        };
+
+        const cancel = () => cleanup();
+
+        const saveBtn = editor.querySelector<HTMLButtonElement>('.ext-note-save');
+        const cancelBtn = editor.querySelector<HTMLButtonElement>('.ext-note-cancel');
+        if (saveBtn) saveBtn.onclick = save;
+        if (cancelBtn) cancelBtn.onclick = cancel;
+        editor.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Escape') {
+                evt.preventDefault();
+                cancel();
+            } else if ((evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
+                evt.preventDefault();
+                save();
+            }
+        });
+        editor.addEventListener('mousedown', evt => evt.stopPropagation());
+        const outsideNote = (evt: MouseEvent) => {
+            if (!editor.contains(evt.target as Node)) {
+                cancel();
+                document.removeEventListener('mousedown', outsideNote, true);
+            }
+        };
+        document.addEventListener('mousedown', outsideNote, true);
+
+        this.activeNoteEditor = { message: messageEl, cleanup };
+    }
+} // EditorController
+
+const editorController = new EditorController(storageService);
+
+/**
+ * Moves the caret to the end of a contenteditable element.
+ */
+function placeCaretAtEnd(el: HTMLElement) {
+    Utils.placeCaretAtEnd(el);
+}
+
+/**
+ * Positions floating editor UI relative to an anchor and keeps it in view.
+ */
+function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
+    return Utils.mountFloatingEditor(editor, anchor);
+}
+
+// --------------------- Discovery & Enumeration -----------------
+/**
+ * Finds the primary scrollable container that holds the conversation.
+ */
+
+class DomMessageAdapter implements MessageAdapter {
+    readonly key: string;
+    readonly role: string;
+    private textCache: string | null = null;
+
+    constructor(readonly element: HTMLElement) {
+        this.key = Utils.keyForMessage(element);
+        this.role = element.getAttribute('data-message-author-role') || 'unknown';
+    }
+
+    getText(): string {
+        if (this.textCache !== null) return this.textCache;
+        const source = this.element.textContent ?? this.element.innerText ?? '';
+        this.textCache = Utils.normalizeText(source);
+        return this.textCache;
+    }
+
+    shouldShowCollapse(): boolean {
+        return true;
+    }
+
+    storageKey(threadKey: string): string {
+        return `${threadKey}:${this.key}`;
+    }
+} // DomMessageAdapter
+
+class DomPairAdapter implements PairAdapter {
+    constructor(
+        readonly index: number,
+        readonly query: MessageAdapter | null,
+        readonly response: MessageAdapter | null,
+    ) { }
+
+    getMessages(): MessageAdapter[] {
+        return [this.query, this.response].filter(Boolean) as MessageAdapter[];
+    }
+} // DomPairAdapter
+
+class ThreadDom {
+    constructor(private readonly adapterProvider: () => ThreadAdapter | null) { }
+
+    findTranscriptRoot(): HTMLElement {
+        return this.adapterProvider()?.getTranscriptRoot() ?? ThreadDom.defaultFindTranscriptRoot();
+    }
+
+    enumerateMessages(root: HTMLElement): HTMLElement[] {
+        const adapter = this.adapterProvider();
+        if (adapter) {
+            return adapter.getMessages(root).map(message => message.element);
+        }
+        return ThreadDom.defaultEnumerateMessages(root);
+    }
+
+    getPairs(root: HTMLElement): TagalystPair[] {
+        const adapter = this.adapterProvider();
+        if (adapter) return adapter.getPairs(root).map(ThreadDom.toTagalystPair);
+        return ThreadDom.defaultGetPairs(root);
+    }
+
+    getPromptNodes(root: HTMLElement): HTMLElement[] {
+        const adapter = this.adapterProvider();
+        if (adapter) return adapter.getPromptMessages(root).map(ad => ad.element);
+        return ThreadDom.defaultGetPromptNodes(root);
+    }
+
+    getNavigationNodes(root: HTMLElement): HTMLElement[] {
+        const adapter = this.adapterProvider();
+        if (adapter) return adapter.getNavigationMessages(root).map(ad => ad.element);
+        return ThreadDom.defaultGetNavigationNodes(root);
+    }
+
+    getPair(root: HTMLElement, idx: number): TagalystPair | null {
+        const adapter = this.adapterProvider();
+        if (adapter) {
+            const pair = adapter.getPairAt(root, idx);
+            return pair ? ThreadDom.toTagalystPair(pair) : null;
+        }
+        return ThreadDom.defaultGetPair(root, idx);
+    }
+
+    buildPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
+        return ThreadDom.buildDomPairAdaptersFromMessages(messages);
+    }
+
+    static defaultFindTranscriptRoot(): HTMLElement {
+        const main = (document.querySelector('main') as HTMLElement) || document.body;
+        const candidates = Array.from(main.querySelectorAll<HTMLElement>('*')).filter(el => {
+            const s = getComputedStyle(el);
+            const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll';
+            return scrollable && el.clientHeight > 300 && el.children.length > 1;
+        });
+        return (candidates.sort((a, b) => b.clientHeight - a.clientHeight)[0]) || main;
+    }
+
+    private static isMessageNode(el: HTMLElement | null) {
+        if (!el) return false;
+        return !!el.getAttribute?.('data-message-author-role');
+    }
+
+    static defaultEnumerateMessages(root: HTMLElement): HTMLElement[] {
+        const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-message-author-role]'));
+        if (nodes.length) return nodes;
+        const out: HTMLElement[] = [];
+        root.querySelectorAll<HTMLElement>('article, div').forEach(child => {
+            if (ThreadDom.isMessageNode(child)) out.push(child);
+        });
+        return out;
+    }
+
+    static defaultDerivePairs(messages: HTMLElement[]): TagalystPair[] {
+        const pairs: TagalystPair[] = [];
+        for (let i = 0; i < messages.length; i += 2) {
+            const query = messages[i];
+            if (!query) break;
+            const response = messages[i + 1] || null;
+            pairs.push({
+                query,
+                response,
+                queryId: Utils.getMessageId(query),
+                responseId: response ? Utils.getMessageId(response) : null,
+            });
+        }
+        return pairs;
+    }
+
+    static defaultGetPairs(root: HTMLElement): TagalystPair[] {
+        return ThreadDom.defaultDerivePairs(ThreadDom.defaultEnumerateMessages(root));
+    }
+
+    static defaultGetPromptNodes(root: HTMLElement): HTMLElement[] {
+        return ThreadDom.defaultGetPairs(root).map(p => p.query).filter(Boolean) as HTMLElement[];
+    }
+
+    static defaultGetNavigationNodes(root: HTMLElement): HTMLElement[] {
+        const prompts = ThreadDom.defaultGetPromptNodes(root);
+        if (prompts.length) return prompts;
+        return ThreadDom.defaultEnumerateMessages(root);
+    }
+
+    static defaultGetPair(root: HTMLElement, idx: number): TagalystPair | null {
+        if (idx < 0) return null;
+        return ThreadDom.defaultGetPairs(root)[idx] || null;
+    }
+
+    static toTagalystPair(pair: PairAdapter): TagalystPair {
+        const queryEl = pair.query?.element || null;
+        const responseEl = pair.response?.element || null;
+        return {
+            query: queryEl,
+            response: responseEl,
+            queryId: queryEl ? Utils.getMessageId(queryEl) : null,
+            responseId: responseEl ? Utils.getMessageId(responseEl) : null,
+        };
+    }
+
+    static buildDomPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
+        const pairs: DomPairAdapter[] = [];
+        for (let i = 0; i < messages.length; i += 2) {
+            const query = messages[i] || null;
+            const response = messages[i + 1] || null;
+            pairs.push(new DomPairAdapter(pairs.length, query, response));
+        }
+        return pairs;
+    }
+} // ThreadDom
+
+const threadDom = new ThreadDom(() => activeThreadAdapter);
+
+class ChatGptThreadAdapter implements ThreadAdapter {
+    private observer: MutationObserver | null = null;
+
+    getTranscriptRoot(): HTMLElement | null {
+        return ThreadDom.defaultFindTranscriptRoot();
+    }
+
+    getMessages(root: HTMLElement): MessageAdapter[] {
+        return this.buildMessageAdapters(root);
+    }
+
+    getPairs(root: HTMLElement): PairAdapter[] {
+        return this.buildPairAdapters(root);
+    }
+
+    getPromptMessages(root: HTMLElement): MessageAdapter[] {
+        return this.buildPairAdapters(root)
+            .map(pair => pair.query)
+            .filter(Boolean) as MessageAdapter[];
+    }
+
+    getNavigationMessages(root: HTMLElement): MessageAdapter[] {
+        const prompts = this.getPromptMessages(root);
+        if (prompts.length) return prompts;
+        return this.buildMessageAdapters(root);
+    }
+
+    getPairAt(root: HTMLElement, index: number): PairAdapter | null {
+        const pairs = this.buildPairAdapters(root);
+        if (index < 0 || index >= pairs.length) return null;
+        return pairs[index];
+    }
+
+    observe(root: HTMLElement, callback: MutationCallback): void {
+        this.disconnect();
+        this.observer = new MutationObserver(callback);
+        this.observer.observe(root, { childList: true, subtree: true });
+    }
+
+    disconnect(): void {
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+    }
+
+    private buildMessageAdapters(root: HTMLElement): DomMessageAdapter[] {
+        return ThreadDom.defaultEnumerateMessages(root).map(el => new DomMessageAdapter(el));
+    }
+
+    private buildPairAdapters(root: HTMLElement): DomPairAdapter[] {
+        const messages = this.buildMessageAdapters(root);
+        return ThreadDom.buildDomPairAdaptersFromMessages(messages);
+    }
+} // ChatGptThreadAdapter
+
+class ToolbarController {
+    constructor(private readonly focus: FocusService, private readonly storage: StorageService) { }
+
+    ensurePageControls(container: HTMLElement, threadKey: string) {
+        const existing = document.getElementById('ext-page-controls');
+        if (existing) existing.remove();
+        const box = document.createElement('div');
+        box.id = 'ext-page-controls';
+        Utils.markExtNode(box);
+        box.innerHTML = `
+        <div class="ext-nav-frame">
+            <span class="ext-nav-label">Navigate</span>
+            <div class="ext-nav-buttons">
+                <button id="ext-jump-first" title="Jump to first prompt">⤒</button>
+                <button id="ext-jump-last" title="Jump to last prompt">⤓</button>
+            </div>
+            <div class="ext-nav-buttons">
+                <button id="ext-jump-star-prev" title="Previous starred message">★↑</button>
+                <button id="ext-jump-star-next" title="Next starred message">★↓</button>
+            </div>
+        </div>
+        <div class="ext-batch-frame">
+            <span class="ext-nav-label">Collapse</span>
+            <div class="ext-batch-buttons">
+                <button id="ext-collapse-all" title="Collapse all prompts">All</button>
+                <button id="ext-collapse-unstarred" title="Collapse unstarred prompts">☆</button>
+            </div>
+        </div>
+        <div class="ext-batch-frame">
+            <span class="ext-nav-label">Expand</span>
+            <div class="ext-batch-buttons">
+                <button id="ext-expand-all" title="Expand all prompts">All</button>
+                <button id="ext-expand-starred" title="Expand starred prompts">★</button>
+            </div>
+        </div>
+        <div class="ext-export-frame">
+            <span class="ext-nav-label">MD Copy</span>
+            <div class="ext-export-buttons">
+                <button id="ext-export-all" class="ext-export-button">All</button>
+                <button id="ext-export-starred" class="ext-export-button">★</button>
+            </div>
+        </div>
+      `;
+        document.documentElement.appendChild(box);
+        topPanelController.syncWidth();
+
+        const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');
+        const jumpLastBtn = box.querySelector<HTMLButtonElement>('#ext-jump-last');
+        const jumpStarPrevBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-prev');
+        const jumpStarNextBtn = box.querySelector<HTMLButtonElement>('#ext-jump-star-next');
+        const collapseAllBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-all');
+        const collapseUnstarredBtn = box.querySelector<HTMLButtonElement>('#ext-collapse-unstarred');
+        const expandAllBtn = box.querySelector<HTMLButtonElement>('#ext-expand-all');
+        const expandStarredBtn = box.querySelector<HTMLButtonElement>('#ext-expand-starred');
+        const exportAllBtn = box.querySelector<HTMLButtonElement>('#ext-export-all');
+        const exportStarredBtn = box.querySelector<HTMLButtonElement>('#ext-export-starred');
+
+        if (jumpFirstBtn) jumpFirstBtn.onclick = () => this.scrollToNode(container, 0, 'start');
+        if (jumpLastBtn) {
+            jumpLastBtn.onclick = () => {
+                const nodes = threadDom.getNavigationNodes(container);
+                if (!nodes.length) return;
+                this.scrollToNode(container, nodes.length - 1, 'end', nodes);
+            };
+        }
+        if (jumpStarPrevBtn) jumpStarPrevBtn.onclick = () => { this.scrollFocus(-1); };
+        if (jumpStarNextBtn) jumpStarNextBtn.onclick = () => { this.scrollFocus(1); };
+        if (collapseAllBtn) collapseAllBtn.onclick = () => threadActions.toggleAll(container, true);
+        if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => threadActions.collapseByFocus(container, 'out', true);
+        if (expandAllBtn) expandAllBtn.onclick = () => threadActions.toggleAll(container, false);
+        if (expandStarredBtn) expandStarredBtn.onclick = () => threadActions.collapseByFocus(container, 'in', false);
+
+        if (exportAllBtn) exportAllBtn.onclick = () => exportController.copyThread(container, false);
+        if (exportStarredBtn) exportStarredBtn.onclick = () => exportController.copyThread(container, true);
+
+        const controlsState: PageControls = {
+            root: box,
+            focusPrev: jumpStarPrevBtn,
+            focusNext: jumpStarNextBtn,
+            collapseNonFocus: collapseUnstarredBtn,
+            expandFocus: expandStarredBtn,
+            exportFocus: exportStarredBtn,
+        };
+        focusController.setPageControls(controlsState);
+    }
+
+    private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'center', list?: HTMLElement[]) {
+        const nodes = list || threadDom.getNavigationNodes(container);
+        if (!nodes.length) return;
+        const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
+        const target = nodes[clamped];
+        if (target) target.scrollIntoView({ behavior: 'smooth', block });
+    }
+
+    private scrollFocus(delta: number) {
+        const adapters = focusController.getMatches();
+        if (!adapters.length) return;
+        const idx = this.focus.adjustNav(delta, adapters.length);
+        if (idx < 0 || idx >= adapters.length) return;
+        const target = adapters[idx];
+        if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    injectToolbar(el: HTMLElement, threadKey: string) {
+        let toolbar = el.querySelector<HTMLElement>('.ext-toolbar');
+        if (toolbar) {
+            if (toolbar.dataset.threadKey !== threadKey) {
+                toolbar.closest('.ext-toolbar-row')?.remove();
+                toolbar = null;
+            } else {
+                threadActions.updateCollapseVisibility(el);
+                return;
+            }
+        }
+
+        const row = document.createElement('div');
+        row.className = 'ext-toolbar-row';
+        Utils.markExtNode(row);
+        const wrap = document.createElement('div');
+        wrap.className = 'ext-toolbar';
+        Utils.markExtNode(wrap);
+        wrap.innerHTML = `
+        <span class="ext-badges"></span>
+        <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
+        <button class="ext-note" title="Add annotation" aria-label="Add annotation"><span class="ext-btn-icon">✎<small>A</small></span></button>
+        <button class="ext-focus-button" title="Bookmark" aria-pressed="false">☆</button>
+        <button class="ext-collapse" title="Collapse message" aria-expanded="true" aria-label="Collapse message">−</button>
+      `;
+        row.appendChild(wrap);
+
+        const collapseBtn = wrap.querySelector<HTMLButtonElement>('.ext-collapse');
+        const focusBtn = wrap.querySelector<HTMLButtonElement>('.ext-focus-button');
+        const tagBtn = wrap.querySelector<HTMLButtonElement>('.ext-tag');
+        const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
+
+        if (collapseBtn) {
+            collapseBtn.onclick = () => threadActions.collapse(el, !el.classList.contains('ext-collapsed'));
+        }
+        if (focusBtn) {
+            focusBtn.onclick = async () => {
+                if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
+                const adapter = messageMetaRegistry.resolveAdapter(el);
+                const cur = await this.storage.readMessage(threadKey, adapter);
+                cur.starred = !cur.starred;
+                await this.storage.writeMessage(threadKey, adapter, cur);
+                this.updateBadges(el, threadKey, cur, adapter);
+                focusController.updateControlsUI();
+            };
+        }
+        if (tagBtn) tagBtn.onclick = () => editorController.openTagEditor(el, threadKey);
+        if (noteBtn) noteBtn.onclick = () => editorController.openNoteEditor(el, threadKey);
+
+        wrap.dataset.threadKey = threadKey;
+        el.prepend(row);
+        this.ensureUserToolbarButton(el);
+        threadActions.updateCollapseVisibility(el);
+        threadActions.syncCollapseButton(el);
+    }
+
+    updatePairNumber(adapter: MessageAdapter, pairIndex: number | null) {
+        const el = adapter.element;
+        this.ensureUserToolbarButton(el);
+        if (adapter.role !== 'user') {
+            const wrap = el.querySelector<HTMLElement>('.ext-pair-number-wrap');
+            if (wrap) wrap.remove();
+            return;
+        }
+        if (typeof pairIndex !== 'number') return;
+        const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
+        if (!row) return;
+        let wrap = row.querySelector<HTMLElement>('.ext-pair-number-wrap');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.className = 'ext-pair-number-wrap';
+            row.insertBefore(wrap, row.firstChild);
+        }
+        let badge = wrap.querySelector<HTMLElement>('.ext-pair-number');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'ext-pair-number';
+            wrap.appendChild(badge);
+        }
+        badge.textContent = `${pairIndex + 1}.`;
+    }
+
+    updateBadges(el: HTMLElement, threadKey: string, value: MessageValue, adapter?: MessageAdapter | null) {
+        const adapterRef = adapter ?? messageMetaRegistry.resolveAdapter(el);
+        const k = `${threadKey}:${adapterRef.key}`;
+        const cur = value || {};
+        const meta = messageMetaRegistry.update(el, { key: k, value: cur, adapter: adapterRef });
+        const badges = el.querySelector<HTMLElement>('.ext-badges');
+        if (!badges) return;
+
+        const starred = !!cur.starred;
+        el.classList.toggle('ext-starred', starred);
+
+        badges.innerHTML = '';
+        const tags = Array.isArray(cur.tags) ? cur.tags : [];
+        for (const t of tags) {
+            const span = document.createElement('span');
+            span.className = 'ext-badge';
+            span.textContent = t;
+            badges.appendChild(span);
+        }
+
+        const note = typeof cur.note === 'string' ? cur.note.trim() : '';
+        if (note) {
+            const noteChip = document.createElement('span');
+            noteChip.className = 'ext-note-pill';
+            noteChip.textContent = note.length > 80 ? `${note.slice(0, 77)}…` : note;
+            noteChip.title = note;
+            badges.appendChild(noteChip);
+        }
+        focusController.updateMessageButton(el, meta);
+    }
+
+    private handleUserToolbarButtonClick(messageEl: HTMLElement) {
+        const messageKey = messageMetaRegistry.resolveAdapter(messageEl).key;
+        console.info('[Tagalyst] User toolbar button clicked', { messageKey });
+    }
+
+    private ensureUserToolbarButton(_el: HTMLElement): HTMLButtonElement | null {
+        // Placeholder for future per-user actions. Intentionally disabled to avoid extra UI clutter.
+        return null;
+    }
+} // ToolbarController
+
+
+class ThreadActions {
+    updateCollapseVisibility(el: HTMLElement) {
+        const btn = this.getCollapseButton(el);
+        if (!btn) return;
+        btn.style.display = '';
+    }
+
+    syncCollapseButton(el: HTMLElement) {
+        const btn = this.getCollapseButton(el);
+        if (!btn) return;
+        const collapsed = el.classList.contains('ext-collapsed');
+        btn.textContent = collapsed ? '+' : '−';
+        btn.setAttribute('title', collapsed ? 'Expand message' : 'Collapse message');
+        btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
+        btn.setAttribute('aria-expanded', String(!collapsed));
+    }
+    
+    /**
+     * Toggles the collapsed state for one message block.
+     */
+    collapse(el: HTMLElement, yes: boolean) {
+        el.classList.toggle('ext-collapsed', !!yes);
+        this.syncCollapseButton(el);
+    }
+    
+    /**
+     * Applies collapse/expand state to every discovered message.
+     */
+    toggleAll(container: HTMLElement, yes: boolean) {
+        const msgs = threadDom.enumerateMessages(container);
+        for (const m of msgs) this.collapse(m, !!yes);
+    }
+    
+    /**
+     * Applies collapse state against the current focus subset.
+     */
+    collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
+        const matches = focusController.getMatches();
+        if (!matches.length) return;
+        const matchSet = new Set(matches.map(adapter => adapter.element));
+        for (const el of threadDom.enumerateMessages(container)) {
+            const isMatch = matchSet.has(el);
+            if (target === 'in' ? isMatch : !isMatch) {
+                this.collapse(el, collapseState);
+            }
+        }
+    }
+
+    private getCollapseButton(el: HTMLElement) {
+        return el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
+    }
+} // ThreadActions
+
+const threadActions = new ThreadActions();
+class ExportController {
+    copyThread(container: HTMLElement, focusOnly: boolean) {
+        try {
+            const md = this.buildMarkdown(container, focusOnly);
+            navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
+        } catch (err) {
+            console.error('Export failed', err);
+        }
+    }
+
+    buildMarkdown(container: HTMLElement, focusOnly: boolean): string {
+        const pairs = threadDom.getPairs(container);
+        const sections: string[] = [];
+        pairs.forEach((pair, idx) => {
+            const num = idx + 1;
+            const isFocused = focusOnly ? focusController.isPairFocused(pair) : true;
+            if (focusOnly && !isFocused) return;
+            const query = pair.query ? pair.query.innerText.trim() : '';
+            const response = pair.response ? pair.response.innerText.trim() : '';
+            const lines: string[] = [];
+            if (query) {
+                lines.push(`### ${num}. Prompt`, '', query);
+            }
+            if (response) {
+                if (lines.length) lines.push('');
+                lines.push(`### ${num}. Response`, '', response);
+            }
+            if (lines.length) sections.push(lines.join('\n'));
+        });
+        return sections.join('\n\n');
+    }
+} // ExportController
+
+const exportController = new ExportController();
+
+// ---------------------- Orchestration --------------------------
+/**
+ * Entry point: finds the thread, injects UI, and watches for updates.
+ */
+class BootstrapOrchestrator {
+    private refreshRunning = false;
+    private refreshQueued = false;
+    private threadAdapter: ThreadAdapter | null = null;
+
+    constructor(private readonly toolbar: ToolbarController, private readonly storage: StorageService) { }
+
+    async run() {
+        // Wait a moment for the app shell to mount
+        await sleep(600);
+        await configService.load();
+        this.teardownUI();
+        this.threadAdapter = new ChatGptThreadAdapter();
+        activeThreadAdapter = this.threadAdapter;
+        const container = threadDom.findTranscriptRoot();
+
+        const threadKey = Utils.getThreadKey();
+        this.toolbar.ensurePageControls(container, threadKey);
+        topPanelController.ensurePanels();
+        topPanelController.updateConfigUI();
+
+        const render = async () => {
+            if (this.refreshRunning) {
+                this.refreshQueued = true;
+                return;
+            }
+            this.refreshRunning = true;
+            try {
+                do {
+                    this.refreshQueued = false;
+                    const messageAdapters = this.resolveMessages(container);
+                    const pairAdapters = threadDom.buildPairAdaptersFromMessages(messageAdapters);
+                    const pairMap = this.buildPairMap(pairAdapters);
+                    const entries = messageAdapters.map(messageAdapter => ({
+                        adapter: messageAdapter,
+                        el: messageAdapter.element,
+                        key: messageAdapter.storageKey(threadKey),
+                        pairIndex: pairMap.get(messageAdapter) ?? null,
+                    }));
+                    if (!entries.length) break;
+                    const keys = entries.map(e => e.key);
+                    const store = await this.storage.read(keys);
+                    const tagCounts = new Map<string, number>();
+                    messageMetaRegistry.clear();
+                    for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
+                        this.toolbar.injectToolbar(el, threadKey);
+                        this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                        const value = store[key] || {};
+                        messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
+                        if (value && Array.isArray(value.tags)) {
+                            for (const t of value.tags) {
+                                if (!t) continue;
+                                tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+                            }
+                        }
+                        this.toolbar.updateBadges(el, threadKey, value, messageAdapter);
+                    }
+                const sortedTags = Array.from(tagCounts.entries())
+                    .map(([tag, count]) => ({ tag, count }))
+                    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+                topPanelController.updateTagList(sortedTags);
+                focusController.refreshButtons();
+                } while (this.refreshQueued);
+            } finally {
+                this.refreshRunning = false;
+            }
+        };
+
+        renderScheduler.setRenderer(render);
+        await render();
+        this.threadAdapter.observe(container, (records) => {
+            if (!records.some(Utils.mutationTouchesExternal)) return;
+            renderScheduler.request(render);
+        });
+    }
+
+    private resolveMessages(container: HTMLElement): MessageAdapter[] {
+        const threadAdapter = this.threadAdapter;
+        return (threadAdapter
+            ? threadAdapter.getMessages(container)
+            : ThreadDom.defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
+    }
+
+    private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
+        const pairMap = new Map<MessageAdapter, number>();
+        pairAdapters.forEach((pair, idx) => {
+            pair.getMessages().forEach(msg => pairMap.set(msg, idx));
+        });
+        return pairMap;
+    }
+
+    private teardownUI() {
+        editorController.teardown();
+        document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
+        document.querySelectorAll('.ext-note-editor').forEach(editor => editor.remove());
+        document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
+        document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
+        const controls = document.getElementById('ext-page-controls');
+        if (controls) controls.remove();
+        const panel = topPanelController.getElement();
+        if (panel) panel.remove();
+        topPanelController.reset();
+        focusController.reset();
+        this.threadAdapter?.disconnect();
+        activeThreadAdapter = null;
+    }
+} // BootstrapOrchestrator
+
+const toolbarController = new ToolbarController(focusService, storageService);
+const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
+
+async function bootstrap(): Promise<void> {
+    await bootstrapOrchestrator.run();
+}
+
+// Some pages use SPA routing; re-bootstrap on URL changes
+let lastHref = location.href;
+new MutationObserver(() => {
+    if (location.href !== lastHref) {
+        lastHref = location.href;
+        bootstrap();
+    }
+}).observe(document, { subtree: true, childList: true });
+
+// Surface a minimal pairing API for scripts / devtools.
+window.__tagalyst = Object.assign(window.__tagalyst || {}, {
+    getThreadPairs: (): TagalystPair[] => {
+        const root = threadDom.findTranscriptRoot();
+        return threadDom.getPairs(root);
+    },
+    getThreadPair: (idx: number): TagalystPair | null => {
+        const root = threadDom.findTranscriptRoot();
+        return threadDom.getPair(root, idx);
+    },
+}) as TagalystApi;
+
+// First boot
+bootstrap();
+
+if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        const change = changes[CONTENT_CONFIG_STORAGE_KEY];
+        if (!change) return;
+        configService.apply(change.newValue);
+    });
+}

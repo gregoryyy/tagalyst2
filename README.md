@@ -30,11 +30,25 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 1. Clone or copy this folder.
 2. Ensure the following files exist:
 - manifest.json
-- content/content.js
+- content/content.js (built)
 - content/content.css
 - icons/icon16.png, icon32.png, icon48.png, icon128.png (placeholders OK)
 3. Open `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the folder.
 
+## Development
+- Install deps: `npm install` (brings in TypeScript + Chrome types only).
+- Source of truth lives in `src/content.ts` and `src/options.ts`. The emitted `.js` siblings (`content/content.js`, `options/options.js`) are what MV3 actually loads, so remember to rebuild after edits.
+- Build once: `npm run build` (runs `tsc -b` to compile both the content + options projects and rewrite the JS artifacts in-place).
+- Live edit loop: `npm run watch` to keep `tsc -b` running, then hit “Reload” on the Chrome extensions page when files update.
+- Ambient Chrome + window globals are declared in `src/types/globals.d.ts`. Update that file if you add new surface APIs so `tsc` stays happy.
+- No bundler: everything compiles 1:1, so keep imports relative to the file tree Chrome already expects.
+
+### Internals at a glance
+- The content script is now composed of services/controllers instead of free functions. Key players:
+  - `RenderScheduler` (debounces refresh passes), `ThreadDom` (shared DOM heuristics), and `ChatGptThreadAdapter` (MutationObserver + adapter factory).
+  - `StorageService` / `ConfigService` (chrome.storage glue), `MessageMetaRegistry` (per-message cache), and the `FocusService` + `FocusController` pair (state machine + UI syncing).
+  - `TopPanelController` (Search/Tags panels), `ToolbarController` (per-message + global controls), `ThreadActions` (collapse/expand), `ExportController` (Markdown copy), and `EditorController` (tag/note editors).
+- `ARCH.md` tracks the ongoing refactor and the next structural steps; skim it when touching internals so new code follows the same dependency flow.
 
 ## Notes
 - Data is stored locally via `chrome.storage.local` keyed by `{threadKey}:{messageKey}`.

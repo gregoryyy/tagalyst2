@@ -2,6 +2,11 @@
 
 Bugs:
 
+Refactor to ts:
+- like for like DONE
+- iterative changes see ARCH.md ONGOING
+
+Behavioral Bugs:
 - navigation and layout:
   - collapse misses Canvas
   - collapse hides topmost query/toolbar
@@ -13,14 +18,14 @@ Bugs:
 - keep tags and annotations displayed when editing DONE
 - when user clicks a new focus that isn't a chat (project overview), clear toolbar state
 - DOM and UI errors:
-  - error in promise while loading extension (Extension context invalidated): promise: around getStore.  
+  - error in promise while loading extension (Extension context invalidated): promise: around getStore.  CLOSED? disappeared
   - MANY: The resource <URL> was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
-  - MANY: [Violation] Forced reflow while executing JavaScript took 47ms etc., possibly aggravated by tag and search panel.
+  - MANY: [Violation] Forced reflow while executing JavaScript took 47ms etc., possibly aggravated by tag and search panel. DONE
 
 Codebase:
 
 - refactor and document
-- add tests ONGOING
+- add tests
   - unit via Jest DONE add 
   - DOM via Puppeteer (Playwright has issue on MacOS)
 - fix performance errors (see bugs)
@@ -28,22 +33,19 @@ Codebase:
 
 Features:
 
-- show length of message (lines, chars)
 - settings DONE
-  - toolbars enabled (search, tags) DONE
-    - expand on hover
-    - size of search results
-  - appearance: 
-    - e.g., background color for highlighted items (more than bookmark)
-    - button colors
-  - storage management DONE
-- storage management:
+- memory management:
   - delete local storage DONE
   - load / save file DONE
-- cardinal numbers for pairs (left aligned for prompts, same y as query message toolbar) DONE
+- metadata:
+  - cardinal numbers for pairs (left aligned for prompts, same y as query message toolbar) DONE
+  - message size
+  - tag and search results size
 - navigate by highlighted item:
-  - if search results or tags, this means navigation runs via these. DONE -> needs improvement?
-  - "scrollradar", seeing where highlighted items are across the page
+  - if search results or tags, this means navigation runs via these. DONE
+    - BUG: after search or tag selection, becomes unresponsive
+  - export filters by focused items
+  - overview ruler
 - export without UI content but with:
   - links to graphics
   - mathematical content, i.e., KaTeX

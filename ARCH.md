@@ -1,29 +1,71 @@
 # Tagalyst 2 Architecture
 
-## High-level layout
-- `manifest.json` – Chrome MV3 manifest describing permissions, content scripts, and the extension options page.
-- `content/` – all code/styles injected into chat.openai.com / chatgpt.com.
-  - `util.js` – shared utilities (hashing, storage helpers, config/state management, focus calculations, etc.).
-  - `editors.js` – inline editor lifecycle (tag/note modals, floating positioning helpers).
-  - `view.js` – higher-level DOM helpers for toolbars, navigation controls, panels, and focus UI.
-  - `content.js` – orchestration: bootstraps observers, coordinates refresh cycles, listens for storage changes, exposes the public `window.__tagalyst` helpers.
-  - `content.css` – styles for toolbars, overlays, panels, dialogs.
-- `options/` – extension Options page (HTML/CSS/JS) where toggle settings live alongside storage import/export/delete actions.
-- `README.md`, `TODO.md`, `ARCH.md` – docs/macros of functionality, remaining work, and this architecture overview.
+This document tracks the ongoing refactor from a large procedural content script into composable services that isolate ChatGPT-specific DOM details and keep extension behavior stable as the site evolves.
 
-## Runtime flow
-1. **Injection:** Chrome loads `util.js`, `editors.js`, `view.js`, and `content.js` (in that order) on matching pages. `util.js` sets up storage helpers, config watchers, and focus-state logic; `editors.js` handles inline editors; `view.js` defines the rest of the DOM manipulation helpers; `content.js` wires everything together (discovering messages, injecting controls, handling refreshes).
-2. **Config:** Runtime settings live in `chrome.storage.local` under `__tagalyst_config`. Changes triggered via the Options page fire `chrome.storage.onChanged`, and `content.js` immediately re-applies the configuration without needing a reload.
-3. **UI Composition:** `content.js` assembles toolbars, navigation controls, and top-panel search/tag widgets via helpers in `view.js`, delegates tag/note editing to `editors.js`, and reads/writes state via `util.js` helpers (`getStore`, `setStore`, `focusState`, etc.).
-4. **Options workflow:** `options/options.html` + `options/options.js` render a plain settings dashboard with feature toggles and storage utilities (view/import/export/delete). All operations use `chrome.storage.local`, so the content script automatically sees changes.
+## Current Shape
 
-## Storage model
-- Per-message data stored under keys `${threadKey}:${messageKey}` (thread derived from URL, message key from ChatGPT ID + fallback hash).
-- Config object stored once (`__tagalyst_config`).
-- Options page import/export writes the entire storage JSON; delete clears everything.
+```
+BootstrapOrchestrator
+ ├─ RenderScheduler (debounced refresh loop)
+ ├─ ThreadDom + ChatGptThreadAdapter (discovery + fallback heuristics)
+ ├─ StorageService / ConfigService (chrome.storage glue)
+ ├─ MessageMetaRegistry (per-message cache shared by services)
+ ├─ FocusService + FocusController (state machine + UI syncing)
+ ├─ TopPanelController (Search/Tags panels)
+ ├─ ToolbarController (per-message + global controls)
+ ├─ ThreadActions / ExportController (batch ops & Markdown)
+ └─ EditorController (tag + note editors)
+```
 
-## Key extension APIs
-- `window.__tagalyst.getThreadPairs()` / `getThreadPair(idx)` – quick access during development.
-- `window.__tagalyst.getStorageUsage()` / `clearStorage()` – inspect or reset stored data from DevTools.
+### ThreadDom, Adapters, and Scheduler
+- `ChatGptThreadAdapter` still owns MutationObserver wiring and produces `MessageAdapter` / `PairAdapter` instances, but `ThreadDom` now provides the shared fallback heuristics (enumerating messages, building pairs, finding navigation nodes). Controllers never touch `default*` helpers directly anymore.
+- `RenderScheduler` replaces the ad-hoc `requestRefresh` globals. It stores the active async render callback and coalesces `requestAnimationFrame` ticks so config changes, MutationObserver events, and focus toggles all reuse the same queueing mechanism.
 
-Use this document when navigating the repo or planning refactors; `TODO.md` captures outstanding behavior/feature work, while `README.md` explains user-visible functionality.
+### StorageService + ConfigService
+- Storage access continues to flow through `StorageService.read`/`write` and the `readMessage` / `writeMessage` helpers so every caller uses adapter-derived keys.
+- `ConfigService` now receives the scheduler instance. Whenever it applies an update it (a) enforces feature invariants (clearing search/tags when disabled), (b) notifies listeners, (c) asks `FocusController` to re-evaluate modes, and (d) schedules a render. There are no remaining free functions such as `isSearchEnabled`; everything goes through this service.
+
+### MessageMetaRegistry
+- Replaces the old `messageState` Map with a typed registry that can `ensure`, `update`, `resolveAdapter`, and garbage-collect metadata per DOM element. Controllers/services no longer need to remember how metadata is stored; they call registry helpers instead.
+
+### FocusService + FocusController
+- `FocusService` still models search/tag/star modes, but the new `FocusController` handles UI concerns: caching page controls, refreshing toolbar glyphs, syncing tag sidebar selections, and answering “is this pair focused?” It centralizes all focus-related DOM updates so other modules only invoke `focusController.*` methods.
+
+### TopPanelController
+- Manages the Search/Tags panels and now exposes `syncWidth()` so its layout can track the global toolbar width without a global helper. It reads feature toggles via `ConfigService` and feeds focus changes back through `FocusController`.
+
+### ToolbarController
+- Owns both the bottom navigation stack and the per-message toolbar injection. It now handles badge rendering, pair number chips, collapse button wiring, and the documented-but-disabled user button skeleton. `ThreadActions` supplies the actual collapse logic, but the controller determines when to call it.
+
+### EditorController
+- Still encapsulates note/tag editor lifecycles. The bootstrapper’s teardown path simply calls `editorController.teardown()` before removing DOM nodes.
+
+### ThreadActions + ExportController
+- `ThreadActions` gained helpers to keep collapse button glyphs in sync, so no other code pokes `.ext-collapse` buttons directly.
+- `ExportController` became a pure dependency of the toolbar; the obsolete `runExport`/`exportThreadToMarkdown` wrappers were removed.
+
+### BootstrapOrchestrator
+- Sets up config, adapters, controllers, and the render loop. During each refresh it:
+  1. Resolves message/pair adapters via `threadDom`.
+  2. Reads storage in a single batch.
+  3. Hydrates the `MessageMetaRegistry`.
+  4. Asks `ToolbarController` to inject/update controls.
+  5. Updates tag frequency data for the top panel.
+  6. Delegates focus button refreshes to `FocusController`.
+- Teardown is encapsulated inside the orchestrator so SPA navigations or failures have a single cleanup path.
+
+### Utilities
+- Stateless helpers live in the `Utils` namespace (hashing, text normalization, caret placement, floating editor positioning, DOM ownership markers). Anything that needs state moved into one of the services/controllers above.
+
+## Next Steps
+
+1. **Modularize Services**  
+   - Move each service/controller into its own file (e.g., `src/services/focus.ts`, `src/controllers/toolbar.ts`) so `content.ts` mainly orchestrates dependency wiring. The new class boundaries make this a mechanical split.
+
+2. **Config & Options Integration**  
+   - Have the Options page talk directly to `ConfigService` (or a shared facade) so UI toggles stay in sync across popup/options/content surfaces with zero duplicate logic.
+
+3. **Pluggable DOM Adapters**  
+   - After splitting modules, experiment with alternate `ThreadAdapter` implementations (e.g., for future ChatGPT layouts or other chat platforms) without touching higher-level controllers. `ThreadDom` already hides the fallback heuristics; the next step is swapping adapter instances via dependency injection.
+
+These steps continue the same philosophy as earlier refactors: isolate ChatGPT-specific details, ensure behavior stays 1:1, and make every feature depend on adapters + services instead of raw DOM.

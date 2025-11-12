@@ -1,0 +1,15 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "rootDir": "../src",
+    "outDir": "../content",
+    "declaration": true,
+    "declarationDir": "../.tsbuild/content",
+    "tsBuildInfoFile": "../.tsbuild/content.tsbuildinfo",
+    "composite": true
+  },
+  "include": [
+    "../src/content.ts",
+    "../src/types/**/*.d.ts"
+  ]
+}

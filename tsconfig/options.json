@@ -1,0 +1,15 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "rootDir": "../src",
+    "outDir": "../options",
+    "composite": true,
+    "declaration": true,
+    "declarationDir": "../.tsbuild/options",
+    "tsBuildInfoFile": "../.tsbuild/options.tsbuildinfo"
+  },
+  "include": [
+    "../src/options.ts",
+    "../src/types/**/*.d.ts"
+  ]
+}

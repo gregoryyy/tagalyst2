@@ -1,34 +1,40 @@
-const CONFIG_STORAGE_KEY = '__tagalyst_config';
-const defaultConfig = {
+const OPTIONS_CONFIG_STORAGE_KEY = '__tagalyst_config';
+
+interface TagalystConfig {
+    searchEnabled: boolean;
+    tagsEnabled: boolean;
+}
+
+const optionsDefaultConfig: TagalystConfig = {
     searchEnabled: true,
     tagsEnabled: true,
 };
 
 /**
- * Reads the extension config from chrome.storage.local.
+ * Reads the persisted feature config, merging in defaults for missing fields.
  */
-function getConfig() {
+function getConfig(): Promise<TagalystConfig> {
     return new Promise(resolve => {
-        chrome.storage.local.get([CONFIG_STORAGE_KEY], (data) => {
-            const value = data?.[CONFIG_STORAGE_KEY];
-            resolve({ ...defaultConfig, ...(value || {}) });
+        chrome.storage.local.get([OPTIONS_CONFIG_STORAGE_KEY], (data) => {
+            const value = data?.[OPTIONS_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
+            resolve({ ...optionsDefaultConfig, ...(value || {}) });
         });
     });
 }
 
 /**
- * Persists the config object back to chrome.storage.local.
+ * Persists config overrides for the Search/Tag panels.
  */
-function saveConfig(partial) {
+function saveConfig(partial: Partial<TagalystConfig>): Promise<void> {
     return new Promise(resolve => {
-        chrome.storage.local.set({ [CONFIG_STORAGE_KEY]: partial }, resolve);
+        chrome.storage.local.set({ [OPTIONS_CONFIG_STORAGE_KEY]: partial }, () => resolve());
     });
 }
 
 /**
- * Computes approximate bytes used by chrome.storage.local.
+ * Calculates an approximate storage footprint for all extension keys.
  */
-function getStorageUsage() {
+function getStorageUsage(): Promise<number> {
     return new Promise(resolve => {
         chrome.storage.local.get(null, (data) => {
             let bytes = 0;
@@ -44,27 +50,28 @@ function getStorageUsage() {
 }
 
 /**
- * Updates the storage usage readout element with current value.
+ * Renders the formatted storage usage value within the supplied element.
  */
-async function updateStorageDisplay(el) {
+async function updateStorageDisplay(el: HTMLElement | null): Promise<void> {
+    if (!el) return;
     const bytes = await getStorageUsage();
     const formatted = `${bytes.toLocaleString()} bytes`;
     el.textContent = formatted;
 }
 
 /**
- * Bootstraps the options page controls and storage utilities.
+ * Bootstraps the Options page UI bindings and event handlers.
  */
-function init() {
-    const searchEnable = document.getElementById('search-enable');
-    const tagsEnable = document.getElementById('tags-enable');
-    const status = document.getElementById('status');
-    const storageSizeEl = document.getElementById('storage-size');
-    const viewBtn = document.getElementById('view-storage');
-    const importBtn = document.getElementById('import-storage');
-    const exportBtn = document.getElementById('export-storage');
-    const importInput = document.getElementById('import-file');
-    const clearStorageBtn = document.getElementById('clear-storage');
+function init(): void {
+    const searchEnable = document.getElementById('search-enable') as HTMLInputElement;
+    const tagsEnable = document.getElementById('tags-enable') as HTMLInputElement;
+    const status = document.getElementById('status') as HTMLElement;
+    const storageSizeEl = document.getElementById('storage-size') as HTMLElement;
+    const viewBtn = document.getElementById('view-storage') as HTMLButtonElement;
+    const importBtn = document.getElementById('import-storage') as HTMLButtonElement;
+    const exportBtn = document.getElementById('export-storage') as HTMLButtonElement;
+    const importInput = document.getElementById('import-file') as HTMLInputElement;
+    const clearStorageBtn = document.getElementById('clear-storage') as HTMLButtonElement;
     const confirmLabel = 'Delete Ok?';
     const baseLabel = 'Delete';
     const tempSpan = document.createElement('span');
@@ -90,7 +97,8 @@ function init() {
         clearStorageBtn.textContent = baseLabel;
     };
 
-    const showStatus = (msg) => {
+    const showStatus = (msg: string) => {
+        if (!status) return;
         status.textContent = msg;
         setTimeout(() => { status.textContent = ''; }, 1800);
     };
@@ -130,7 +138,7 @@ function init() {
         const serialized = JSON.stringify(data, null, 2);
         if (window.showSaveFilePicker) {
             try {
-                const handle = await showSaveFilePicker({
+                const handle = await window.showSaveFilePicker({
                     suggestedName: `tagalyst-storage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
                     types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
                 });
@@ -164,14 +172,15 @@ function init() {
     });
 
     importInput.addEventListener('change', async (evt) => {
-        const file = evt.target.files?.[0];
+        const input = evt.target as HTMLInputElement;
+        const file = input.files?.[0];
         if (!file) return;
         if (!confirm('Importing will overwrite all Tagalyst data. Continue?')) return;
         try {
             const text = await file.text();
             const data = JSON.parse(text);
-            await new Promise(resolve => chrome.storage.local.clear(resolve));
-            await new Promise(resolve => chrome.storage.local.set(data, resolve));
+            await new Promise<void>(resolve => chrome.storage.local.clear(() => resolve()));
+            await new Promise<void>(resolve => chrome.storage.local.set(data, () => resolve()));
             const cfg = await getConfig();
             searchEnable.checked = !!cfg.searchEnabled;
             tagsEnable.checked = !!cfg.tagsEnabled;
@@ -193,10 +202,10 @@ function init() {
             }, 2500);
             return;
         }
-        await new Promise(resolve => chrome.storage.local.clear(resolve));
-        await saveConfig({ ...defaultConfig });
-        searchEnable.checked = defaultConfig.searchEnabled;
-        tagsEnable.checked = defaultConfig.tagsEnabled;
+        await new Promise<void>(resolve => chrome.storage.local.clear(() => resolve()));
+        await saveConfig({ ...optionsDefaultConfig });
+        searchEnable.checked = optionsDefaultConfig.searchEnabled;
+        tagsEnable.checked = optionsDefaultConfig.tagsEnabled;
         await updateStorageDisplay(storageSizeEl);
         showStatus('Storage cleared');
         resetButtonState();

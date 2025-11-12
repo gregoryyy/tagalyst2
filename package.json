@@ -1,31 +1,14 @@
 {
   "name": "tagalyst2",
-  "version": "1.0.0",
-  "description": "A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com to: - Collapse/expand any multi-line message with a right-aligned toolbar (each message shows its toolbar + sequential number) - Tag and bookmark messages locally with inline editors; annotations and tags are managed via floating dialogs - Use the top-right Search + Tags panels (live filters) together with the bottom-right navigation stack to move through a thread - View tag frequencies, click any tag to focus matching messages, or type in the search box to filter responses before copying a Markdown snapshot (all or focus-only) via the MD Copy panel",
-  "main": "index.js",
+  "version": "0.3.0",
+  "private": true,
   "scripts": {
-    "test": "jest",
-    "build": "node scripts/build.js"
+    "clean": "rm -rf .tsbuild content/content.js options/options.js",
+    "build": "tsc -b",
+    "watch": "tsc -b --watch --preserveWatchOutput"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/gregoryyy/tagalyst2.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/gregoryyy/tagalyst2/issues"
-  },
-  "homepage": "https://github.com/gregoryyy/tagalyst2#readme",
   "devDependencies": {
-    "cross-zip": "^4.0.1",
-    "jest": "^30.2.0"
-  },
-  "jest": {
-    "testMatch": [
-      "<rootDir>/tests/**/*.test.js"
-    ]
+    "@types/chrome": "^0.0.255",
+    "typescript": "^5.3.3"
   }
 }
