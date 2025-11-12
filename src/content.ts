@@ -394,11 +394,18 @@ class FocusService {
 
     toggleTag(tag: string) {
         if (!tag) return;
-        if (this.selectedTags.has(tag)) {
+        const wasSelected = this.selectedTags.has(tag);
+        console.debug('[Tagalyst][Tags] toggleTag invoked', { tag, wasSelected });
+        if (wasSelected) {
             this.selectedTags.delete(tag);
         } else {
             this.selectedTags.add(tag);
         }
+        console.debug('[Tagalyst][Tags] toggleTag result', {
+            tag,
+            isSelected: this.selectedTags.has(tag),
+            activeTags: Array.from(this.selectedTags),
+        });
     }
 
     clearTags() {
@@ -661,6 +668,7 @@ class TopPanelController {
     private topPanelsEl: HTMLElement | null = null;
     private tagListEl: HTMLElement | null = null;
     private searchInputEl: HTMLInputElement | null = null;
+    private lastTagSignature = '';
 
     ensurePanels(): HTMLElement {
         if (this.topPanelsEl) return this.topPanelsEl;
@@ -695,9 +703,24 @@ class TopPanelController {
 
     updateTagList(counts: Array<{ tag: string; count: number }>) {
         this.ensurePanels();
-        if (!this.tagListEl) return;
+        const tagsEnabled = configService.areTagsEnabled();
+        const signature = this.computeTagSignature(counts, tagsEnabled);
+        if (!this.tagListEl) {
+            console.warn('[Tagalyst][Tags] updateTagList called before tag panel mounted', { counts });
+            return;
+        }
+        if (signature === this.lastTagSignature) {
+            // No structural change; keep existing DOM so clicks aren't disrupted.
+            this.syncSelectionUI();
+            return;
+        }
+        this.lastTagSignature = signature;
+        console.debug('[Tagalyst][Tags] Rendering tag list', {
+            totalTags: counts.length,
+            tagsEnabled,
+        });
         this.tagListEl.innerHTML = '';
-        this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
+        this.tagListEl.classList.toggle('ext-tags-disabled', !tagsEnabled);
         if (!counts.length) {
             const empty = document.createElement('div');
             empty.className = 'ext-tag-sidebar-empty';
@@ -729,6 +752,11 @@ class TopPanelController {
             const tag = row.dataset.tag;
             row.classList.toggle('ext-tag-selected', !!(tag && focusService.isTagSelected(tag)));
         });
+    }
+
+    private computeTagSignature(counts: Array<{ tag: string; count: number }>, tagsEnabled: boolean) {
+        const suffix = counts.map(({ tag, count }) => `${tag}:${count}`).join('|');
+        return `${tagsEnabled ? '1' : '0'}|${suffix}`;
     }
 
     updateConfigUI() {
@@ -764,6 +792,7 @@ class TopPanelController {
         this.topPanelsEl = null;
         this.tagListEl = null;
         this.searchInputEl = null;
+        this.lastTagSignature = '';
     }
 
     getElement(): HTMLElement | null {
@@ -777,8 +806,16 @@ class TopPanelController {
     }
 
     private toggleTagSelection(tag: string, row?: HTMLElement) {
-        if (!configService.areTagsEnabled()) return;
+        if (!configService.areTagsEnabled()) {
+            console.debug('[Tagalyst][Tags] Tag row ignored because tags are disabled', { tag });
+            return;
+        }
         const willSelect = !focusService.isTagSelected(tag);
+        console.debug('[Tagalyst][Tags] Tag row clicked', {
+            tag,
+            willSelect,
+            rowAttached: !!row,
+        });
         focusService.toggleTag(tag);
         if (row) {
             row.classList.toggle('ext-tag-selected', willSelect);
