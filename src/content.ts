@@ -726,7 +726,7 @@ class TopPanelController {
             badge.textContent = String(count);
             row.append(label, badge);
             row.classList.toggle('ext-tag-selected', focusService.isTagSelected(tag));
-            row.addEventListener('click', () => this.toggleTagSelection(tag));
+            row.addEventListener('click', () => this.toggleTagSelection(tag, row));
             this.tagListEl.appendChild(row);
         }
         this.syncSelectionUI();
@@ -777,9 +777,13 @@ class TopPanelController {
         syncFocusMode();
     }
 
-    private toggleTagSelection(tag: string) {
+    private toggleTagSelection(tag: string, row?: HTMLElement) {
         if (!areTagsEnabled()) return;
+        const willSelect = !focusService.isTagSelected(tag);
         focusService.toggleTag(tag);
+        if (row) {
+            row.classList.toggle('ext-tag-selected', willSelect);
+        }
         syncFocusMode();
     }
 }
