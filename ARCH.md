@@ -6,63 +6,66 @@ This document tracks the ongoing refactor from a large procedural content script
 
 ```
 BootstrapOrchestrator
- ├─ ThreadAdapter (DOM discovery, MutationObserver)
- ├─ ToolbarController (global + per-message controls)
- ├─ EditorController (tag + note editors)
- ├─ FocusService (search/tags/stars state + navigation)
- ├─ StorageService (chrome.storage wrapper)
- └─ DOM adapters (MessageAdapter / PairAdapter)
+ ├─ RenderScheduler (debounced refresh loop)
+ ├─ ThreadDom + ChatGptThreadAdapter (discovery + fallback heuristics)
+ ├─ StorageService / ConfigService (chrome.storage glue)
+ ├─ MessageMetaRegistry (per-message cache shared by services)
+ ├─ FocusService + FocusController (state machine + UI syncing)
+ ├─ TopPanelController (Search/Tags panels)
+ ├─ ToolbarController (per-message + global controls)
+ ├─ ThreadActions / ExportController (batch ops & Markdown)
+ └─ EditorController (tag + note editors)
 ```
 
-### Thread Adapter + Adapters
-- `ChatGptThreadAdapter` owns DOM discovery and MutationObserver wiring. It builds `MessageAdapter` and `PairAdapter` objects so the rest of the code never couples to ChatGPT’s markup.
-- Fallback helpers still exist (e.g., `defaultEnumerateMessages`) but only run when the adapter is unavailable, keeping behavior identical while slimming the DOM surface area.
+### ThreadDom, Adapters, and Scheduler
+- `ChatGptThreadAdapter` still owns MutationObserver wiring and produces `MessageAdapter` / `PairAdapter` instances, but `ThreadDom` now provides the shared fallback heuristics (enumerating messages, building pairs, finding navigation nodes). Controllers never touch `default*` helpers directly anymore.
+- `RenderScheduler` replaces the ad-hoc `requestRefresh` globals. It stores the active async render callback and coalesces `requestAnimationFrame` ticks so config changes, MutationObserver events, and focus toggles all reuse the same queueing mechanism.
 
-### Message / Pair Adapters
-- `DomMessageAdapter` exposes `key`, `role`, normalized text, collapse heuristics, and `storageKey(threadKey)`.
-- `DomPairAdapter` groups messages into (prompt,response) pairs and feeds navigation/export logic.
-- `messageState` stores adapters per element so focus/search/tag logic can reuse metadata. Navigation and collapse-by-focus now work with adapter lists, only touching `adapter.element` when scrolling/manipulating DOM.
+### StorageService + ConfigService
+- Storage access continues to flow through `StorageService.read`/`write` and the `readMessage` / `writeMessage` helpers so every caller uses adapter-derived keys.
+- `ConfigService` now receives the scheduler instance. Whenever it applies an update it (a) enforces feature invariants (clearing search/tags when disabled), (b) notifies listeners, (c) asks `FocusController` to re-evaluate modes, and (d) schedules a render. There are no remaining free functions such as `isSearchEnabled`; everything goes through this service.
 
-### FocusService
-- Replaces the global focus state: tracks search query, tag selections, focus mode, and navigation index.
-- Provides helpers (`setSearchQuery`, `toggleTag`, `getMatches`, `isMessageFocused`, `adjustNav`) so controllers call the service rather than poking Sets/strings directly.
+### MessageMetaRegistry
+- Replaces the old `messageState` Map with a typed registry that can `ensure`, `update`, `resolveAdapter`, and garbage-collect metadata per DOM element. Controllers/services no longer need to remember how metadata is stored; they call registry helpers instead.
 
-### StorageService
-- Wraps `chrome.storage.local` with typed async helpers plus `readMessage` / `writeMessage`. Message-level storage goes through adapters, ensuring keys are consistent everywhere.
+### FocusService + FocusController
+- `FocusService` still models search/tag/star modes, but the new `FocusController` handles UI concerns: caching page controls, refreshing toolbar glyphs, syncing tag sidebar selections, and answering “is this pair focused?” It centralizes all focus-related DOM updates so other modules only invoke `focusController.*` methods.
+
+### TopPanelController
+- Manages the Search/Tags panels and now exposes `syncWidth()` so its layout can track the global toolbar width without a global helper. It reads feature toggles via `ConfigService` and feeds focus changes back through `FocusController`.
 
 ### ToolbarController
-- Handles both the global bottom-right controls and per-message toolbars.
-- Wires navigation scroll, collapse/expand/export buttons, bookmark toggles, and keeps focus glyphs in sync with `FocusService`.
-
-### ConfigService + TopPanelController
-- `ConfigService` now wraps all config reads/writes (`chrome.storage.local`) and notifies listeners when settings change. It enforces focus state invariants and schedules refreshes without leaking storage logic into UI layers.
-- `TopPanelController` builds and manages the floating Search/Tags panels, wires search input + tag row events to `FocusService`, keeps the UI in sync with config toggles, and exposes helpers for tag list refreshes and layout.
+- Owns both the bottom navigation stack and the per-message toolbar injection. It now handles badge rendering, pair number chips, collapse button wiring, and the documented-but-disabled user button skeleton. `ThreadActions` supplies the actual collapse logic, but the controller determines when to call it.
 
 ### EditorController
-- Manages both tag and note editors: opening, closing, floating positioning, keyboard shortcuts, and storage updates.
-- `teardownUI` now just calls `editorController.teardown()` so active editors are cleaned up uniformly.
+- Still encapsulates note/tag editor lifecycles. The bootstrapper’s teardown path simply calls `editorController.teardown()` before removing DOM nodes.
 
 ### ThreadActions + ExportController
-- `ThreadActions` encapsulates collapse/expand operations (single message, all messages, focus-only). Controllers call its methods instead of touching DOM helpers directly.
-- `ExportController` owns Markdown export and clipboard writes so toolbar buttons simply ask it to copy the current thread/focus subset.
+- `ThreadActions` gained helpers to keep collapse button glyphs in sync, so no other code pokes `.ext-collapse` buttons directly.
+- `ExportController` became a pure dependency of the toolbar; the obsolete `runExport`/`exportThreadToMarkdown` wrappers were removed.
 
 ### BootstrapOrchestrator
-- Coordinates startup: waits for page stabilization, loads config, instantiates the thread adapter, injects top panels + toolbars, and runs the refresh loop.
-- Refresh builds adapter caches, hydrates storage metadata, updates badges/tag counts, and uses `requestRefresh` for MutationObserver + SPA navigation.
-- `activeBootstrap` stores the current render callback, allowing config/UI updates to queue a refresh without reimplementing the logic.
+- Sets up config, adapters, controllers, and the render loop. During each refresh it:
+  1. Resolves message/pair adapters via `threadDom`.
+  2. Reads storage in a single batch.
+  3. Hydrates the `MessageMetaRegistry`.
+  4. Asks `ToolbarController` to inject/update controls.
+  5. Updates tag frequency data for the top panel.
+  6. Delegates focus button refreshes to `FocusController`.
+- Teardown is encapsulated inside the orchestrator so SPA navigations or failures have a single cleanup path.
 
 ### Utilities
-- Pure helpers (hashing, text normalization, caret placement, floating editor layout) stay as standalone functions since they have no state or dependencies.
+- Stateless helpers live in the `Utils` namespace (hashing, text normalization, caret placement, floating editor positioning, DOM ownership markers). Anything that needs state moved into one of the services/controllers above.
 
 ## Next Steps
 
 1. **Modularize Services**  
-   - Move each service/controller into its own file (e.g., `src/services/focus.ts`, `src/controllers/toolbar.ts`) so `content.ts` mainly orchestrates dependency wiring.
+   - Move each service/controller into its own file (e.g., `src/services/focus.ts`, `src/controllers/toolbar.ts`) so `content.ts` mainly orchestrates dependency wiring. The new class boundaries make this a mechanical split.
 
 2. **Config & Options Integration**  
-   - Have the Options page talk directly to `ConfigService` via a shared module so UI toggles stay in sync across the popup/options/content surfaces without duplicate logic.
+   - Have the Options page talk directly to `ConfigService` (or a shared facade) so UI toggles stay in sync across popup/options/content surfaces with zero duplicate logic.
 
 3. **Pluggable DOM Adapters**  
-   - Once modules are split, experiment with swapping `ThreadAdapter` implementations (e.g., for future ChatGPT layouts or other chat platforms) without touching higher-level controllers.
+   - After splitting modules, experiment with alternate `ThreadAdapter` implementations (e.g., for future ChatGPT layouts or other chat platforms) without touching higher-level controllers. `ThreadDom` already hides the fallback heuristics; the next step is swapping adapter instances via dependency injection.
 
 These steps continue the same philosophy as earlier refactors: isolate ChatGPT-specific details, ensure behavior stays 1:1, and make every feature depend on adapters + services instead of raw DOM.

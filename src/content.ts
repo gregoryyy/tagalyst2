@@ -5,6 +5,8 @@
  * - Local persistence via chrome.storage
  */
 
+const EXT_ATTR = 'data-ext-owned';
+
 // -------------------------- Utilities --------------------------
 /**
  * Small helper for delaying async flows without blocking the UI thread.
@@ -77,52 +79,80 @@ namespace Utils {
             editor.classList.remove('ext-floating-editor');
         };
     }
-}
 
-/**
- * Generates a thread-level key using the conversation ID when available.
- */
-function getThreadKey(): string {
-    // Prefer URL path (conversation id). Fallback to title + domain.
-    try {
-        const u = new URL(location.href);
-        if (u.pathname && u.pathname.length > 1) return u.pathname.replace(/\W+/g, "-");
-    } catch { }
-    return Utils.hashString(document.title + location.host);
-}
+    /**
+     * Generates a thread-level key using the conversation ID when available.
+     */
+    export function getThreadKey(): string {
+        try {
+            const u = new URL(location.href);
+            if (u.pathname && u.pathname.length > 1) return u.pathname.replace(/\W+/g, "-");
+        } catch { /* noop */ }
+        return hashString(document.title + location.host);
+    }
 
-/**
- * Returns the DOM-provided message UUID if available.
- */
-function getMessageId(el: Element | null) {
-    return el?.getAttribute?.('data-message-id') || null;
-}
+    /**
+     * Returns the DOM-provided message UUID if available.
+     */
+    export function getMessageId(el: Element | null) {
+        return el?.getAttribute?.('data-message-id') || null;
+    }
 
-/**
- * Stable-ish per-message key derived from ChatGPT IDs or fallback heuristics.
- */
-function keyForMessage(el: HTMLElement) {
-    const domId = getMessageId(el);
-    if (domId) return domId;
-    const text = Utils.normalizeText(el.innerText).slice(0, 4000); // perf cap
-    const idx = Array.prototype.indexOf.call(el.parentElement?.children || [], el);
-    return Utils.hashString(text + "|" + idx);
-}
+    /**
+     * Stable-ish per-message key derived from ChatGPT IDs or fallback heuristics.
+     */
+    export function keyForMessage(el: HTMLElement) {
+        const domId = getMessageId(el);
+        if (domId) return domId;
+        const text = normalizeText(el.innerText).slice(0, 4000); // perf cap
+        const idx = Array.prototype.indexOf.call(el.parentElement?.children || [], el);
+        return hashString(text + "|" + idx);
+    }
 
-/**
- * Determines whether the collapse control should be shown for a message.
- * Hidden for single-line prompts (no line breaks).
- */
-function shouldShowCollapseControl(el: HTMLElement) {
-    const role = el?.getAttribute?.('data-message-author-role');
-    if (role !== 'user') return true;
-    const text = (el.innerText || '').trim();
-    if (!text) return false;
-    const style = getComputedStyle(el);
-    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) || 18;
-    const lines = lineHeight ? el.clientHeight / lineHeight : 0;
-    if (lines > 1.4) return true;
-    return text.length > 160 || text.includes('\n');
+    /**
+     * Flags a DOM node as extension-managed so MutationObservers can ignore it.
+     */
+    export function markExtNode(el: Element | null) {
+        if (el?.setAttribute) {
+            el.setAttribute(EXT_ATTR, '1');
+        }
+    }
+
+    /**
+     * Walks up from the provided node to see if any ancestor belongs to the extension.
+     */
+    export function closestExtNode(node: Node | null) {
+        if (!node) return null;
+        if (node.nodeType === Node.ELEMENT_NODE && typeof (node as Element).closest === 'function') {
+            return (node as Element).closest(`[${EXT_ATTR}]`);
+        }
+        const parent = node.parentElement;
+        if (parent && typeof parent.closest === 'function') {
+            return parent.closest(`[${EXT_ATTR}]`);
+        }
+        return null;
+    }
+
+    /**
+     * Returns true when the supplied node is part of extension-owned UI.
+     */
+    export function isExtensionNode(node: Node | null) {
+        return !!closestExtNode(node);
+    }
+
+    /**
+     * Determines whether a mutation record affects host content rather than extension nodes.
+     */
+    export function mutationTouchesExternal(record: MutationRecord) {
+        if (!isExtensionNode(record.target)) return true;
+        for (const node of record.addedNodes) {
+            if (!isExtensionNode(node)) return true;
+        }
+        for (const node of record.removedNodes) {
+            if (!isExtensionNode(node)) return true;
+        }
+        return false;
+    }
 }
 
 class StorageService {
@@ -157,7 +187,7 @@ class ConfigService {
     private loaded = false;
     private listeners = new Set<(cfg: typeof contentDefaultConfig) => void>();
 
-    constructor(private storage: StorageService) { }
+    constructor(private storage: StorageService, private readonly scheduler: RenderScheduler) { }
 
     async load(): Promise<typeof contentDefaultConfig> {
         if (this.loaded) return config;
@@ -171,8 +201,8 @@ class ConfigService {
         config = { ...contentDefaultConfig, ...(obj || {}) };
         this.enforceState();
         this.notify();
-        syncFocusMode();
-        requestRefresh();
+        focusController.syncMode();
+        this.scheduler.request();
     }
 
     async update(partial: Partial<typeof contentDefaultConfig>) {
@@ -186,28 +216,33 @@ class ConfigService {
         return () => this.listeners.delete(listener);
     }
 
+    isSearchEnabled() {
+        return !!config.searchEnabled;
+    }
+
+    areTagsEnabled() {
+        return !!config.tagsEnabled;
+    }
+
     private notify() {
         this.listeners.forEach(listener => listener(config));
     }
 
     private enforceState() {
         let changed = false;
-        if (!isSearchEnabled()) {
+        if (!this.isSearchEnabled()) {
             focusService.setSearchQuery('');
             topPanelController.clearSearchInput();
             changed = true;
         }
-        if (!areTagsEnabled()) {
+        if (!this.areTagsEnabled()) {
             focusService.clearTags();
             changed = true;
         }
-        if (changed) syncFocusMode();
+        if (changed) focusController.syncMode();
     }
 }
 
-const configService = new ConfigService(storageService);
-
-const EXT_ATTR = 'data-ext-owned';
 const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
 const contentDefaultConfig = {
     searchEnabled: true,
@@ -215,16 +250,6 @@ const contentDefaultConfig = {
 };
 let config = { ...contentDefaultConfig };
 let activeThreadAdapter: ThreadAdapter | null = null;
-
-/**
- * Augments the bootstrap function with stateful fields used across modules.
- */
-type BootstrapMeta = {
-    _raf?: number;
-    render?: () => Promise<void>;
-};
-
-let activeBootstrap: BootstrapMeta | null = null;
 
 type MessageValue = Record<string, any>;
 
@@ -234,6 +259,64 @@ type MessageMeta = {
     pairIndex: number | null;
     adapter: MessageAdapter | null;
 };
+
+class MessageMetaRegistry {
+    private readonly store = new Map<HTMLElement, MessageMeta>();
+
+    clear() {
+        this.store.clear();
+    }
+
+    get(el: HTMLElement) {
+        return this.store.get(el) || null;
+    }
+
+    delete(el: HTMLElement) {
+        this.store.delete(el);
+    }
+
+    forEach(cb: (meta: MessageMeta, el: HTMLElement) => void) {
+        this.store.forEach(cb);
+    }
+
+    ensure(el: HTMLElement, key?: string | null, adapter?: MessageAdapter | null) {
+        let meta = this.store.get(el);
+        if (!meta) {
+            meta = { key: key || null, value: {}, pairIndex: null, adapter: adapter || null };
+            this.store.set(el, meta);
+        }
+        if (key) meta.key = key;
+        if (adapter) meta.adapter = adapter;
+        return meta;
+    }
+
+    update(el: HTMLElement, opts: { key?: string | null; value?: MessageValue; pairIndex?: number | null; adapter?: MessageAdapter | null } = {}) {
+        const meta = this.ensure(el, opts.key ?? null, opts.adapter ?? null);
+        if (typeof opts.pairIndex === 'number') {
+            meta.pairIndex = opts.pairIndex;
+        } else if (opts.pairIndex === null) {
+            meta.pairIndex = null;
+        }
+        if (opts.value) meta.value = opts.value;
+        return meta;
+    }
+
+    resolveAdapter(el: HTMLElement): MessageAdapter {
+        const meta = this.ensure(el);
+        if (meta.adapter && meta.adapter.element === el) {
+            return meta.adapter;
+        }
+        const adapter = new DomMessageAdapter(el);
+        meta.adapter = adapter;
+        return adapter;
+    }
+
+    getStore() {
+        return this.store;
+    }
+}
+
+const messageMetaRegistry = new MessageMetaRegistry();
 
 type ActiveEditor = {
     message: HTMLElement;
@@ -249,262 +332,28 @@ type PageControls = {
     exportFocus: HTMLButtonElement | null;
 };
 
-/**
- * Flags a DOM node as extension-managed so MutationObservers can ignore it.
- */
-function markExtNode(el: Element | null) {
-    if (el?.setAttribute) {
-        el.setAttribute(EXT_ATTR, '1');
+class RenderScheduler {
+    private rafId: number | null = null;
+    private renderer: (() => Promise<void>) | null = null;
+
+    setRenderer(renderer: () => Promise<void>) {
+        this.renderer = renderer;
+    }
+
+    request(renderer?: () => Promise<void>) {
+        if (renderer) this.renderer = renderer;
+        const target = renderer ?? this.renderer;
+        if (!target) return;
+        if (this.rafId) cancelAnimationFrame(this.rafId);
+        this.rafId = requestAnimationFrame(() => {
+            this.rafId = null;
+            target();
+        });
     }
 }
 
-/**
- * Walks up from the provided node to see if any ancestor belongs to the extension.
- */
-function closestExtNode(node: Node | null) {
-    if (!node) return null;
-    if (node.nodeType === Node.ELEMENT_NODE && typeof (node as Element).closest === 'function') {
-        return (node as Element).closest(`[${EXT_ATTR}]`);
-    }
-    const parent = node.parentElement;
-    if (parent && typeof parent.closest === 'function') {
-        return parent.closest(`[${EXT_ATTR}]`);
-    }
-    return null;
-}
-
-/**
- * Returns true when the supplied node is part of extension-owned UI.
- */
-function isExtensionNode(node: Node | null) {
-    return !!closestExtNode(node);
-}
-
-/**
- * Determines whether a mutation record affects host content rather than extension nodes.
- */
-function mutationTouchesExternal(record: MutationRecord) {
-    if (!isExtensionNode(record.target)) return true;
-    for (const node of record.addedNodes) {
-        if (!isExtensionNode(node)) return true;
-    }
-    for (const node of record.removedNodes) {
-        if (!isExtensionNode(node)) return true;
-    }
-    return false;
-}
-
-/**
- * Indicates whether the Search pane is currently enabled via options.
- */
-function isSearchEnabled() {
-    return !!config.searchEnabled;
-}
-
-/**
- * Indicates whether the Tags pane is currently enabled via options.
- */
-function areTagsEnabled() {
-    return !!config.tagsEnabled;
-}
-
-/**
- * Triggers a queued refresh run if the bootstrap helper exposes that hook.
- */
-function requestRefresh(render?: () => Promise<void>) {
-    const target = render || activeBootstrap?.render;
-    if (!target) return;
-    if (activeBootstrap?._raf) cancelAnimationFrame(activeBootstrap._raf);
-    if (!activeBootstrap) {
-        activeBootstrap = { render: target };
-    } else {
-        activeBootstrap.render = target;
-    }
-    activeBootstrap._raf = requestAnimationFrame(() => {
-        target();
-    });
-}
-
-/**
- * Applies config toggles to in-memory focus state and any existing inputs.
- */
-function updateConfigUI() {
-    topPanelController.updateConfigUI();
-}
-
-// ------------------------ Focus State ------------------------
-/**
- * Clears focus-related caches and returns the UI to its default state.
- */
-function resetFocusState() {
-    focusService.reset();
-    pageControls = null;
-    messageState.clear();
-}
-
-/**
- * Provides a human-readable label for the current focus mode.
- */
-function describeFocusMode() {
-    return focusService.describeMode();
-}
-
-function getFocusGlyph(isFilled: boolean) {
-    return focusService.getGlyph(isFilled);
-}
-
-/**
- * Ensures each message node has tracked metadata (storage key, tag data, etc.).
- */
-function ensureMessageMeta(el: HTMLElement, key?: string | null, adapter?: MessageAdapter | null) {
-    let meta = messageState.get(el);
-    if (!meta) {
-        meta = { key: key || null, value: {}, pairIndex: null, adapter: adapter || null };
-        messageState.set(el, meta);
-    }
-    if (key) meta.key = key;
-    if (adapter) meta.adapter = adapter;
-    return meta;
-}
-
-/**
- * Updates cached metadata for a message node and returns the stored entry.
- */
-function setMessageMeta(el: HTMLElement, { key, value, pairIndex, adapter }: { key?: string | null; value?: MessageValue; pairIndex?: number | null; adapter?: MessageAdapter | null } = {}) {
-    const meta = ensureMessageMeta(el, key || null, adapter ?? null);
-    if (typeof pairIndex === 'number') {
-        meta.pairIndex = pairIndex;
-    } else if (pairIndex === null) {
-        meta.pairIndex = null;
-    }
-    if (value) meta.value = value;
-    return meta;
-}
-
-function resolveAdapterForElement(el: HTMLElement): MessageAdapter {
-    const meta = ensureMessageMeta(el);
-    if (meta.adapter && meta.adapter.element === el) {
-        return meta.adapter;
-    }
-    const adapter = new DomMessageAdapter(el);
-    meta.adapter = adapter;
-    return adapter;
-}
-
-/**
- * Determines whether the stored value includes any of the currently selected tags.
- */
-function updateFocusButton(el: HTMLElement, meta: MessageMeta) {
-    const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
-    if (!btn) return;
-    const active = focusService.isMessageFocused(meta, el);
-    const glyph = getFocusGlyph(active);
-    if (btn.textContent !== glyph) btn.textContent = glyph;
-    const pressed = String(active);
-    if (btn.getAttribute('aria-pressed') !== pressed) {
-        btn.setAttribute('aria-pressed', pressed);
-    }
-    const focusDesc = describeFocusMode();
-    const interactive = focusService.getMode() === FOCUS_MODES.STARS;
-    const disabled = !interactive;
-    if (btn.disabled !== disabled) {
-        if (disabled) {
-            btn.setAttribute('disabled', 'true');
-        } else {
-            btn.removeAttribute('disabled');
-        }
-    }
-    if (interactive) {
-        const title = active ? 'Remove bookmark' : 'Bookmark message';
-        if (btn.title !== title) {
-            btn.title = title;
-            btn.setAttribute('aria-label', title);
-        }
-    } else {
-        const title = active ? `Matches ${focusDesc}` : `Does not match ${focusDesc}`;
-        if (btn.title !== title) {
-            btn.title = title;
-            btn.setAttribute('aria-label', title);
-        }
-    }
-}
-
-/**
- * Recomputes toolbar button labels for every tracked message node.
- */
-function refreshFocusButtons() {
-    messageState.forEach((meta, el) => {
-        if (!document.contains(el)) {
-            messageState.delete(el);
-            return;
-        }
-        if (!meta.adapter) {
-            meta.adapter = new DomMessageAdapter(el);
-        }
-        updateFocusButton(el, meta);
-    });
-}
-
-/**
- * Re-evaluates which focus mode is active and updates dependent UI affordances.
- */
-function syncFocusMode() {
-    focusService.syncMode();
-    refreshFocusButtons();
-    updateFocusControlsUI();
-    topPanelController.syncSelectionUI();
-}
-
-/**
- * Returns the list of message adapters that currently match the focus filter.
- */
-function getFocusMatches(): MessageAdapter[] {
-    return focusService.getMatches(messageState);
-}
-
-/**
- * Returns a short user-facing label for whichever focus type is active.
- */
-function focusSetLabel() {
-    return focusService.getModeLabel();
-}
-
-/**
- * Updates the main navigation controls so their icons/titles match focus state.
- */
-function updateFocusControlsUI() {
-    if (!pageControls) return;
-    const mode = focusService.getMode();
-    const glyph = focusGlyphs[mode] || focusGlyphs[FOCUS_MODES.STARS];
-    const desc = focusSetLabel();
-    if (pageControls.focusPrev) {
-        pageControls.focusPrev.textContent = `${glyph.filled}↑`;
-        pageControls.focusPrev.title = `Previous ${desc}`;
-    }
-    if (pageControls.focusNext) {
-        pageControls.focusNext.textContent = `${glyph.filled}↓`;
-        pageControls.focusNext.title = `Next ${desc}`;
-    }
-    if (pageControls.collapseNonFocus) {
-        pageControls.collapseNonFocus.textContent = glyph.empty;
-        pageControls.collapseNonFocus.title = `Collapse messages outside current ${desc}s`;
-    }
-    if (pageControls.expandFocus) {
-        pageControls.expandFocus.textContent = glyph.filled;
-        pageControls.expandFocus.title = `Expand current ${desc}s`;
-    }
-    if (pageControls.exportFocus) {
-        pageControls.exportFocus.textContent = glyph.filled;
-        pageControls.exportFocus.title = `Copy Markdown for current ${desc}s`;
-    }
-}
-
-/**
- * Highlights any tag rows in the sidebar that belong to the selected tag set.
- */
-function syncTagSidebarSelectionUI() {
-    topPanelController.syncSelectionUI();
-}
+const renderScheduler = new RenderScheduler();
+const configService = new ConfigService(storageService, renderScheduler);
 
 const FOCUS_MODES = Object.freeze({
     STARS: 'stars',
@@ -600,8 +449,8 @@ class FocusService {
     }
 
     computeMode(): FocusMode {
-        if (isSearchEnabled() && this.searchQueryLower) return FOCUS_MODES.SEARCH;
-        if (areTagsEnabled() && this.selectedTags.size) return FOCUS_MODES.TAGS;
+        if (configService.isSearchEnabled() && this.searchQueryLower) return FOCUS_MODES.SEARCH;
+        if (configService.areTagsEnabled() && this.selectedTags.size) return FOCUS_MODES.TAGS;
         return FOCUS_MODES.STARS;
     }
 
@@ -621,14 +470,14 @@ class FocusService {
         }
     }
 
-    getMatches(state: Map<HTMLElement, MessageMeta>): MessageAdapter[] {
+    getMatches(store: MessageMetaRegistry): MessageAdapter[] {
         const matches: MessageAdapter[] = [];
-        state.forEach((meta, el) => {
+        store.forEach((meta, el) => {
             if (!document.contains(el)) {
-                state.delete(el);
+                store.delete(el);
                 return;
             }
-            const adapter = meta.adapter || resolveAdapterForElement(el);
+            const adapter = meta.adapter || store.resolveAdapter(el);
             if (this.isMessageFocused(meta, el)) {
                 matches.push(adapter);
             }
@@ -650,7 +499,7 @@ class FocusService {
     }
 
     private matchesSelectedTags(value: MessageValue): boolean {
-        if (!areTagsEnabled() || !this.selectedTags.size) return false;
+        if (!configService.areTagsEnabled() || !this.selectedTags.size) return false;
         const tags = Array.isArray(value?.tags) ? value.tags : [];
         if (!tags.length) return false;
         return tags.some(tag => this.selectedTags.has(tag.toLowerCase()));
@@ -671,6 +520,141 @@ class FocusService {
 }
 
 const focusService = new FocusService();
+
+class FocusController {
+    private pageControls: PageControls | null = null;
+    private selectionSync: (() => void) | null = null;
+
+    constructor(private readonly focus: FocusService, private readonly messages: MessageMetaRegistry) { }
+
+    reset() {
+        this.focus.reset();
+        this.pageControls = null;
+        this.messages.clear();
+    }
+
+    attachSelectionSync(handler: () => void) {
+        this.selectionSync = handler;
+    }
+
+    setPageControls(controls: PageControls | null) {
+        this.pageControls = controls;
+        this.updateControlsUI();
+    }
+
+    updateMessageButton(el: HTMLElement, meta: MessageMeta) {
+        const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
+        if (!btn) return;
+        const active = this.focus.isMessageFocused(meta, el);
+        const glyph = this.getGlyph(active);
+        if (btn.textContent !== glyph) btn.textContent = glyph;
+        const pressed = String(active);
+        if (btn.getAttribute('aria-pressed') !== pressed) {
+            btn.setAttribute('aria-pressed', pressed);
+        }
+        const focusDesc = this.describeMode();
+        const interactive = this.focus.getMode() === FOCUS_MODES.STARS;
+        const disabled = !interactive;
+        if (btn.disabled !== disabled) {
+            if (disabled) {
+                btn.setAttribute('disabled', 'true');
+            } else {
+                btn.removeAttribute('disabled');
+            }
+        }
+        if (interactive) {
+            const title = active ? 'Remove bookmark' : 'Bookmark message';
+            if (btn.title !== title) {
+                btn.title = title;
+                btn.setAttribute('aria-label', title);
+            }
+        } else {
+            const title = active ? `Matches ${focusDesc}` : `Does not match ${focusDesc}`;
+            if (btn.title !== title) {
+                btn.title = title;
+                btn.setAttribute('aria-label', title);
+            }
+        }
+    }
+
+    refreshButtons() {
+        this.messages.forEach((meta, el) => {
+            if (!document.contains(el)) {
+                this.messages.delete(el);
+                return;
+            }
+            if (!meta.adapter) {
+                meta.adapter = new DomMessageAdapter(el);
+            }
+            this.updateMessageButton(el, meta);
+        });
+    }
+
+    syncMode() {
+        this.focus.syncMode();
+        this.refreshButtons();
+        this.updateControlsUI();
+        this.selectionSync?.();
+    }
+
+    getMatches(): MessageAdapter[] {
+        return this.focus.getMatches(this.messages);
+    }
+
+    getGlyph(isFilled: boolean) {
+        return this.focus.getGlyph(isFilled);
+    }
+
+    describeMode() {
+        return this.focus.describeMode();
+    }
+
+    getModeLabel() {
+        return this.focus.getModeLabel();
+    }
+
+    updateControlsUI() {
+        if (!this.pageControls) return;
+        const mode = this.focus.getMode();
+        const glyph = focusGlyphs[mode] || focusGlyphs[FOCUS_MODES.STARS];
+        const desc = this.getModeLabel();
+        if (this.pageControls.focusPrev) {
+            this.pageControls.focusPrev.textContent = `${glyph.filled}↑`;
+            this.pageControls.focusPrev.title = `Previous ${desc}`;
+        }
+        if (this.pageControls.focusNext) {
+            this.pageControls.focusNext.textContent = `${glyph.filled}↓`;
+            this.pageControls.focusNext.title = `Next ${desc}`;
+        }
+        if (this.pageControls.collapseNonFocus) {
+            this.pageControls.collapseNonFocus.textContent = glyph.empty;
+            this.pageControls.collapseNonFocus.title = `Collapse messages outside current ${desc}s`;
+        }
+        if (this.pageControls.expandFocus) {
+            this.pageControls.expandFocus.textContent = `${glyph.filled}`;
+            this.pageControls.expandFocus.title = `Expand current ${desc}s`;
+        }
+        if (this.pageControls.exportFocus) {
+            this.pageControls.exportFocus.textContent = glyph.filled;
+            this.pageControls.exportFocus.title = `Copy Markdown for current ${desc}s`;
+        }
+    }
+
+    isPairFocused(pair: TagalystPair) {
+        const nodes: HTMLElement[] = [];
+        if (pair.query) nodes.push(pair.query);
+        if (pair.response) nodes.push(pair.response);
+        return nodes.some(node => {
+            if (!node) return false;
+            const meta = this.messages.get(node);
+            if (!meta) return false;
+            return this.focus.isMessageFocused(meta, node);
+        });
+    }
+}
+
+const focusController = new FocusController(focusService, messageMetaRegistry);
+
 class TopPanelController {
     private topPanelsEl: HTMLElement | null = null;
     private tagListEl: HTMLElement | null = null;
@@ -690,7 +674,7 @@ class TopPanelController {
                 <div class="ext-tag-list" id="ext-tag-list"></div>
             </div>
         `;
-        markExtNode(wrap);
+        Utils.markExtNode(wrap);
         document.body.appendChild(wrap);
         this.topPanelsEl = wrap;
         this.tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
@@ -703,7 +687,7 @@ class TopPanelController {
             });
         }
         this.updateConfigUI();
-        syncTopPanelWidth();
+        this.syncWidth();
         return wrap;
     }
 
@@ -711,7 +695,7 @@ class TopPanelController {
         this.ensurePanels();
         if (!this.tagListEl) return;
         this.tagListEl.innerHTML = '';
-        this.tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
+        this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
         if (!counts.length) {
             const empty = document.createElement('div');
             empty.className = 'ext-tag-sidebar-empty';
@@ -749,21 +733,29 @@ class TopPanelController {
         if (!this.topPanelsEl) return;
         const searchPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-search');
         const tagPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-tags');
-        if (searchPanel) searchPanel.style.display = isSearchEnabled() ? '' : 'none';
-        if (tagPanel) tagPanel.style.display = areTagsEnabled() ? '' : 'none';
+        if (searchPanel) searchPanel.style.display = configService.isSearchEnabled() ? '' : 'none';
+        if (tagPanel) tagPanel.style.display = configService.areTagsEnabled() ? '' : 'none';
         if (this.searchInputEl) {
-            const enabled = isSearchEnabled();
+            const enabled = configService.isSearchEnabled();
             this.searchInputEl.disabled = !enabled;
             this.searchInputEl.placeholder = enabled ? 'Search messages…' : 'Search disabled in Options';
             if (!enabled) this.searchInputEl.value = '';
         }
         if (this.tagListEl) {
-            this.tagListEl.classList.toggle('ext-tags-disabled', !areTagsEnabled());
+            this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
         }
     }
 
     clearSearchInput() {
         if (this.searchInputEl) this.searchInputEl.value = '';
+    }
+
+    syncWidth() {
+        if (!this.topPanelsEl) return;
+        const controls = document.getElementById('ext-page-controls');
+        const refWidth = controls ? controls.getBoundingClientRect().width : null;
+        const width = refWidth && refWidth > 0 ? refWidth : this.topPanelsEl.getBoundingClientRect().width || 200;
+        this.topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
     }
 
     reset() {
@@ -777,23 +769,24 @@ class TopPanelController {
     }
 
     private handleSearchInput(value: string) {
-        if (!isSearchEnabled()) return;
+        if (!configService.isSearchEnabled()) return;
         focusService.setSearchQuery(value || '');
-        syncFocusMode();
+        focusController.syncMode();
     }
 
     private toggleTagSelection(tag: string, row?: HTMLElement) {
-        if (!areTagsEnabled()) return;
+        if (!configService.areTagsEnabled()) return;
         const willSelect = !focusService.isTagSelected(tag);
         focusService.toggleTag(tag);
         if (row) {
             row.classList.toggle('ext-tag-selected', willSelect);
         }
-        syncFocusMode();
+        focusController.syncMode();
     }
 }
 
 const topPanelController = new TopPanelController();
+focusController.attachSelectionSync(() => topPanelController.syncSelectionUI());
 configService.onChange(() => topPanelController.updateConfigUI());
 
 class EditorController {
@@ -828,7 +821,7 @@ class EditorController {
         }
         this.closeTagEditor();
 
-        const adapter = resolveAdapterForElement(messageEl);
+        const adapter = messageMetaRegistry.resolveAdapter(messageEl);
         const cur = await this.storage.readMessage(threadKey, adapter);
         if (Array.isArray(cur.tags)) {
             cur.tags = cur.tags.map(tag => tag.toLowerCase());
@@ -837,7 +830,7 @@ class EditorController {
 
         const editor = document.createElement('div');
         editor.className = 'ext-tag-editor';
-        markExtNode(editor);
+        Utils.markExtNode(editor);
         editor.innerHTML = `
             <div class="ext-tag-editor-input" contenteditable="true" role="textbox" aria-label="Edit tags" data-placeholder="Add tags…"></div>
             <div class="ext-tag-editor-actions">
@@ -868,7 +861,7 @@ class EditorController {
             const tags = raw.split(',').map(s => s.trim()).filter(Boolean);
             cur.tags = tags.map(tag => tag.toLowerCase());
             await this.storage.writeMessage(threadKey, adapter, cur);
-            renderBadges(messageEl, threadKey, cur, adapter);
+            toolbarController.updateBadges(messageEl, threadKey, cur, adapter);
             cleanup();
         };
 
@@ -906,13 +899,13 @@ class EditorController {
         }
         this.closeNoteEditor();
 
-        const adapter = resolveAdapterForElement(messageEl);
+        const adapter = messageMetaRegistry.resolveAdapter(messageEl);
         const cur = await this.storage.readMessage(threadKey, adapter);
         const existing = typeof cur.note === 'string' ? cur.note : '';
 
         const editor = document.createElement('div');
         editor.className = 'ext-note-editor';
-        markExtNode(editor);
+        Utils.markExtNode(editor);
         editor.innerHTML = `
             <label class="ext-note-label">
                 Annotation
@@ -949,7 +942,7 @@ class EditorController {
                 delete cur.note;
             }
             await this.storage.writeMessage(threadKey, adapter, cur);
-            renderBadges(messageEl, threadKey, cur, adapter);
+            toolbarController.updateBadges(messageEl, threadKey, cur, adapter);
             cleanup();
         };
 
@@ -983,29 +976,6 @@ class EditorController {
 
 const editorController = new EditorController(storageService);
 
-const messageState = new Map<HTMLElement, MessageMeta>();
-let pageControls: PageControls | null = null;
-
-/**
- * Removes extension DOM nodes and clears transient editor state.
- */
-function teardownUI() {
-    editorController.teardown();
-    document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
-    document.querySelectorAll('.ext-note-editor').forEach(editor => editor.remove());
-    document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
-    document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
-    document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
-    const controls = document.getElementById('ext-page-controls');
-    if (controls) controls.remove();
-    const panel = topPanelController.getElement();
-    if (panel) panel.remove();
-    topPanelController.reset();
-    resetFocusState();
-    activeThreadAdapter?.disconnect();
-    activeThreadAdapter = null;
-}
-
 
 /**
  * Moves the caret to the end of a contenteditable element.
@@ -1025,142 +995,6 @@ function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => vo
 /**
  * Finds the primary scrollable container that holds the conversation.
  */
-function findTranscriptRoot(): HTMLElement {
-    return activeThreadAdapter?.getTranscriptRoot() ?? defaultFindTranscriptRoot();
-}
-
-function defaultFindTranscriptRoot(): HTMLElement {
-    const main = (document.querySelector('main') as HTMLElement) || document.body;
-    const candidates = Array.from(main.querySelectorAll<HTMLElement>('*')).filter(el => {
-        const s = getComputedStyle(el);
-        const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll';
-        return scrollable && el.clientHeight > 300 && el.children.length > 1;
-    });
-    // Pick the largest scrollable area; fallback to main
-    return (candidates.sort((a, b) => b.clientHeight - a.clientHeight)[0]) || main;
-}
-
-/**
- * Heuristic message detector used only when the explicit role attribute is absent.
- */
-function isMessageNode(el: HTMLElement) {
-    if (!el || !el.parentElement) return false;
-    if (el.querySelector('form, textarea, [contenteditable="true"]')) return false; // composer region
-    const textLen = (el.innerText || '').trim().length;
-    if (textLen < 8) return false;
-    // Heuristics: rich text or code, and likely large block
-    return !!el.querySelector('pre, code, p, li, h1, h2, h3') || textLen > 80;
-}
-
-/**
- * Returns all message nodes, preferring the native role attribute.
- */
-function enumerateMessages(root: HTMLElement): HTMLElement[] {
-    const adapters = activeThreadAdapter?.getMessages(root);
-    if (adapters) return adapters.map(adapter => adapter.element);
-    return defaultEnumerateMessages(root);
-}
-
-function defaultEnumerateMessages(root: HTMLElement): HTMLElement[] {
-    const attrMatches = Array.from(root.querySelectorAll<HTMLElement>('[data-message-author-role]'));
-    if (attrMatches.length) return attrMatches;
-
-    // Fallback to heuristic block detection if the explicit attribute is absent.
-    const out = [];
-    for (const child of Array.from(root.children)) {
-        if (isMessageNode(child as HTMLElement)) out.push(child as HTMLElement);
-    }
-    return out;
-}
-
-/**
- * Groups message DOM nodes into ordered (query, response) pairs.
- */
-function derivePairs(messages: HTMLElement[]): TagalystPair[] {
-    return defaultDerivePairs(messages);
-}
-
-function defaultDerivePairs(messages: HTMLElement[]): TagalystPair[] {
-    const pairs: TagalystPair[] = [];
-    for (let i = 0; i < messages.length; i += 2) {
-        const query = messages[i];
-        if (!query) break;
-        const response = messages[i + 1] || null;
-        pairs.push({
-            query,
-            response,
-            queryId: getMessageId(query),
-            responseId: response ? getMessageId(response) : null,
-        });
-    }
-    return pairs;
-}
-
-/**
- * Returns every (query, response) pair within the current thread container.
- */
-function getPairs(root: HTMLElement): TagalystPair[] {
-    const adapterPairs = activeThreadAdapter?.getPairs(root);
-    if (adapterPairs) return adapterPairs.map(toTagalystPair);
-    return defaultGetPairs(root);
-}
-
-function defaultGetPairs(root: HTMLElement): TagalystPair[] {
-    return defaultDerivePairs(defaultEnumerateMessages(root));
-}
-
-/**
- * Returns only the prompt (user query) nodes.
- */
-function getPromptNodes(root: HTMLElement): HTMLElement[] {
-    const adapters = activeThreadAdapter?.getPromptMessages(root);
-    if (adapters) return adapters.map(adapter => adapter.element);
-    return defaultGetPromptNodes(root);
-}
-
-function defaultGetPromptNodes(root: HTMLElement): HTMLElement[] {
-    return defaultGetPairs(root).map(p => p.query).filter(Boolean) as HTMLElement[];
-}
-
-/**
- * Returns nodes used for navigation (prompts when available, otherwise all messages).
- */
-function getNavigationNodes(root: HTMLElement): HTMLElement[] {
-    const adapters = activeThreadAdapter?.getNavigationMessages(root);
-    if (adapters) return adapters.map(adapter => adapter.element);
-    return defaultGetNavigationNodes(root);
-}
-
-function defaultGetNavigationNodes(root: HTMLElement): HTMLElement[] {
-    const prompts = defaultGetPromptNodes(root);
-    if (prompts.length) return prompts;
-    return defaultEnumerateMessages(root);
-}
-
-/**
- * Returns the p-th pair (0-indexed) or null if it does not exist.
- */
-function getPair(root: HTMLElement, idx: number): TagalystPair | null {
-    const adapterPair = activeThreadAdapter?.getPairAt(root, idx);
-    if (adapterPair) return toTagalystPair(adapterPair);
-    return defaultGetPair(root, idx);
-}
-
-function defaultGetPair(root: HTMLElement, idx: number): TagalystPair | null {
-    if (idx < 0) return null;
-    return defaultGetPairs(root)[idx] || null;
-}
-
-function toTagalystPair(pair: PairAdapter): TagalystPair {
-    const queryEl = pair.query?.element || null;
-    const responseEl = pair.response?.element || null;
-    return {
-        query: queryEl,
-        response: responseEl,
-        queryId: queryEl ? getMessageId(queryEl) : null,
-        responseId: responseEl ? getMessageId(responseEl) : null,
-    };
-}
 
 class DomMessageAdapter implements MessageAdapter {
     readonly key: string;
@@ -1168,7 +1002,7 @@ class DomMessageAdapter implements MessageAdapter {
     private textCache: string | null = null;
 
     constructor(readonly element: HTMLElement) {
-        this.key = keyForMessage(element);
+        this.key = Utils.keyForMessage(element);
         this.role = element.getAttribute('data-message-author-role') || 'unknown';
     }
 
@@ -1180,7 +1014,7 @@ class DomMessageAdapter implements MessageAdapter {
     }
 
     shouldShowCollapse(): boolean {
-        return shouldShowCollapseControl(this.element);
+        return true;
     }
 
     storageKey(threadKey: string): string {
@@ -1200,6 +1034,136 @@ class DomPairAdapter implements PairAdapter {
     }
 }
 
+class ThreadDom {
+    constructor(private readonly adapterProvider: () => ThreadAdapter | null) { }
+
+    findTranscriptRoot(): HTMLElement {
+        return this.adapterProvider()?.getTranscriptRoot() ?? ThreadDom.defaultFindTranscriptRoot();
+    }
+
+    enumerateMessages(root: HTMLElement): HTMLElement[] {
+        const adapter = this.adapterProvider();
+        if (adapter) {
+            return adapter.getMessages(root).map(message => message.element);
+        }
+        return ThreadDom.defaultEnumerateMessages(root);
+    }
+
+    getPairs(root: HTMLElement): TagalystPair[] {
+        const adapter = this.adapterProvider();
+        if (adapter) return adapter.getPairs(root).map(ThreadDom.toTagalystPair);
+        return ThreadDom.defaultGetPairs(root);
+    }
+
+    getPromptNodes(root: HTMLElement): HTMLElement[] {
+        const adapter = this.adapterProvider();
+        if (adapter) return adapter.getPromptMessages(root).map(ad => ad.element);
+        return ThreadDom.defaultGetPromptNodes(root);
+    }
+
+    getNavigationNodes(root: HTMLElement): HTMLElement[] {
+        const adapter = this.adapterProvider();
+        if (adapter) return adapter.getNavigationMessages(root).map(ad => ad.element);
+        return ThreadDom.defaultGetNavigationNodes(root);
+    }
+
+    getPair(root: HTMLElement, idx: number): TagalystPair | null {
+        const adapter = this.adapterProvider();
+        if (adapter) {
+            const pair = adapter.getPairAt(root, idx);
+            return pair ? ThreadDom.toTagalystPair(pair) : null;
+        }
+        return ThreadDom.defaultGetPair(root, idx);
+    }
+
+    buildPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
+        return ThreadDom.buildDomPairAdaptersFromMessages(messages);
+    }
+
+    static defaultFindTranscriptRoot(): HTMLElement {
+        const main = (document.querySelector('main') as HTMLElement) || document.body;
+        const candidates = Array.from(main.querySelectorAll<HTMLElement>('*')).filter(el => {
+            const s = getComputedStyle(el);
+            const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll';
+            return scrollable && el.clientHeight > 300 && el.children.length > 1;
+        });
+        return (candidates.sort((a, b) => b.clientHeight - a.clientHeight)[0]) || main;
+    }
+
+    private static isMessageNode(el: HTMLElement | null) {
+        if (!el) return false;
+        return !!el.getAttribute?.('data-message-author-role');
+    }
+
+    static defaultEnumerateMessages(root: HTMLElement): HTMLElement[] {
+        const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-message-author-role]'));
+        if (nodes.length) return nodes;
+        const out: HTMLElement[] = [];
+        root.querySelectorAll<HTMLElement>('article, div').forEach(child => {
+            if (ThreadDom.isMessageNode(child)) out.push(child);
+        });
+        return out;
+    }
+
+    static defaultDerivePairs(messages: HTMLElement[]): TagalystPair[] {
+        const pairs: TagalystPair[] = [];
+        for (let i = 0; i < messages.length; i += 2) {
+            const query = messages[i];
+            if (!query) break;
+            const response = messages[i + 1] || null;
+            pairs.push({
+                query,
+                response,
+                queryId: Utils.getMessageId(query),
+                responseId: response ? Utils.getMessageId(response) : null,
+            });
+        }
+        return pairs;
+    }
+
+    static defaultGetPairs(root: HTMLElement): TagalystPair[] {
+        return ThreadDom.defaultDerivePairs(ThreadDom.defaultEnumerateMessages(root));
+    }
+
+    static defaultGetPromptNodes(root: HTMLElement): HTMLElement[] {
+        return ThreadDom.defaultGetPairs(root).map(p => p.query).filter(Boolean) as HTMLElement[];
+    }
+
+    static defaultGetNavigationNodes(root: HTMLElement): HTMLElement[] {
+        const prompts = ThreadDom.defaultGetPromptNodes(root);
+        if (prompts.length) return prompts;
+        return ThreadDom.defaultEnumerateMessages(root);
+    }
+
+    static defaultGetPair(root: HTMLElement, idx: number): TagalystPair | null {
+        if (idx < 0) return null;
+        return ThreadDom.defaultGetPairs(root)[idx] || null;
+    }
+
+    static toTagalystPair(pair: PairAdapter): TagalystPair {
+        const queryEl = pair.query?.element || null;
+        const responseEl = pair.response?.element || null;
+        return {
+            query: queryEl,
+            response: responseEl,
+            queryId: queryEl ? Utils.getMessageId(queryEl) : null,
+            responseId: responseEl ? Utils.getMessageId(responseEl) : null,
+        };
+    }
+
+    static buildDomPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
+        const pairs: DomPairAdapter[] = [];
+        for (let i = 0; i < messages.length; i += 2) {
+            const query = messages[i] || null;
+            const response = messages[i + 1] || null;
+            pairs.push(new DomPairAdapter(pairs.length, query, response));
+        }
+        return pairs;
+    }
+}
+
+const threadDom = new ThreadDom(() => activeThreadAdapter);
+
 function buildDomPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
     const pairs: DomPairAdapter[] = [];
     for (let i = 0; i < messages.length; i += 2) {
@@ -1214,7 +1178,7 @@ class ChatGptThreadAdapter implements ThreadAdapter {
     private observer: MutationObserver | null = null;
 
     getTranscriptRoot(): HTMLElement | null {
-        return defaultFindTranscriptRoot();
+        return ThreadDom.defaultFindTranscriptRoot();
     }
 
     getMessages(root: HTMLElement): MessageAdapter[] {
@@ -1257,12 +1221,12 @@ class ChatGptThreadAdapter implements ThreadAdapter {
     }
 
     private buildMessageAdapters(root: HTMLElement): DomMessageAdapter[] {
-        return defaultEnumerateMessages(root).map(el => new DomMessageAdapter(el));
+        return ThreadDom.defaultEnumerateMessages(root).map(el => new DomMessageAdapter(el));
     }
 
     private buildPairAdapters(root: HTMLElement): DomPairAdapter[] {
         const messages = this.buildMessageAdapters(root);
-        return buildDomPairAdaptersFromMessages(messages);
+        return ThreadDom.buildDomPairAdaptersFromMessages(messages);
     }
 }
 
@@ -1274,7 +1238,7 @@ class ToolbarController {
         if (existing) existing.remove();
         const box = document.createElement('div');
         box.id = 'ext-page-controls';
-        markExtNode(box);
+        Utils.markExtNode(box);
         box.innerHTML = `
         <div class="ext-nav-frame">
             <span class="ext-nav-label">Navigate</span>
@@ -1310,7 +1274,7 @@ class ToolbarController {
         </div>
       `;
         document.documentElement.appendChild(box);
-        syncTopPanelWidth();
+        topPanelController.syncWidth();
 
         const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');
         const jumpLastBtn = box.querySelector<HTMLButtonElement>('#ext-jump-last');
@@ -1326,7 +1290,7 @@ class ToolbarController {
         if (jumpFirstBtn) jumpFirstBtn.onclick = () => this.scrollToNode(container, 0, 'start');
         if (jumpLastBtn) {
             jumpLastBtn.onclick = () => {
-                const nodes = getNavigationNodes(container);
+                const nodes = threadDom.getNavigationNodes(container);
                 if (!nodes.length) return;
                 this.scrollToNode(container, nodes.length - 1, 'end', nodes);
             };
@@ -1338,10 +1302,10 @@ class ToolbarController {
         if (expandAllBtn) expandAllBtn.onclick = () => toggleAll(container, false);
         if (expandStarredBtn) expandStarredBtn.onclick = () => collapseByFocus(container, 'in', false);
 
-        if (exportAllBtn) exportAllBtn.onclick = () => runExport(container, false);
-        if (exportStarredBtn) exportStarredBtn.onclick = () => runExport(container, true);
+        if (exportAllBtn) exportAllBtn.onclick = () => exportController.copyThread(container, false);
+        if (exportStarredBtn) exportStarredBtn.onclick = () => exportController.copyThread(container, true);
 
-        pageControls = {
+        const controlsState: PageControls = {
             root: box,
             focusPrev: jumpStarPrevBtn,
             focusNext: jumpStarNextBtn,
@@ -1349,11 +1313,11 @@ class ToolbarController {
             expandFocus: expandStarredBtn,
             exportFocus: exportStarredBtn,
         };
-        updateFocusControlsUI();
+        focusController.setPageControls(controlsState);
     }
 
     private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'center', list?: HTMLElement[]) {
-        const nodes = list || getNavigationNodes(container);
+        const nodes = list || threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
         const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
         const target = nodes[clamped];
@@ -1361,7 +1325,7 @@ class ToolbarController {
     }
 
     private scrollFocus(delta: number) {
-        const adapters = getFocusMatches();
+        const adapters = focusController.getMatches();
         if (!adapters.length) return;
         const idx = this.focus.adjustNav(delta, adapters.length);
         if (idx < 0 || idx >= adapters.length) return;
@@ -1376,17 +1340,17 @@ class ToolbarController {
                 toolbar.closest('.ext-toolbar-row')?.remove();
                 toolbar = null;
             } else {
-                updateCollapseVisibility(el);
+                threadActions.updateCollapseVisibility(el);
                 return;
             }
         }
 
         const row = document.createElement('div');
         row.className = 'ext-toolbar-row';
-        markExtNode(row);
+        Utils.markExtNode(row);
         const wrap = document.createElement('div');
         wrap.className = 'ext-toolbar';
-        markExtNode(wrap);
+        Utils.markExtNode(wrap);
         wrap.innerHTML = `
         <span class="ext-badges"></span>
         <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
@@ -1407,12 +1371,12 @@ class ToolbarController {
         if (focusBtn) {
             focusBtn.onclick = async () => {
                 if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
-                const adapter = resolveAdapterForElement(el);
+                const adapter = messageMetaRegistry.resolveAdapter(el);
                 const cur = await this.storage.readMessage(threadKey, adapter);
                 cur.starred = !cur.starred;
                 await this.storage.writeMessage(threadKey, adapter, cur);
-                renderBadges(el, threadKey, cur, adapter);
-                updateFocusControlsUI();
+                this.updateBadges(el, threadKey, cur, adapter);
+                focusController.updateControlsUI();
             };
         }
         if (tagBtn) tagBtn.onclick = () => editorController.openTagEditor(el, threadKey);
@@ -1420,156 +1384,121 @@ class ToolbarController {
 
         wrap.dataset.threadKey = threadKey;
         el.prepend(row);
-        ensureUserToolbarButton(el);
-        updateCollapseVisibility(el);
-        syncCollapseButton(el);
-    }
-}
-
-/**
- * Reads star/tag data for a message and updates its badges + CSS state.
- */
-function renderBadges(el: HTMLElement, threadKey: string, value: MessageValue, adapter?: MessageAdapter | null) {
-    const adapterRef = adapter ?? resolveAdapterForElement(el);
-    const k = `${threadKey}:${adapterRef.key}`;
-    const cur = value || {};
-    const meta = setMessageMeta(el, { key: k, value: cur, adapter: adapterRef });
-    const badges = el.querySelector<HTMLElement>('.ext-badges');
-    if (!badges) return;
-
-    // starred visual state
-    const starred = !!cur.starred;
-    el.classList.toggle('ext-starred', starred);
-
-    // render tags
-    badges.innerHTML = '';
-    const tags = Array.isArray(cur.tags) ? cur.tags : [];
-    for (const t of tags) {
-        const span = document.createElement('span');
-        span.className = 'ext-badge';
-        span.textContent = t;
-        badges.appendChild(span);
+        this.ensureUserToolbarButton(el);
+        threadActions.updateCollapseVisibility(el);
+        threadActions.syncCollapseButton(el);
     }
 
-    const note = typeof cur.note === 'string' ? cur.note.trim() : '';
-    if (note) {
-        const noteChip = document.createElement('span');
-        noteChip.className = 'ext-note-pill';
-        noteChip.textContent = note.length > 80 ? `${note.slice(0, 77)}…` : note;
-        noteChip.title = note;
-        badges.appendChild(noteChip);
+    updatePairNumber(adapter: MessageAdapter, pairIndex: number | null) {
+        const el = adapter.element;
+        this.ensureUserToolbarButton(el);
+        if (adapter.role !== 'user') {
+            const wrap = el.querySelector<HTMLElement>('.ext-pair-number-wrap');
+            if (wrap) wrap.remove();
+            return;
+        }
+        if (typeof pairIndex !== 'number') return;
+        const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
+        if (!row) return;
+        let wrap = row.querySelector<HTMLElement>('.ext-pair-number-wrap');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.className = 'ext-pair-number-wrap';
+            row.insertBefore(wrap, row.firstChild);
+        }
+        let badge = wrap.querySelector<HTMLElement>('.ext-pair-number');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'ext-pair-number';
+            wrap.appendChild(badge);
+        }
+        badge.textContent = `${pairIndex + 1}.`;
     }
-    updateFocusButton(el, meta);
-}
 
-/**
- * Placeholder handler fired when the per-user custom toolbar button is pressed.
- */
-function handleUserToolbarButtonClick(messageEl: HTMLElement) {
-    const messageKey = resolveAdapterForElement(messageEl).key;
-    console.info('[Tagalyst] User toolbar button clicked', { messageKey });
-}
+    updateBadges(el: HTMLElement, threadKey: string, value: MessageValue, adapter?: MessageAdapter | null) {
+        const adapterRef = adapter ?? messageMetaRegistry.resolveAdapter(el);
+        const k = `${threadKey}:${adapterRef.key}`;
+        const cur = value || {};
+        const meta = messageMetaRegistry.update(el, { key: k, value: cur, adapter: adapterRef });
+        const badges = el.querySelector<HTMLElement>('.ext-badges');
+        if (!badges) return;
 
-/**
- * Adds a user-only toolbar button to a message when applicable.
- */
-function ensureUserToolbarButton(el: HTMLElement): HTMLButtonElement | null {
-    const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
-    if (!row) return null;
-    const role = el?.getAttribute?.('data-message-author-role');
-    const existing = row.querySelector<HTMLButtonElement>('.ext-user-toolbar-button');
-    if (role !== 'user') {
-        if (existing) existing.remove();
+        const starred = !!cur.starred;
+        el.classList.toggle('ext-starred', starred);
+
+        badges.innerHTML = '';
+        const tags = Array.isArray(cur.tags) ? cur.tags : [];
+        for (const t of tags) {
+            const span = document.createElement('span');
+            span.className = 'ext-badge';
+            span.textContent = t;
+            badges.appendChild(span);
+        }
+
+        const note = typeof cur.note === 'string' ? cur.note.trim() : '';
+        if (note) {
+            const noteChip = document.createElement('span');
+            noteChip.className = 'ext-note-pill';
+            noteChip.textContent = note.length > 80 ? `${note.slice(0, 77)}…` : note;
+            noteChip.title = note;
+            badges.appendChild(noteChip);
+        }
+        focusController.updateMessageButton(el, meta);
+    }
+
+    private handleUserToolbarButtonClick(messageEl: HTMLElement) {
+        const messageKey = messageMetaRegistry.resolveAdapter(messageEl).key;
+        console.info('[Tagalyst] User toolbar button clicked', { messageKey });
+    }
+
+    private ensureUserToolbarButton(_el: HTMLElement): HTMLButtonElement | null {
+        // Placeholder for future per-user actions. Intentionally disabled to avoid extra UI clutter.
         return null;
     }
-    if (existing) return existing;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ext-user-toolbar-button';
-    btn.title = 'Tagalyst user action';
-    btn.setAttribute('aria-label', 'Tagalyst user action');
-    btn.textContent = '>';
-    btn.addEventListener('click', (evt) => {
-        evt.stopPropagation();
-        handleUserToolbarButtonClick(el);
-    });
-    row.appendChild(btn);
-    return btn;
 }
 
-/**
- * Renders the left-aligned pair index badge for user messages.
- */
-function ensurePairNumber(adapter: MessageAdapter, pairIndex: number | null) {
-    const el = adapter.element;
-    ensureUserToolbarButton(el);
-    if (adapter.role !== 'user') {
-        const wrap = el.querySelector<HTMLElement>('.ext-pair-number-wrap');
-        if (wrap) wrap.remove();
-        return;
-    }
-    if (typeof pairIndex !== 'number') return;
-    const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
-    if (!row) return;
-    let wrap = row.querySelector<HTMLElement>('.ext-pair-number-wrap');
-    if (!wrap) {
-        wrap = document.createElement('div');
-        wrap.className = 'ext-pair-number-wrap';
-        row.insertBefore(wrap, row.firstChild);
-    }
-    let badge = wrap.querySelector<HTMLElement>('.ext-pair-number');
-    if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'ext-pair-number';
-        wrap.appendChild(badge);
-    }
-    badge.textContent = `${pairIndex + 1}.`;
-}
-
-/**
- * Toggles the collapse control visibility based on heuristics for the message.
- */
-function updateCollapseVisibility(el: HTMLElement) {
-    const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
-    if (!btn) return;
-    const show = shouldShowCollapseControl(el);
-    btn.style.display = show ? '' : 'none';
-}
-
-/**
- * Updates collapse button glyph/title so it reflects the message state.
- */
-function syncCollapseButton(el: HTMLElement) {
-    const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
-    if (!btn) return;
-    const collapsed = el.classList.contains('ext-collapsed');
-    btn.textContent = collapsed ? '+' : '−';
-    btn.setAttribute('title', collapsed ? 'Expand message' : 'Collapse message');
-    btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
-    btn.setAttribute('aria-expanded', String(!collapsed));
-}
 
 class ThreadActions {
+    updateCollapseVisibility(el: HTMLElement) {
+        const btn = this.getCollapseButton(el);
+        if (!btn) return;
+        btn.style.display = '';
+    }
+
+    syncCollapseButton(el: HTMLElement) {
+        const btn = this.getCollapseButton(el);
+        if (!btn) return;
+        const collapsed = el.classList.contains('ext-collapsed');
+        btn.textContent = collapsed ? '+' : '−';
+        btn.setAttribute('title', collapsed ? 'Expand message' : 'Collapse message');
+        btn.setAttribute('aria-label', collapsed ? 'Expand message' : 'Collapse message');
+        btn.setAttribute('aria-expanded', String(!collapsed));
+    }
+
     collapse(el: HTMLElement, yes: boolean) {
         el.classList.toggle('ext-collapsed', !!yes);
-        syncCollapseButton(el);
+        this.syncCollapseButton(el);
     }
 
     toggleAll(container: HTMLElement, yes: boolean) {
-        const msgs = enumerateMessages(container);
+        const msgs = threadDom.enumerateMessages(container);
         for (const m of msgs) this.collapse(m, !!yes);
     }
 
     collapseByFocus(container: HTMLElement, target: 'in' | 'out', collapseState: boolean) {
-        const matches = getFocusMatches();
+        const matches = focusController.getMatches();
         if (!matches.length) return;
         const matchSet = new Set(matches.map(adapter => adapter.element));
-        for (const el of enumerateMessages(container)) {
+        for (const el of threadDom.enumerateMessages(container)) {
             const isMatch = matchSet.has(el);
             if (target === 'in' ? isMatch : !isMatch) {
                 this.collapse(el, collapseState);
             }
         }
+    }
+
+    private getCollapseButton(el: HTMLElement) {
+        return el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
     }
 }
 
@@ -1607,11 +1536,11 @@ class ExportController {
     }
 
     buildMarkdown(container: HTMLElement, focusOnly: boolean): string {
-        const pairs = getPairs(container);
+        const pairs = threadDom.getPairs(container);
         const sections: string[] = [];
         pairs.forEach((pair, idx) => {
             const num = idx + 1;
-            const isFocused = focusOnly ? isPairFocused(pair) : true;
+            const isFocused = focusOnly ? focusController.isPairFocused(pair) : true;
             if (focusOnly && !isFocused) return;
             const query = pair.query ? pair.query.innerText.trim() : '';
             const response = pair.response ? pair.response.innerText.trim() : '';
@@ -1631,14 +1560,6 @@ class ExportController {
 
 const exportController = new ExportController();
 
-function runExport(container: HTMLElement, focusOnly: boolean) {
-    exportController.copyThread(container, focusOnly);
-}
-
-function exportThreadToMarkdown(container: HTMLElement, focusOnly: boolean): string {
-    return exportController.buildMarkdown(container, focusOnly);
-}
-
 // ---------------------- Orchestration --------------------------
 /**
  * Entry point: finds the thread, injects UI, and watches for updates.
@@ -1654,12 +1575,12 @@ class BootstrapOrchestrator {
         // Wait a moment for the app shell to mount
         await sleep(600);
         await configService.load();
-        teardownUI();
+        this.teardownUI();
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
-        const container = findTranscriptRoot();
+        const container = threadDom.findTranscriptRoot();
 
-        const threadKey = getThreadKey();
+        const threadKey = Utils.getThreadKey();
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
@@ -1674,7 +1595,7 @@ class BootstrapOrchestrator {
                 do {
                     this.refreshQueued = false;
                     const messageAdapters = this.resolveMessages(container);
-                    const pairAdapters = buildDomPairAdaptersFromMessages(messageAdapters);
+                    const pairAdapters = threadDom.buildPairAdaptersFromMessages(messageAdapters);
                     const pairMap = this.buildPairMap(pairAdapters);
                     const entries = messageAdapters.map(messageAdapter => ({
                         adapter: messageAdapter,
@@ -1686,36 +1607,36 @@ class BootstrapOrchestrator {
                     const keys = entries.map(e => e.key);
                     const store = await this.storage.read(keys);
                     const tagCounts = new Map<string, number>();
-                    messageState.clear();
+                    messageMetaRegistry.clear();
                     for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
                         this.toolbar.injectToolbar(el, threadKey);
-                        ensurePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                        this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
                         const value = store[key] || {};
-                        setMessageMeta(el, { key, value, pairIndex, adapter: messageAdapter });
+                        messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
                         if (value && Array.isArray(value.tags)) {
                             for (const t of value.tags) {
                                 if (!t) continue;
                                 tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
                             }
                         }
-                        renderBadges(el, threadKey, value, messageAdapter);
+                        this.toolbar.updateBadges(el, threadKey, value, messageAdapter);
                     }
                 const sortedTags = Array.from(tagCounts.entries())
                     .map(([tag, count]) => ({ tag, count }))
                     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
                 topPanelController.updateTagList(sortedTags);
-                refreshFocusButtons();
+                focusController.refreshButtons();
                 } while (this.refreshQueued);
             } finally {
                 this.refreshRunning = false;
             }
         };
 
-        activeBootstrap = { render };
+        renderScheduler.setRenderer(render);
         await render();
         this.threadAdapter.observe(container, (records) => {
-            if (!records.some(mutationTouchesExternal)) return;
-            requestRefresh(render);
+            if (!records.some(Utils.mutationTouchesExternal)) return;
+            renderScheduler.request(render);
         });
     }
 
@@ -1723,7 +1644,7 @@ class BootstrapOrchestrator {
         const threadAdapter = this.threadAdapter;
         return (threadAdapter
             ? threadAdapter.getMessages(container)
-            : defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
+            : ThreadDom.defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
     }
 
     private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
@@ -1732,6 +1653,23 @@ class BootstrapOrchestrator {
             pair.getMessages().forEach(msg => pairMap.set(msg, idx));
         });
         return pairMap;
+    }
+
+    private teardownUI() {
+        editorController.teardown();
+        document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
+        document.querySelectorAll('.ext-note-editor').forEach(editor => editor.remove());
+        document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
+        document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
+        const controls = document.getElementById('ext-page-controls');
+        if (controls) controls.remove();
+        const panel = topPanelController.getElement();
+        if (panel) panel.remove();
+        topPanelController.reset();
+        focusController.reset();
+        this.threadAdapter?.disconnect();
+        activeThreadAdapter = null;
     }
 }
 
@@ -1754,43 +1692,17 @@ new MutationObserver(() => {
 // Surface a minimal pairing API for scripts / devtools.
 window.__tagalyst = Object.assign(window.__tagalyst || {}, {
     getThreadPairs: (): TagalystPair[] => {
-        const root = findTranscriptRoot();
-        return getPairs(root);
+        const root = threadDom.findTranscriptRoot();
+        return threadDom.getPairs(root);
     },
     getThreadPair: (idx: number): TagalystPair | null => {
-        const root = findTranscriptRoot();
-        return getPair(root, idx);
+        const root = threadDom.findTranscriptRoot();
+        return threadDom.getPair(root, idx);
     },
 }) as TagalystApi;
 
 // First boot
 bootstrap();
-
-/**
- * Determines whether any node within a (query, response) pair is currently focused.
- */
-function isPairFocused(pair: TagalystPair) {
-    const nodes = [];
-    if (pair.query) nodes.push(pair.query);
-    if (pair.response) nodes.push(pair.response);
-    return nodes.some(node => {
-        const meta = messageState.get(node);
-        if (!meta) return false;
-        return focusService.isMessageFocused(meta, node);
-    });
-}
-
-/**
- * Keeps the Search/Tags panel width aligned with the bottom controls.
- */
-function syncTopPanelWidth() {
-    const topPanelsEl = topPanelController.getElement();
-    if (!topPanelsEl) return;
-    const controls = document.getElementById('ext-page-controls');
-    const refWidth = controls ? controls.getBoundingClientRect().width : null;
-    const width = refWidth && refWidth > 0 ? refWidth : topPanelsEl.getBoundingClientRect().width || 200;
-    topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
-}
 
 if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {

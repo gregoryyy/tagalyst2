@@ -43,6 +43,13 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - Ambient Chrome + window globals are declared in `src/types/globals.d.ts`. Update that file if you add new surface APIs so `tsc` stays happy.
 - No bundler: everything compiles 1:1, so keep imports relative to the file tree Chrome already expects.
 
+### Internals at a glance
+- The content script is now composed of services/controllers instead of free functions. Key players:
+  - `RenderScheduler` (debounces refresh passes), `ThreadDom` (shared DOM heuristics), and `ChatGptThreadAdapter` (MutationObserver + adapter factory).
+  - `StorageService` / `ConfigService` (chrome.storage glue), `MessageMetaRegistry` (per-message cache), and the `FocusService` + `FocusController` pair (state machine + UI syncing).
+  - `TopPanelController` (Search/Tags panels), `ToolbarController` (per-message + global controls), `ThreadActions` (collapse/expand), `ExportController` (Markdown copy), and `EditorController` (tag/note editors).
+- `ARCH.md` tracks the ongoing refactor and the next structural steps; skim it when touching internals so new code follows the same dependency flow.
+
 ## Notes
 - Data is stored locally via `chrome.storage.local` keyed by `{threadKey}:{messageKey}`.
 - Whenever ChatGPT exposes `data-message-id` on a message, that UUID becomes the `{messageKey}` input so the backend (or other tools) can correlate records 1:1. If the attribute is missing we fall back to a hash of the message text + position.
