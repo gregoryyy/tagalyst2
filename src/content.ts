@@ -226,6 +226,18 @@ class ConfigService {
         return !!config.tagsEnabled;
     }
 
+    doesSearchExpand() {
+        return this.isSearchEnabled() && !!config.searchExpands;
+    }
+
+    doTagsExpand() {
+        return this.areTagsEnabled() && !!config.tagsExpands;
+    }
+
+    isOverviewEnabled() {
+        return !!config.overviewEnabled;
+    }
+
     private notify() {
         this.listeners.forEach(listener => listener(config));
     }
@@ -249,6 +261,9 @@ const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
 const contentDefaultConfig = {
     searchEnabled: true,
     tagsEnabled: true,
+    overviewEnabled: true,
+    searchExpands: true,
+    tagsExpands: true,
 };
 let config = { ...contentDefaultConfig };
 let activeThreadAdapter: ThreadAdapter | null = null;
@@ -670,6 +685,10 @@ class TopPanelController {
     private searchInputEl: HTMLInputElement | null = null;
     private lastTagSignature = '';
     private searchResultCountEl: HTMLElement | null = null;
+    private frameState: Record<'search' | 'tags', { el: HTMLElement | null; timer: number | null }> = {
+        search: { el: null, timer: null },
+        tags: { el: null, timer: null },
+    };
 
     ensurePanels(): HTMLElement {
         if (this.topPanelsEl) return this.topPanelsEl;
@@ -692,6 +711,10 @@ class TopPanelController {
         this.tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
         this.searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
         this.searchResultCountEl = wrap.querySelector<HTMLElement>('.ext-search-count');
+        this.frameState.search.el = wrap.querySelector<HTMLElement>('.ext-top-search');
+        this.frameState.tags.el = wrap.querySelector<HTMLElement>('.ext-top-tags');
+        this.bindFrameHover('search', this.frameState.search.el);
+        this.bindFrameHover('tags', this.frameState.tags.el);
         if (this.searchInputEl) {
             this.searchInputEl.value = focusService.getSearchQuery();
             this.searchInputEl.addEventListener('input', (evt) => {
@@ -753,6 +776,59 @@ class TopPanelController {
         });
     }
 
+    private bindFrameHover(panel: 'search' | 'tags', frame: HTMLElement | null) {
+        if (!frame) return;
+        if (frame.dataset.hoverBound === '1') return;
+        frame.dataset.hoverBound = '1';
+        frame.addEventListener('mouseenter', () => this.handleFrameHover(panel, true));
+        frame.addEventListener('mouseleave', () => this.handleFrameHover(panel, false));
+        frame.addEventListener('focusin', () => this.handleFrameHover(panel, true));
+        frame.addEventListener('focusout', () => this.handleFrameHover(panel, false));
+    }
+
+    private handleFrameHover(panel: 'search' | 'tags', entering: boolean) {
+        if (!this.shouldExpand(panel)) return;
+        const state = this.frameState[panel];
+        const frame = state.el;
+        if (!frame) return;
+        if (entering) {
+            frame.classList.add('ext-top-frame-wide');
+            if (state.timer) {
+                clearTimeout(state.timer);
+                state.timer = null;
+            }
+        } else {
+            if (state.timer) clearTimeout(state.timer);
+            state.timer = window.setTimeout(() => {
+                frame.classList.remove('ext-top-frame-wide');
+                state.timer = null;
+            }, 2000);
+        }
+    }
+
+    private shouldExpand(panel: 'search' | 'tags') {
+        return panel === 'search'
+            ? configService.doesSearchExpand()
+            : configService.doTagsExpand();
+    }
+
+    private updateExpandState() {
+        (['search', 'tags'] as const).forEach(panel => {
+            const state = this.frameState[panel];
+            const frame = state.el;
+            if (!frame) return;
+            const enabled = this.shouldExpand(panel);
+            frame.classList.toggle('ext-top-frame-expandable', enabled);
+            if (!enabled) {
+                frame.classList.remove('ext-top-frame-wide');
+                if (state.timer) {
+                    clearTimeout(state.timer);
+                    state.timer = null;
+                }
+            }
+        });
+    }
+
     private computeTagSignature(counts: Array<{ tag: string; count: number }>, tagsEnabled: boolean) {
         const suffix = counts.map(({ tag, count }) => `${tag}:${count}`).join('|');
         return `${tagsEnabled ? '1' : '0'}|${suffix}`;
@@ -774,6 +850,7 @@ class TopPanelController {
             this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
         }
         this.updateSearchResultCount();
+        this.updateExpandState();
     }
 
     clearSearchInput() {
@@ -784,8 +861,9 @@ class TopPanelController {
         if (!this.topPanelsEl) return;
         const controls = document.getElementById('ext-page-controls');
         const refWidth = controls ? controls.getBoundingClientRect().width : null;
-        const width = refWidth && refWidth > 0 ? refWidth : this.topPanelsEl.getBoundingClientRect().width || 200;
-        this.topPanelsEl.style.width = `${Math.max(100, Math.round(width))}px`;
+        const width = refWidth && refWidth > 0 ? refWidth : 220;
+        this.topPanelsEl.style.minWidth = `${Math.max(220, Math.round(width))}px`;
+        this.topPanelsEl.style.width = 'auto';
     }
 
     reset() {
@@ -794,6 +872,13 @@ class TopPanelController {
         this.searchInputEl = null;
         this.lastTagSignature = '';
         this.searchResultCountEl = null;
+        Object.values(this.frameState).forEach(state => {
+            if (state.timer) {
+                clearTimeout(state.timer);
+                state.timer = null;
+            }
+            state.el = null;
+        });
     }
 
     getElement(): HTMLElement | null {
@@ -836,7 +921,6 @@ class TopPanelController {
 } // TopPanelController
 
 const topPanelController = new TopPanelController();
-configService.onChange(() => topPanelController.updateConfigUI());
 
 type MarkerDatum = {
     docCenter: number;
@@ -926,7 +1010,7 @@ class OverviewRulerController {
     }
 
     refreshMarkers() {
-        if (!this.container) return;
+        if (!this.container || !configService.isOverviewEnabled()) return;
         const scrollRange = this.computeScrollRange(this.container);
         this.focusMarkerData = this.collectFocusMarkerData();
         this.layoutFocusMarkers(scrollRange);
@@ -1231,7 +1315,17 @@ const overviewRulerController = new OverviewRulerController();
 focusController.attachSelectionSync(() => {
     topPanelController.syncSelectionUI();
     topPanelController.updateSearchResultCount();
-    overviewRulerController.refreshMarkers();
+    if (configService.isOverviewEnabled()) {
+        overviewRulerController.refreshMarkers();
+    }
+});
+configService.onChange(cfg => {
+    topPanelController.updateConfigUI();
+    if (!cfg.overviewEnabled) {
+        overviewRulerController.reset();
+    } else {
+        overviewRulerController.refreshMarkers();
+    }
 });
 
 class EditorController {
@@ -2043,7 +2137,11 @@ class BootstrapOrchestrator {
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
-        overviewRulerController.ensure(container);
+        if (configService.isOverviewEnabled()) {
+            overviewRulerController.ensure(container);
+        } else {
+            overviewRulerController.reset();
+        }
 
         const render = async () => {
             if (this.refreshRunning) {
@@ -2087,7 +2185,11 @@ class BootstrapOrchestrator {
                     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
                 topPanelController.updateTagList(sortedTags);
                 focusController.refreshButtons();
-                overviewRulerController.update(container, entries);
+                if (configService.isOverviewEnabled()) {
+                    overviewRulerController.update(container, entries);
+                } else {
+                    overviewRulerController.reset();
+                }
                 topPanelController.updateSearchResultCount();
                 } while (this.refreshQueued);
             } finally {
