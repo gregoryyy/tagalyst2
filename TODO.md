@@ -4,7 +4,7 @@ Bugs:
 
 Refactor to ts:
 - like for like DONE
-- iterative changes see ARCH.md ONGOING
+- iterative changes see ARCH.md DONE
 
 Behavioral Bugs:
 - navigation and layout:
@@ -24,12 +24,11 @@ Behavioral Bugs:
 
 Codebase:
 
-- refactor and document
 - add tests
-  - unit via Jest DONE add 
+  - unit via Jest MERGE add 
   - DOM via Puppeteer (Playwright has issue on MacOS)
 - fix performance errors (see bugs)
-- packaging for marketplace deployment DONE
+- packaging for marketplace deployment MERGE
 
 Features:
 
@@ -45,7 +44,7 @@ Features:
   - if search results or tags, this means navigation runs via these. DONE
     - BUG: after search or tag selection, becomes unresponsive FIXED
   - export filters by focused items
-  - overview ruler
+  - overview ruler WIP
 - export without UI content but with:
   - links to graphics
   - mathematical content, i.e., KaTeX

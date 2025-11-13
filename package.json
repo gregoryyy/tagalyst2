@@ -1,14 +1,16 @@
 {
   "name": "tagalyst2",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
-    "clean": "rm -rf .tsbuild content/content.js options/options.js",
+    "clean": "rm -rf .tsbuild content/content.js options/options.js dist",
     "build": "tsc -b",
-    "watch": "tsc -b --watch --preserveWatchOutput"
+    "watch": "tsc -b --watch --preserveWatchOutput",
+    "dist": "npm run clean && npm run build && node scripts/build.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.255",
+    "cross-zip": "^4.0.1",
     "typescript": "^5.3.3"
   }
 }

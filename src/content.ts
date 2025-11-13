@@ -841,6 +841,10 @@ class OverviewRulerController {
     private trackEl: HTMLElement | null = null;
     private container: HTMLElement | null = null;
     private rafPending = false;
+    private topAnchor: HTMLElement | null = null;
+    private bottomAnchor: HTMLElement | null = null;
+    private lastMessageAnchor: HTMLElement | null = null;
+    private viewportEl: HTMLElement | null = null;
 
     private readonly handleViewportChange = () => {
         if (!this.container) return;
@@ -862,11 +866,15 @@ class OverviewRulerController {
         root.id = 'ext-overview-ruler';
         const track = document.createElement('div');
         track.className = 'ext-overview-ruler-track';
+        const viewport = document.createElement('div');
+        viewport.className = 'ext-ruler-viewport';
+        track.appendChild(viewport);
         root.appendChild(track);
         Utils.markExtNode(root);
         document.body.appendChild(root);
         this.root = root;
         this.trackEl = track;
+        this.viewportEl = viewport;
         this.container = container;
         window.addEventListener('scroll', this.handleViewportChange, { passive: true });
         window.addEventListener('resize', this.handleViewportChange);
@@ -879,28 +887,17 @@ class OverviewRulerController {
         this.ensure(container);
         if (!this.trackEl || !this.root) return;
         this.container = container;
-        this.updatePosition(container);
-        this.trackEl.innerHTML = '';
-        const rect = container.getBoundingClientRect();
-        const height = Math.max(1, rect.height);
-        for (const { adapter } of entries) {
-            const el = adapter.element;
-            if (!document.contains(el)) continue;
-            const elRect = el.getBoundingClientRect();
-            const ratio = (elRect.top - rect.top + elRect.height / 2) / height;
-            const clamped = Math.min(1, Math.max(0, ratio));
-            const mark = document.createElement('button');
-            mark.type = 'button';
-            mark.className = `ext-ruler-mark ${adapter.role === 'user' ? 'is-user' : 'is-assistant'}`;
-            mark.style.top = `${clamped * 100}%`;
-            mark.title = adapter.role === 'user' ? 'Jump to user prompt' : 'Jump to assistant response';
-            mark.setAttribute('aria-label', mark.title);
-            mark.onclick = (evt) => {
-                evt.preventDefault();
-                adapter.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            };
-            this.trackEl.appendChild(mark);
+        this.topAnchor = entries[0]?.adapter.element || null;
+        this.lastMessageAnchor = entries[entries.length - 1]?.adapter.element || null;
+        this.bottomAnchor = this.resolveComposerAnchor(container);
+        const bounds = this.computeBounds(container);
+        this.applyFrame(container, bounds);
+        if (!this.viewportEl || !this.viewportEl.isConnected) {
+            this.viewportEl = document.createElement('div');
+            this.viewportEl.className = 'ext-ruler-viewport';
+            this.trackEl.appendChild(this.viewportEl);
         }
+        this.updateViewportIndicator(bounds);
     }
 
     reset() {
@@ -910,18 +907,172 @@ class OverviewRulerController {
         this.root = null;
         this.trackEl = null;
         this.container = null;
+        this.topAnchor = null;
+        this.bottomAnchor = null;
+        this.lastMessageAnchor = null;
+        this.viewportEl = null;
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
     }
 
     private updatePosition(container: HTMLElement) {
+        const bounds = this.computeBounds(container);
+        this.applyFrame(container, bounds);
+        this.updateViewportIndicator(bounds);
+    }
+
+    private applyFrame(container: HTMLElement, bounds: { top: number; bottom: number }) {
         if (!this.root) return;
         const rect = container.getBoundingClientRect();
-        const docTop = window.scrollY + rect.top;
+        const docTop = window.scrollY + bounds.top;
         const docLeft = window.scrollX + rect.left;
         this.root.style.top = `${docTop}px`;
-        this.root.style.left = `${Math.max(8, docLeft - 28)}px`;
-        this.root.style.height = `${rect.height}px`;
+        this.root.style.left = `${docLeft + 8}px`;
+        const height = Math.max(1, bounds.bottom - bounds.top);
+        this.root.style.height = `${height}px`;
+    }
+
+    private updateViewportIndicator(bounds: { top: number; bottom: number }) {
+        if (!this.viewportEl || !this.container) return;
+        const scrollRange = this.computeScrollRange(this.container);
+        const scrollHeight = Math.max(1, scrollRange.bottom - scrollRange.top);
+        const viewportTop = window.scrollY;
+        const viewportBottom = viewportTop + window.innerHeight;
+        const intersectionTop = Math.max(viewportTop, scrollRange.top);
+        const intersectionBottom = Math.min(viewportBottom, scrollRange.bottom);
+        const visibleSpan = Math.max(0, intersectionBottom - intersectionTop);
+        if (visibleSpan <= 0 || scrollHeight <= 1) {
+            this.viewportEl.style.display = 'none';
+            return;
+        }
+        this.viewportEl.style.display = 'block';
+        const topRatio = (intersectionTop - scrollRange.top) / scrollHeight;
+        const heightRatio = Math.min(1, visibleSpan / scrollHeight);
+        this.viewportEl.style.top = `${topRatio * 100}%`;
+        this.viewportEl.style.height = `${heightRatio * 100}%`;
+    }
+
+    private computeBounds(container: HTMLElement) {
+        const rect = container.getBoundingClientRect();
+        let topBound = rect.top;
+        const headerRect = this.getHeaderRect(container);
+        const topAnchorRect = this.getTopAnchorRect(container);
+        if (headerRect) {
+            topBound = Math.max(topBound, headerRect.bottom + 4);
+        } else if (topAnchorRect) {
+            topBound = Math.max(topBound, topAnchorRect.top);
+        }
+
+        let bottomBound = rect.bottom;
+        const bottomRect = this.getBottomAnchorRect(container);
+        const lastMessageRect = this.getLastMessageRect();
+        if (bottomRect) {
+            bottomBound = bottomRect.bottom;
+        } else if (lastMessageRect) {
+            bottomBound = lastMessageRect.bottom;
+        }
+        if (bottomBound <= topBound) {
+            bottomBound = topBound + 24;
+        }
+        return { top: topBound, bottom: bottomBound };
+    }
+
+    private getHeaderRect(container: HTMLElement): DOMRect | null {
+        const attrHeader = container.querySelector<HTMLElement>('[data-testid="conversation-header"]');
+        if (attrHeader) return attrHeader.getBoundingClientRect();
+        const directChildren = Array.from(container.children) as HTMLElement[];
+        for (const child of directChildren) {
+            const tag = child.tagName.toLowerCase();
+            if (tag === 'header' || tag === 'h1' || tag === 'h2') {
+                return child.getBoundingClientRect();
+            }
+            const nestedHeader = child.querySelector<HTMLElement>('header');
+            if (nestedHeader) {
+                return nestedHeader.getBoundingClientRect();
+            }
+        }
+        return null;
+    }
+
+    private getTopAnchorRect(container: HTMLElement): DOMRect | null {
+        if (this.topAnchor && document.contains(this.topAnchor)) {
+            return this.topAnchor.getBoundingClientRect();
+        }
+        const firstMessage = container.querySelector<HTMLElement>('[data-message-author-role]');
+        return firstMessage ? firstMessage.getBoundingClientRect() : null;
+    }
+
+    private getBottomAnchorRect(container: HTMLElement): DOMRect | null {
+        const anchor = this.getComposerAnchor(container);
+        return anchor ? anchor.getBoundingClientRect() : null;
+    }
+
+    private getComposerAnchor(container: HTMLElement): HTMLElement | null {
+        if (this.bottomAnchor && document.contains(this.bottomAnchor)) {
+            return this.bottomAnchor;
+        }
+        const resolved = this.resolveComposerAnchor(container);
+        if (resolved) this.bottomAnchor = resolved;
+        return resolved;
+    }
+
+    private getLastMessageRect(): DOMRect | null {
+        if (this.lastMessageAnchor && document.contains(this.lastMessageAnchor)) {
+            return this.lastMessageAnchor.getBoundingClientRect();
+        }
+        return null;
+    }
+
+    private resolveComposerAnchor(container: HTMLElement): HTMLElement | null {
+        const scope = container.closest('main') || document.body;
+        const selectors = [
+            '[data-testid="composer"]',
+            'textarea[data-id="prompt-textarea"]',
+            'form textarea'
+        ];
+        for (const selector of selectors) {
+            const node = scope.querySelector<HTMLElement>(selector) || document.querySelector<HTMLElement>(selector);
+            if (node) {
+                return node.closest('form') || node;
+            }
+        }
+        return null;
+    }
+
+    private computeScrollRange(container: HTMLElement) {
+        const containerRect = container.getBoundingClientRect();
+        const headerRect = this.getHeaderRect(container);
+        const topMessageRect = this.getTopAnchorRect(container);
+        const bottomAnchorRect = this.getBottomAnchorRect(container);
+        const lastMessageRect = this.getLastMessageRect();
+        let top: number;
+        if (topMessageRect) {
+            top = topMessageRect.top + window.scrollY;
+        } else if (headerRect) {
+            top = headerRect.bottom + 4 + window.scrollY;
+        } else {
+            top = containerRect.top + window.scrollY;
+        }
+        const bottomSource = this.pickLowerRect([lastMessageRect, bottomAnchorRect, containerRect]);
+        let bottom = bottomSource.bottom + window.scrollY;
+        if (bottom <= top) {
+            bottom = top + 1;
+        }
+        return {
+            top,
+            bottom
+        };
+    }
+
+    private pickLowerRect(rects: Array<DOMRect | null>): DOMRect {
+        let chosen: DOMRect | null = null;
+        for (const rect of rects) {
+            if (!rect) continue;
+            if (!chosen || rect.bottom > chosen.bottom) {
+                chosen = rect;
+            }
+        }
+        return chosen ?? new DOMRect(0, 0, 0, 0);
     }
 }
 

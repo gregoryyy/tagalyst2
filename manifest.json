@@ -1,7 +1,7 @@
 {
     "name": "Tagalyst 2",
-    "description": "Basis: v0.1.5 with ts refactoring",
-    "version": "0.3.0",
+    "description": "ChatGPT content management and search",
+    "version": "0.3.1",
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "permissions": [
