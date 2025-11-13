@@ -446,6 +446,15 @@
     font-size: 13px;
 }
 
+.ext-search-count {
+    display: block;
+    margin-top: .35rem;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, .7);
+    text-align: right;
+}
+
 .ext-tag-list {
     display: flex;
     flex-direction: column;

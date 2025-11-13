@@ -669,6 +669,7 @@ class TopPanelController {
     private tagListEl: HTMLElement | null = null;
     private searchInputEl: HTMLInputElement | null = null;
     private lastTagSignature = '';
+    private searchResultCountEl: HTMLElement | null = null;
 
     ensurePanels(): HTMLElement {
         if (this.topPanelsEl) return this.topPanelsEl;
@@ -678,6 +679,7 @@ class TopPanelController {
             <div class="ext-top-frame ext-top-search">
                 <span class="ext-top-label">Search</span>
                 <input type="text" class="ext-search-input" placeholder="Search messages…" />
+                <span class="ext-search-count" aria-live="polite"></span>
             </div>
             <div class="ext-top-frame ext-top-tags">
                 <span class="ext-top-label">Tags</span>
@@ -689,6 +691,7 @@ class TopPanelController {
         this.topPanelsEl = wrap;
         this.tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
         this.searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
+        this.searchResultCountEl = wrap.querySelector<HTMLElement>('.ext-search-count');
         if (this.searchInputEl) {
             this.searchInputEl.value = focusService.getSearchQuery();
             this.searchInputEl.addEventListener('input', (evt) => {
@@ -698,6 +701,7 @@ class TopPanelController {
         }
         this.updateConfigUI();
         this.syncWidth();
+        this.updateSearchResultCount();
         return wrap;
     }
 
@@ -715,10 +719,6 @@ class TopPanelController {
             return;
         }
         this.lastTagSignature = signature;
-        console.debug('[Tagalyst][Tags] Rendering tag list', {
-            totalTags: counts.length,
-            tagsEnabled,
-        });
         this.tagListEl.innerHTML = '';
         this.tagListEl.classList.toggle('ext-tags-disabled', !tagsEnabled);
         if (!counts.length) {
@@ -774,6 +774,7 @@ class TopPanelController {
         if (this.tagListEl) {
             this.tagListEl.classList.toggle('ext-tags-disabled', !configService.areTagsEnabled());
         }
+        this.updateSearchResultCount();
     }
 
     clearSearchInput() {
@@ -793,6 +794,7 @@ class TopPanelController {
         this.tagListEl = null;
         this.searchInputEl = null;
         this.lastTagSignature = '';
+        this.searchResultCountEl = null;
     }
 
     getElement(): HTMLElement | null {
@@ -803,6 +805,22 @@ class TopPanelController {
         if (!configService.isSearchEnabled()) return;
         focusService.setSearchQuery(value || '');
         focusController.syncMode();
+        this.updateSearchResultCount();
+    }
+
+    updateSearchResultCount() {
+        if (!this.searchResultCountEl) return;
+        if (!configService.isSearchEnabled()) {
+            this.searchResultCountEl.textContent = '';
+            return;
+        }
+        const query = focusService.getSearchQuery();
+        if (!query) {
+            this.searchResultCountEl.textContent = '';
+            return;
+        }
+        const count = focusController.getMatches().length;
+        this.searchResultCountEl.textContent = count === 1 ? '1 result' : `${count} results`;
     }
 
     private toggleTagSelection(tag: string, row?: HTMLElement) {
@@ -825,7 +843,10 @@ class TopPanelController {
 } // TopPanelController
 
 const topPanelController = new TopPanelController();
-focusController.attachSelectionSync(() => topPanelController.syncSelectionUI());
+focusController.attachSelectionSync(() => {
+    topPanelController.syncSelectionUI();
+    topPanelController.updateSearchResultCount();
+});
 configService.onChange(() => topPanelController.updateConfigUI());
 
 class EditorController {
@@ -1641,6 +1662,7 @@ class BootstrapOrchestrator {
                     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
                 topPanelController.updateTagList(sortedTags);
                 focusController.refreshButtons();
+                topPanelController.updateSearchResultCount();
                 } while (this.refreshQueued);
             } finally {
                 this.refreshRunning = false;
