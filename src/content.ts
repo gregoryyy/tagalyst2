@@ -1863,12 +1863,12 @@ class ToolbarController {
         focusController.setPageControls(controlsState);
     }
 
-    private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'center', list?: HTMLElement[]) {
+    private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'nearest', list?: HTMLElement[]) {
         const nodes = list || threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
         const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
         const target = nodes[clamped];
-        if (target) target.scrollIntoView({ behavior: 'smooth', block });
+        if (target) target.scrollIntoView({ behavior: 'smooth', block, inline: 'nearest' });
     }
 
     private scrollFocus(delta: number) {
@@ -1877,7 +1877,7 @@ class ToolbarController {
             const idx = this.focus.adjustNav(delta, adapters.length);
             if (idx < 0 || idx >= adapters.length) return;
             const target = adapters[idx];
-            if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
             return;
         }
         if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
@@ -1892,7 +1892,7 @@ class ToolbarController {
         const currentIdx = this.findClosestMessageIndex(nodes);
         const step = delta >= 0 ? 1 : -1;
         const targetIdx = Math.max(0, Math.min(nodes.length - 1, currentIdx + step));
-        this.scrollToNode(container, targetIdx, 'center', nodes);
+        this.scrollToNode(container, targetIdx, 'start', nodes);
     }
 
     private findClosestMessageIndex(nodes: HTMLElement[]): number {
@@ -2187,7 +2187,7 @@ class BootstrapOrchestrator {
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
-        if (configService.isOverviewEnabled()) {
+        if (configService.isOverviewEnabled() && this.hasMessages(container)) {
             overviewRulerController.ensure(container);
         } else {
             overviewRulerController.reset();
@@ -2235,7 +2235,7 @@ class BootstrapOrchestrator {
                     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
                 topPanelController.updateTagList(sortedTags);
                 focusController.refreshButtons();
-                if (configService.isOverviewEnabled()) {
+                if (configService.isOverviewEnabled() && entries.length) {
                     overviewRulerController.update(container, entries);
                 } else {
                     overviewRulerController.reset();
@@ -2268,6 +2268,10 @@ class BootstrapOrchestrator {
             pair.getMessages().forEach(msg => pairMap.set(msg, idx));
         });
         return pairMap;
+    }
+
+    private hasMessages(container: HTMLElement) {
+        return threadDom.enumerateMessages(container).length > 0;
     }
 
     private teardownUI() {

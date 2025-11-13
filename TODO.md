@@ -9,8 +9,8 @@ Refactor to ts:
 Behavioral Bugs:
 - navigation and layout:
   - collapse misses Canvas
-  - collapse hides topmost query/toolbar
-  - topmost toolbar hides ChatGPT control (Share)
+  - collapse hides topmost query/toolbar DONE
+  - topmost toolbar hides ChatGPT control (Share) DONE
   - when outside conversation view, hide toolbars
 - export:
   - filter out UI and extension stuff
@@ -43,8 +43,14 @@ Features:
 - navigate by highlighted item:
   - if search results or tags, this means navigation runs via these. DONE
     - BUG: after search or tag selection, becomes unresponsive FIXED
+  - no star leads to navigate between plain (user) messages
+    - BUG: Opening a chat should recognize if there's a star already
   - export filters by focused items
-  - overview ruler WIP
+    - BUG: control stuff included, no full markup
+  - overview ruler DONE
+    - act like a scrollbar:click into track navigates, drag on thumb
+      - BUG: no reasonable dragging
+    - act like a diff ruler: click on focus item navigates
 - export without UI content but with:
   - links to graphics
   - mathematical content, i.e., KaTeX
