@@ -39,11 +39,11 @@ Features:
   - load / save file DONE
 - metadata:
   - cardinal numbers for pairs (left aligned for prompts, same y as query message toolbar) DONE
-  - message size
-  - tag and search results size
+  - message size DONE
+  - tag and search results size DONE
 - navigate by highlighted item:
   - if search results or tags, this means navigation runs via these. DONE
-    - BUG: after search or tag selection, becomes unresponsive
+    - BUG: after search or tag selection, becomes unresponsive FIXED
   - export filters by focused items
   - overview ruler
 - export without UI content but with:

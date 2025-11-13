@@ -836,6 +836,97 @@ focusController.attachSelectionSync(() => {
 });
 configService.onChange(() => topPanelController.updateConfigUI());
 
+class OverviewRulerController {
+    private root: HTMLElement | null = null;
+    private trackEl: HTMLElement | null = null;
+    private container: HTMLElement | null = null;
+    private rafPending = false;
+
+    private readonly handleViewportChange = () => {
+        if (!this.container) return;
+        if (this.rafPending) return;
+        this.rafPending = true;
+        requestAnimationFrame(() => {
+            this.rafPending = false;
+            if (this.container) this.updatePosition(this.container);
+        });
+    };
+
+    ensure(container: HTMLElement) {
+        if (this.root) {
+            this.container = container;
+            this.updatePosition(container);
+            return this.root;
+        }
+        const root = document.createElement('div');
+        root.id = 'ext-overview-ruler';
+        const track = document.createElement('div');
+        track.className = 'ext-overview-ruler-track';
+        root.appendChild(track);
+        Utils.markExtNode(root);
+        document.body.appendChild(root);
+        this.root = root;
+        this.trackEl = track;
+        this.container = container;
+        window.addEventListener('scroll', this.handleViewportChange, { passive: true });
+        window.addEventListener('resize', this.handleViewportChange);
+        this.updatePosition(container);
+        return root;
+    }
+
+    update(container: HTMLElement, entries: Array<{ adapter: MessageAdapter }>) {
+        if (!entries.length) return;
+        this.ensure(container);
+        if (!this.trackEl || !this.root) return;
+        this.container = container;
+        this.updatePosition(container);
+        this.trackEl.innerHTML = '';
+        const rect = container.getBoundingClientRect();
+        const height = Math.max(1, rect.height);
+        for (const { adapter } of entries) {
+            const el = adapter.element;
+            if (!document.contains(el)) continue;
+            const elRect = el.getBoundingClientRect();
+            const ratio = (elRect.top - rect.top + elRect.height / 2) / height;
+            const clamped = Math.min(1, Math.max(0, ratio));
+            const mark = document.createElement('button');
+            mark.type = 'button';
+            mark.className = `ext-ruler-mark ${adapter.role === 'user' ? 'is-user' : 'is-assistant'}`;
+            mark.style.top = `${clamped * 100}%`;
+            mark.title = adapter.role === 'user' ? 'Jump to user prompt' : 'Jump to assistant response';
+            mark.setAttribute('aria-label', mark.title);
+            mark.onclick = (evt) => {
+                evt.preventDefault();
+                adapter.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+            this.trackEl.appendChild(mark);
+        }
+    }
+
+    reset() {
+        if (this.root?.parentElement) {
+            this.root.parentElement.removeChild(this.root);
+        }
+        this.root = null;
+        this.trackEl = null;
+        this.container = null;
+        window.removeEventListener('scroll', this.handleViewportChange);
+        window.removeEventListener('resize', this.handleViewportChange);
+    }
+
+    private updatePosition(container: HTMLElement) {
+        if (!this.root) return;
+        const rect = container.getBoundingClientRect();
+        const docTop = window.scrollY + rect.top;
+        const docLeft = window.scrollX + rect.left;
+        this.root.style.top = `${docTop}px`;
+        this.root.style.left = `${Math.max(8, docLeft - 28)}px`;
+        this.root.style.height = `${rect.height}px`;
+    }
+}
+
+const overviewRulerController = new OverviewRulerController();
+
 class EditorController {
     private activeTagEditor: ActiveEditor | null = null;
     private activeNoteEditor: ActiveEditor | null = null;
@@ -1644,6 +1735,7 @@ class BootstrapOrchestrator {
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
+        overviewRulerController.ensure(container);
 
         const render = async () => {
             if (this.refreshRunning) {
@@ -1687,6 +1779,7 @@ class BootstrapOrchestrator {
                     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
                 topPanelController.updateTagList(sortedTags);
                 focusController.refreshButtons();
+                overviewRulerController.update(container, entries);
                 topPanelController.updateSearchResultCount();
                 } while (this.refreshQueued);
             } finally {
@@ -1729,6 +1822,7 @@ class BootstrapOrchestrator {
         const panel = topPanelController.getElement();
         if (panel) panel.remove();
         topPanelController.reset();
+        overviewRulerController.reset();
         focusController.reset();
         this.threadAdapter?.disconnect();
         activeThreadAdapter = null;
