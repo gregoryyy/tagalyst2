@@ -642,13 +642,17 @@ class FocusController {
         const mode = this.focus.getMode();
         const glyph = focusGlyphs[mode] || focusGlyphs[FOCUS_MODES.STARS];
         const desc = this.getModeLabel();
+        const starFallbackActive = mode === FOCUS_MODES.STARS && !this.hasStarredMessages();
+        const navGlyph = starFallbackActive ? glyph.empty : glyph.filled;
+        const navTitlePrev = starFallbackActive ? 'Previous message' : `Previous ${desc}`;
+        const navTitleNext = starFallbackActive ? 'Next message' : `Next ${desc}`;
         if (this.pageControls.focusPrev) {
-            this.pageControls.focusPrev.textContent = `${glyph.filled}↑`;
-            this.pageControls.focusPrev.title = `Previous ${desc}`;
+            this.pageControls.focusPrev.textContent = `${navGlyph}↑`;
+            this.pageControls.focusPrev.title = navTitlePrev;
         }
         if (this.pageControls.focusNext) {
-            this.pageControls.focusNext.textContent = `${glyph.filled}↓`;
-            this.pageControls.focusNext.title = `Next ${desc}`;
+            this.pageControls.focusNext.textContent = `${navGlyph}↓`;
+            this.pageControls.focusNext.title = navTitleNext;
         }
         if (this.pageControls.collapseNonFocus) {
             this.pageControls.collapseNonFocus.textContent = glyph.empty;
@@ -674,6 +678,21 @@ class FocusController {
             if (!meta) return false;
             return this.focus.isMessageFocused(meta, node);
         });
+    }
+
+    private hasStarredMessages(): boolean {
+        let found = false;
+        this.messages.forEach((meta, el) => {
+            if (found) return;
+            if (!document.contains(el)) {
+                this.messages.delete(el);
+                return;
+            }
+            if (meta.value?.starred) {
+                found = true;
+            }
+        });
+        return found;
     }
 } // FocusController
 
@@ -1854,11 +1873,42 @@ class ToolbarController {
 
     private scrollFocus(delta: number) {
         const adapters = focusController.getMatches();
-        if (!adapters.length) return;
-        const idx = this.focus.adjustNav(delta, adapters.length);
-        if (idx < 0 || idx >= adapters.length) return;
-        const target = adapters[idx];
-        if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (adapters.length) {
+            const idx = this.focus.adjustNav(delta, adapters.length);
+            if (idx < 0 || idx >= adapters.length) return;
+            const target = adapters[idx];
+            if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
+        if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
+        this.scrollAdjacentMessage(delta);
+    }
+
+    private scrollAdjacentMessage(delta: number) {
+        const container = threadDom.findTranscriptRoot();
+        if (!container) return;
+        const nodes = threadDom.getNavigationNodes(container);
+        if (!nodes.length) return;
+        const currentIdx = this.findClosestMessageIndex(nodes);
+        const step = delta >= 0 ? 1 : -1;
+        const targetIdx = Math.max(0, Math.min(nodes.length - 1, currentIdx + step));
+        this.scrollToNode(container, targetIdx, 'center', nodes);
+    }
+
+    private findClosestMessageIndex(nodes: HTMLElement[]): number {
+        const viewportCenter = window.scrollY + window.innerHeight / 2;
+        let closestIdx = 0;
+        let smallestDistance = Number.POSITIVE_INFINITY;
+        nodes.forEach((node, idx) => {
+            const rect = node.getBoundingClientRect();
+            const nodeCenter = window.scrollY + rect.top + rect.height / 2;
+            const dist = Math.abs(nodeCenter - viewportCenter);
+            if (dist < smallestDistance) {
+                smallestDistance = dist;
+                closestIdx = idx;
+            }
+        });
+        return closestIdx;
     }
 
     injectToolbar(el: HTMLElement, threadKey: string) {
