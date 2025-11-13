@@ -1139,7 +1139,7 @@ class OverviewRulerController {
         } else {
             top = containerRect.top + window.scrollY;
         }
-        const bottomSource = this.pickLowerRect([lastMessageRect, bottomAnchorRect, containerRect]);
+        const bottomSource = lastMessageRect || bottomAnchorRect || containerRect;
         let bottom = bottomSource.bottom + window.scrollY;
         if (bottom <= top) {
             bottom = top + 1;
