@@ -840,12 +840,16 @@ configService.onChange(() => topPanelController.updateConfigUI());
 
 type MarkerDatum = {
     docCenter: number;
+    label?: string | null;
 };
 
 class OverviewRulerController {
-    private markerLayer: HTMLElement | null = null;
-    private markerPool: HTMLElement[] = [];
-    private markerData: MarkerDatum[] = [];
+    private messageMarkerLayer: HTMLElement | null = null;
+    private messageMarkerPool: HTMLElement[] = [];
+    private messageMarkerData: MarkerDatum[] = [];
+    private focusMarkerLayer: HTMLElement | null = null;
+    private focusMarkerPool: HTMLElement[] = [];
+    private focusMarkerData: MarkerDatum[] = [];
     private root: HTMLElement | null = null;
     private trackEl: HTMLElement | null = null;
     private container: HTMLElement | null = null;
@@ -875,18 +879,22 @@ class OverviewRulerController {
         root.id = 'ext-overview-ruler';
         const track = document.createElement('div');
         track.className = 'ext-overview-ruler-track';
-        const markerLayer = document.createElement('div');
-        markerLayer.className = 'ext-overview-marker-layer';
+        const messageLayer = document.createElement('div');
+        messageLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--messages';
+        const focusLayer = document.createElement('div');
+        focusLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--focus';
         const viewport = document.createElement('div');
         viewport.className = 'ext-ruler-viewport';
-        track.appendChild(markerLayer);
+        track.appendChild(messageLayer);
+        track.appendChild(focusLayer);
         track.appendChild(viewport);
         root.appendChild(track);
         Utils.markExtNode(root);
         document.body.appendChild(root);
         this.root = root;
         this.trackEl = track;
-        this.markerLayer = markerLayer;
+        this.messageMarkerLayer = messageLayer;
+        this.focusMarkerLayer = focusLayer;
         this.viewportEl = viewport;
         this.container = container;
         window.addEventListener('scroll', this.handleViewportChange, { passive: true });
@@ -895,7 +903,7 @@ class OverviewRulerController {
         return root;
     }
 
-    update(container: HTMLElement, entries: Array<{ adapter: MessageAdapter }>) {
+    update(container: HTMLElement, entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>) {
         if (!entries.length) return;
         this.ensure(container);
         if (!this.trackEl || !this.root) return;
@@ -905,6 +913,8 @@ class OverviewRulerController {
         this.bottomAnchor = this.resolveComposerAnchor(container);
         const bounds = this.computeBounds(container);
         const scrollRange = this.computeScrollRange(container);
+        this.messageMarkerData = this.collectMessageMarkerData(entries);
+        this.focusMarkerData = this.collectFocusMarkerData();
         this.applyFrame(container, bounds);
         if (!this.viewportEl || !this.viewportEl.isConnected) {
             this.viewportEl = document.createElement('div');
@@ -912,13 +922,14 @@ class OverviewRulerController {
             this.trackEl.appendChild(this.viewportEl);
         }
         this.updateViewportIndicator(scrollRange);
-        this.rebuildMarkers(scrollRange);
+        this.layoutAllMarkers(scrollRange);
     }
 
     refreshMarkers() {
         if (!this.container) return;
         const scrollRange = this.computeScrollRange(this.container);
-        this.rebuildMarkers(scrollRange);
+        this.focusMarkerData = this.collectFocusMarkerData();
+        this.layoutFocusMarkers(scrollRange);
     }
 
     reset() {
@@ -932,9 +943,12 @@ class OverviewRulerController {
         this.bottomAnchor = null;
         this.lastMessageAnchor = null;
         this.viewportEl = null;
-        this.markerLayer = null;
-        this.markerPool = [];
-        this.markerData = [];
+        this.messageMarkerLayer = null;
+        this.messageMarkerPool = [];
+        this.messageMarkerData = [];
+        this.focusMarkerLayer = null;
+        this.focusMarkerPool = [];
+        this.focusMarkerData = [];
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
     }
@@ -944,7 +958,7 @@ class OverviewRulerController {
         const scrollRange = this.computeScrollRange(container);
         this.applyFrame(container, bounds);
         this.updateViewportIndicator(scrollRange);
-        this.layoutMarkers(scrollRange);
+        this.layoutAllMarkers(scrollRange);
     }
 
     private applyFrame(container: HTMLElement, bounds: { top: number; bottom: number }) {
@@ -977,12 +991,32 @@ class OverviewRulerController {
         this.viewportEl.style.height = `${heightRatio * 100}%`;
     }
 
-    private rebuildMarkers(scrollRange: { top: number; bottom: number }) {
-        this.markerData = this.collectMarkerData();
-        this.layoutMarkers(scrollRange);
+    private layoutAllMarkers(scrollRange: { top: number; bottom: number }) {
+        this.layoutMessageMarkers(scrollRange);
+        this.layoutFocusMarkers(scrollRange);
     }
 
-    private collectMarkerData(): MarkerDatum[] {
+    private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
+        const data: MarkerDatum[] = [];
+        const seenPairs = new Set<number>();
+        let fallbackIndex = 0;
+        for (const { adapter, pairIndex } of entries) {
+            const el = adapter?.element;
+            if (!el || !document.contains(el)) continue;
+            if (typeof pairIndex === 'number') {
+                if (seenPairs.has(pairIndex)) continue;
+                seenPairs.add(pairIndex);
+            }
+            const rect = el.getBoundingClientRect();
+            const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
+            if (!Number.isFinite(docCenter)) continue;
+            const label = typeof pairIndex === 'number' ? String(pairIndex + 1) : String(++fallbackIndex);
+            data.push({ docCenter, label });
+        }
+        return data;
+    }
+
+    private collectFocusMarkerData(): MarkerDatum[] {
         const adapters = focusController.getMatches();
         const data: MarkerDatum[] = [];
         for (const adapter of adapters) {
@@ -996,41 +1030,72 @@ class OverviewRulerController {
         return data;
     }
 
-    private layoutMarkers(scrollRange: { top: number; bottom: number }) {
-        if (!this.markerLayer) return;
-        const scrollHeight = scrollRange.bottom - scrollRange.top;
-        if (!this.markerData.length || scrollHeight <= 0) {
-            this.markerLayer.style.display = 'none';
-            for (const marker of this.markerPool) {
-                marker.style.display = 'none';
+    private layoutMessageMarkers(scrollRange: { top: number; bottom: number }) {
+        this.layoutMarkerSet({
+            layer: this.messageMarkerLayer,
+            pool: this.messageMarkerPool,
+            data: this.messageMarkerData,
+            scrollRange,
+            className: 'ext-overview-marker ext-overview-marker--message',
+            formatter: (marker, datum) => {
+                marker.textContent = datum.label ?? '';
             }
+        });
+    }
+
+    private layoutFocusMarkers(scrollRange: { top: number; bottom: number }) {
+        this.layoutMarkerSet({
+            layer: this.focusMarkerLayer,
+            pool: this.focusMarkerPool,
+            data: this.focusMarkerData,
+            scrollRange,
+            className: 'ext-overview-marker ext-overview-marker--focus',
+            color: this.getMarkerColor()
+        });
+    }
+
+    private layoutMarkerSet(opts: {
+        layer: HTMLElement | null;
+        pool: HTMLElement[];
+        data: MarkerDatum[];
+        scrollRange: { top: number; bottom: number };
+        className: string;
+        color?: string;
+        formatter?: (marker: HTMLElement, datum: MarkerDatum) => void;
+    }) {
+        const { layer, pool, data, scrollRange, className, color, formatter } = opts;
+        if (!layer) return;
+        const scrollHeight = scrollRange.bottom - scrollRange.top;
+        if (!data.length || scrollHeight <= 0) {
+            layer.style.display = 'none';
+            for (const marker of pool) marker.style.display = 'none';
             return;
         }
-        this.markerLayer.style.display = 'block';
-        this.markerLayer.style.setProperty('--marker-color', this.getMarkerColor());
-        for (let i = 0; i < this.markerData.length; i++) {
-            const marker = this.ensureMarker(i);
-            const datum = this.markerData[i];
+        layer.style.display = 'block';
+        if (color) {
+            layer.style.setProperty('--marker-color', color);
+        }
+        for (let i = 0; i < data.length; i++) {
+            const marker = this.ensureMarker(layer, pool, className, i);
+            const datum = data[i];
             const ratio = Math.min(1, Math.max(0, (datum.docCenter - scrollRange.top) / scrollHeight));
             marker.style.top = `${ratio * 100}%`;
             marker.style.display = 'block';
+            if (formatter) formatter(marker, datum);
         }
-        for (let i = this.markerData.length; i < this.markerPool.length; i++) {
-            this.markerPool[i].style.display = 'none';
+        for (let i = data.length; i < pool.length; i++) {
+            pool[i].style.display = 'none';
         }
     }
 
-    private ensureMarker(index: number): HTMLElement {
-        if (!this.markerLayer) {
-            throw new Error('Marker layer missing');
-        }
-        while (this.markerPool.length <= index) {
+    private ensureMarker(layer: HTMLElement, pool: HTMLElement[], className: string, index: number): HTMLElement {
+        while (pool.length <= index) {
             const marker = document.createElement('div');
-            marker.className = 'ext-overview-marker';
-            this.markerLayer.appendChild(marker);
-            this.markerPool.push(marker);
+            marker.className = className;
+            layer.appendChild(marker);
+            pool.push(marker);
         }
-        return this.markerPool[index];
+        return pool[index];
     }
 
     private getMarkerColor(): string {
