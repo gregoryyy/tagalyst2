@@ -395,17 +395,11 @@ class FocusService {
     toggleTag(tag: string) {
         if (!tag) return;
         const wasSelected = this.selectedTags.has(tag);
-        console.debug('[Tagalyst][Tags] toggleTag invoked', { tag, wasSelected });
         if (wasSelected) {
             this.selectedTags.delete(tag);
         } else {
             this.selectedTags.add(tag);
         }
-        console.debug('[Tagalyst][Tags] toggleTag result', {
-            tag,
-            isSelected: this.selectedTags.has(tag),
-            activeTags: Array.from(this.selectedTags),
-        });
     }
 
     clearTags() {
@@ -710,7 +704,6 @@ class TopPanelController {
         const tagsEnabled = configService.areTagsEnabled();
         const signature = this.computeTagSignature(counts, tagsEnabled);
         if (!this.tagListEl) {
-            console.warn('[Tagalyst][Tags] updateTagList called before tag panel mounted', { counts });
             return;
         }
         if (signature === this.lastTagSignature) {
@@ -825,15 +818,9 @@ class TopPanelController {
 
     private toggleTagSelection(tag: string, row?: HTMLElement) {
         if (!configService.areTagsEnabled()) {
-            console.debug('[Tagalyst][Tags] Tag row ignored because tags are disabled', { tag });
             return;
         }
         const willSelect = !focusService.isTagSelected(tag);
-        console.debug('[Tagalyst][Tags] Tag row clicked', {
-            tag,
-            willSelect,
-            rowAttached: !!row,
-        });
         focusService.toggleTag(tag);
         if (row) {
             row.classList.toggle('ext-tag-selected', willSelect);
@@ -1433,6 +1420,10 @@ class ToolbarController {
 
         wrap.dataset.threadKey = threadKey;
         el.prepend(row);
+        const adapter = messageMetaRegistry.resolveAdapter(el);
+        if (adapter) {
+            this.updateMessageLength(adapter);
+        }
         this.ensureUserToolbarButton(el);
         threadActions.updateCollapseVisibility(el);
         threadActions.syncCollapseButton(el);
@@ -1462,6 +1453,39 @@ class ToolbarController {
             wrap.appendChild(badge);
         }
         badge.textContent = `${pairIndex + 1}.`;
+    }
+
+    updateMessageLength(adapter: MessageAdapter) {
+        const el = adapter.element;
+        const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
+        if (!row) return;
+        const toolbar = row.querySelector<HTMLElement>('.ext-toolbar');
+        if (!toolbar) return;
+        const length = adapter.getText().length;
+        if (!length) {
+            const existing = row.querySelector<HTMLElement>('.ext-message-length');
+            if (existing) existing.remove();
+            return;
+        }
+        let badge = row.querySelector<HTMLElement>('.ext-message-length');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'ext-message-length';
+            row.insertBefore(badge, toolbar);
+        } else if (badge.nextElementSibling !== toolbar) {
+            row.insertBefore(badge, toolbar);
+        }
+        badge.textContent = this.formatLength(length);
+        badge.setAttribute('aria-label', `${length.toLocaleString()} characters`);
+        badge.title = `${length.toLocaleString()} characters`;
+    }
+
+    private formatLength(length: number) {
+        if (length >= 1000) {
+            const value = length >= 10000 ? Math.round(length / 1000) : Math.round(length / 100) / 10;
+            return `${value}k chars`;
+        }
+        return `${length} chars`;
     }
 
     updateBadges(el: HTMLElement, threadKey: string, value: MessageValue, adapter?: MessageAdapter | null) {
@@ -1647,6 +1671,7 @@ class BootstrapOrchestrator {
                     for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
                         this.toolbar.injectToolbar(el, threadKey);
                         this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                        this.toolbar.updateMessageLength(messageAdapter);
                         const value = store[key] || {};
                         messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
                         if (value && Array.isArray(value.tags)) {
