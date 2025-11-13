@@ -371,6 +371,12 @@ const focusGlyphs: Record<FocusMode, { empty: string; filled: string }> = {
     [FOCUS_MODES.SEARCH]: { empty: '□', filled: '■' },
 };
 
+const focusMarkerColors: Record<FocusMode, string> = {
+    [FOCUS_MODES.STARS]: '#f2b400',
+    [FOCUS_MODES.TAGS]: '#4aa0ff',
+    [FOCUS_MODES.SEARCH]: '#a15bfd',
+};
+
 class FocusService {
     private mode: FocusMode = FOCUS_MODES.STARS;
     private readonly selectedTags = new Set<string>();
@@ -830,13 +836,16 @@ class TopPanelController {
 } // TopPanelController
 
 const topPanelController = new TopPanelController();
-focusController.attachSelectionSync(() => {
-    topPanelController.syncSelectionUI();
-    topPanelController.updateSearchResultCount();
-});
 configService.onChange(() => topPanelController.updateConfigUI());
 
+type MarkerDatum = {
+    docCenter: number;
+};
+
 class OverviewRulerController {
+    private markerLayer: HTMLElement | null = null;
+    private markerPool: HTMLElement[] = [];
+    private markerData: MarkerDatum[] = [];
     private root: HTMLElement | null = null;
     private trackEl: HTMLElement | null = null;
     private container: HTMLElement | null = null;
@@ -866,14 +875,18 @@ class OverviewRulerController {
         root.id = 'ext-overview-ruler';
         const track = document.createElement('div');
         track.className = 'ext-overview-ruler-track';
+        const markerLayer = document.createElement('div');
+        markerLayer.className = 'ext-overview-marker-layer';
         const viewport = document.createElement('div');
         viewport.className = 'ext-ruler-viewport';
+        track.appendChild(markerLayer);
         track.appendChild(viewport);
         root.appendChild(track);
         Utils.markExtNode(root);
         document.body.appendChild(root);
         this.root = root;
         this.trackEl = track;
+        this.markerLayer = markerLayer;
         this.viewportEl = viewport;
         this.container = container;
         window.addEventListener('scroll', this.handleViewportChange, { passive: true });
@@ -891,13 +904,21 @@ class OverviewRulerController {
         this.lastMessageAnchor = entries[entries.length - 1]?.adapter.element || null;
         this.bottomAnchor = this.resolveComposerAnchor(container);
         const bounds = this.computeBounds(container);
+        const scrollRange = this.computeScrollRange(container);
         this.applyFrame(container, bounds);
         if (!this.viewportEl || !this.viewportEl.isConnected) {
             this.viewportEl = document.createElement('div');
             this.viewportEl.className = 'ext-ruler-viewport';
             this.trackEl.appendChild(this.viewportEl);
         }
-        this.updateViewportIndicator(bounds);
+        this.updateViewportIndicator(scrollRange);
+        this.rebuildMarkers(scrollRange);
+    }
+
+    refreshMarkers() {
+        if (!this.container) return;
+        const scrollRange = this.computeScrollRange(this.container);
+        this.rebuildMarkers(scrollRange);
     }
 
     reset() {
@@ -911,14 +932,19 @@ class OverviewRulerController {
         this.bottomAnchor = null;
         this.lastMessageAnchor = null;
         this.viewportEl = null;
+        this.markerLayer = null;
+        this.markerPool = [];
+        this.markerData = [];
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
     }
 
     private updatePosition(container: HTMLElement) {
         const bounds = this.computeBounds(container);
+        const scrollRange = this.computeScrollRange(container);
         this.applyFrame(container, bounds);
-        this.updateViewportIndicator(bounds);
+        this.updateViewportIndicator(scrollRange);
+        this.layoutMarkers(scrollRange);
     }
 
     private applyFrame(container: HTMLElement, bounds: { top: number; bottom: number }) {
@@ -932,9 +958,8 @@ class OverviewRulerController {
         this.root.style.height = `${height}px`;
     }
 
-    private updateViewportIndicator(bounds: { top: number; bottom: number }) {
-        if (!this.viewportEl || !this.container) return;
-        const scrollRange = this.computeScrollRange(this.container);
+    private updateViewportIndicator(scrollRange: { top: number; bottom: number }) {
+        if (!this.viewportEl) return;
         const scrollHeight = Math.max(1, scrollRange.bottom - scrollRange.top);
         const viewportTop = window.scrollY;
         const viewportBottom = viewportTop + window.innerHeight;
@@ -950,6 +975,67 @@ class OverviewRulerController {
         const heightRatio = Math.min(1, visibleSpan / scrollHeight);
         this.viewportEl.style.top = `${topRatio * 100}%`;
         this.viewportEl.style.height = `${heightRatio * 100}%`;
+    }
+
+    private rebuildMarkers(scrollRange: { top: number; bottom: number }) {
+        this.markerData = this.collectMarkerData();
+        this.layoutMarkers(scrollRange);
+    }
+
+    private collectMarkerData(): MarkerDatum[] {
+        const adapters = focusController.getMatches();
+        const data: MarkerDatum[] = [];
+        for (const adapter of adapters) {
+            const el = adapter?.element;
+            if (!el || !document.contains(el)) continue;
+            const rect = el.getBoundingClientRect();
+            const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
+            if (!Number.isFinite(docCenter)) continue;
+            data.push({ docCenter });
+        }
+        return data;
+    }
+
+    private layoutMarkers(scrollRange: { top: number; bottom: number }) {
+        if (!this.markerLayer) return;
+        const scrollHeight = scrollRange.bottom - scrollRange.top;
+        if (!this.markerData.length || scrollHeight <= 0) {
+            this.markerLayer.style.display = 'none';
+            for (const marker of this.markerPool) {
+                marker.style.display = 'none';
+            }
+            return;
+        }
+        this.markerLayer.style.display = 'block';
+        this.markerLayer.style.setProperty('--marker-color', this.getMarkerColor());
+        for (let i = 0; i < this.markerData.length; i++) {
+            const marker = this.ensureMarker(i);
+            const datum = this.markerData[i];
+            const ratio = Math.min(1, Math.max(0, (datum.docCenter - scrollRange.top) / scrollHeight));
+            marker.style.top = `${ratio * 100}%`;
+            marker.style.display = 'block';
+        }
+        for (let i = this.markerData.length; i < this.markerPool.length; i++) {
+            this.markerPool[i].style.display = 'none';
+        }
+    }
+
+    private ensureMarker(index: number): HTMLElement {
+        if (!this.markerLayer) {
+            throw new Error('Marker layer missing');
+        }
+        while (this.markerPool.length <= index) {
+            const marker = document.createElement('div');
+            marker.className = 'ext-overview-marker';
+            this.markerLayer.appendChild(marker);
+            this.markerPool.push(marker);
+        }
+        return this.markerPool[index];
+    }
+
+    private getMarkerColor(): string {
+        const mode = focusService.getMode();
+        return focusMarkerColors[mode] || focusMarkerColors[FOCUS_MODES.STARS];
     }
 
     private computeBounds(container: HTMLElement) {
@@ -1077,6 +1163,11 @@ class OverviewRulerController {
 }
 
 const overviewRulerController = new OverviewRulerController();
+focusController.attachSelectionSync(() => {
+    topPanelController.syncSelectionUI();
+    topPanelController.updateSearchResultCount();
+    overviewRulerController.refreshMarkers();
+});
 
 class EditorController {
     private activeTagEditor: ActiveEditor | null = null;
@@ -1655,6 +1746,7 @@ class ToolbarController {
                 await this.storage.writeMessage(threadKey, adapter, cur);
                 this.updateBadges(el, threadKey, cur, adapter);
                 focusController.updateControlsUI();
+                overviewRulerController.refreshMarkers();
             };
         }
         if (tagBtn) tagBtn.onclick = () => editorController.openTagEditor(el, threadKey);
