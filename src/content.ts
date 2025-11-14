@@ -1568,6 +1568,8 @@ class HighlightController {
     private highlightStyleEl: HTMLStyleElement | null = null;
     private hoverTooltip: HTMLElement | null = null;
     private hoverActiveId: string | null = null;
+    private pointerPos: { x: number; y: number } | null = null;
+    private hoverLoopId: number | null = null;
     private readonly onMouseMove = (evt: MouseEvent) => this.handleMouseMove(evt);
     private readonly cssHighlightSupported = typeof CSS !== 'undefined' && 'highlights' in CSS && typeof (window as any).Highlight !== 'undefined';
 
@@ -1581,7 +1583,7 @@ class HighlightController {
         document.addEventListener('selectionchange', handler);
         document.addEventListener('mousedown', (evt) => this.handleDocumentMouseDown(evt), true);
         document.addEventListener('mousemove', this.onMouseMove, true);
-        document.addEventListener('scroll', () => this.hideHoverTooltip(), true);
+        this.startHoverLoop();
         this.initialized = true;
     }
 
@@ -2008,40 +2010,31 @@ class HighlightController {
 
 
     private handleMouseMove(evt: MouseEvent) {
-        if (!this.highlightMeta.size) {
-            this.hideHoverTooltip();
-            return;
-        }
-        const x = evt.clientX;
-        const y = evt.clientY;
-        let match: { text: string; rect: DOMRect; id: string } | null = null;
-        for (const [id, meta] of this.highlightMeta) {
-            if (!meta.annotation) continue;
-            const rects = meta.range.getClientRects();
-            for (const rect of Array.from(rects)) {
-                if (rect.width <= 0 || rect.height <= 0) continue;
-                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                    match = { text: meta.annotation || 'Hello World', rect, id };
-                    break;
-                }
-            }
-            if (match) break;
-        }
-        if (match) {
-            this.showHoverTooltip(match.text, match.rect, match.id);
-        } else {
-            this.hideHoverTooltip();
-        }
+        this.pointerPos = { x: evt.clientX, y: evt.clientY };
+        this.evaluateHover();
     }
 
-    private showHoverTooltip(text: string, rect: DOMRect, id: string) {
+    private showHoverTooltip(text: string, pointer: { x: number; y: number }, id: string) {
         const tooltip = this.ensureHoverTooltip();
         tooltip.textContent = text || 'Hello World';
         tooltip.style.display = 'block';
-        const top = window.scrollY + rect.bottom + 6;
-        const left = window.scrollX + rect.left;
+        tooltip.style.opacity = '0';
+        const { offsetWidth, offsetHeight } = tooltip;
+        const doc = document.documentElement;
+        const viewportWidth = doc?.clientWidth || window.innerWidth;
+        const viewportHeight = doc?.clientHeight || window.innerHeight;
+        const margin = 14;
+        let top = window.scrollY + pointer.y + margin;
+        if (top + offsetHeight + margin > window.scrollY + viewportHeight) {
+            top = window.scrollY + pointer.y - offsetHeight - margin;
+        }
+        let left = window.scrollX + pointer.x - offsetWidth / 2;
+        const minLeft = window.scrollX + 8;
+        const maxLeft = window.scrollX + viewportWidth - offsetWidth - 8;
+        left = Math.max(minLeft, Math.min(maxLeft, left));
         tooltip.style.top = `${top}px`;
         tooltip.style.left = `${left}px`;
+        tooltip.style.opacity = '1';
         this.hoverActiveId = id;
     }
 
@@ -2061,6 +2054,40 @@ class HighlightController {
             this.hoverTooltip = el;
         }
         return this.hoverTooltip;
+    }
+
+    private startHoverLoop() {
+        const step = () => {
+            this.evaluateHover();
+            this.hoverLoopId = requestAnimationFrame(step);
+        };
+        this.hoverLoopId = requestAnimationFrame(step);
+    }
+
+    private evaluateHover() {
+        if (!this.pointerPos || !this.highlightMeta.size) {
+            this.hideHoverTooltip();
+            return;
+        }
+        const { x, y } = this.pointerPos;
+        let match: { text: string; rect: DOMRect; id: string } | null = null;
+        for (const [id, meta] of this.highlightMeta) {
+            if (!meta.annotation) continue;
+            const rects = meta.range.getClientRects();
+            for (const rect of Array.from(rects)) {
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    match = { text: meta.annotation || 'Hello World', rect, id };
+                    break;
+                }
+            }
+            if (match) break;
+        }
+        if (match && this.pointerPos) {
+            this.showHoverTooltip(match.text, this.pointerPos, match.id);
+        } else {
+            this.hideHoverTooltip();
+        }
     }
 }
 
