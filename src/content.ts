@@ -2129,11 +2129,12 @@ class ThreadActions {
 } // ThreadActions
 
 const threadActions = new ThreadActions();
+
 class ExportController {
     copyThread(container: HTMLElement, focusOnly: boolean) {
         try {
             const md = this.buildMarkdown(container, focusOnly);
-            navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
+            this.writeToClipboard(md);
         } catch (err) {
             console.error('Export failed', err);
         }
@@ -2146,8 +2147,8 @@ class ExportController {
             const num = idx + 1;
             const isFocused = focusOnly ? focusController.isPairFocused(pair) : true;
             if (focusOnly && !isFocused) return;
-            const query = pair.query ? pair.query.innerText.trim() : '';
-            const response = pair.response ? pair.response.innerText.trim() : '';
+            const query = this.extractMarkdown(pair.query);
+            const response = this.extractMarkdown(pair.response);
             const lines: string[] = [];
             if (query) {
                 lines.push(`### ${num}. Prompt`, '', query);
@@ -2159,6 +2160,38 @@ class ExportController {
             if (lines.length) sections.push(lines.join('\n'));
         });
         return sections.join('\n\n');
+    }
+
+    private extractMarkdown(el: HTMLElement | null) {
+        if (!el) return '';
+        const clone = el.cloneNode(true) as HTMLElement;
+        this.stripExtensionNodes(clone);
+        const content = clone.querySelector<HTMLElement>('.markdown') || clone;
+        return new MarkdownSerializer().toMarkdown(content).trim();
+    }
+
+    private stripExtensionNodes(root: HTMLElement) {
+        root.querySelectorAll(`[${EXT_ATTR}]`).forEach(node => node.remove());
+        root.querySelectorAll('.ext-toolbar-row').forEach(node => node.remove());
+        root.querySelectorAll('button').forEach(node => node.remove());
+        root.querySelectorAll('svg').forEach(node => node.remove());
+    }
+
+    private writeToClipboard(md: string) {
+        if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+            const plain = new Blob([md], { type: 'text/plain' });
+            const markdown = new Blob([md], { type: 'text/markdown' });
+            const item = new ClipboardItem({
+                'text/plain': plain,
+                'text/markdown': markdown,
+            });
+            navigator.clipboard.write([item]).catch(err => {
+                console.error('Export failed', err);
+                navigator.clipboard.writeText(md).catch(fallbackErr => console.error('Fallback export failed', fallbackErr));
+            });
+            return;
+        }
+        navigator.clipboard.writeText(md).catch(err => console.error('Export failed', err));
     }
 } // ExportController
 

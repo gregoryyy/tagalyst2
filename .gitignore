@@ -8,4 +8,5 @@ package-lock.json
 # remove js
 options/options.js
 content/content.js
+content/markdown.js
 dist/
