@@ -147,7 +147,7 @@
     transition: width .25s ease, padding .25s ease, border-radius .25s ease;
 }
 
-#ext-overview-ruler:hover {
+#ext-overview-ruler.ext-overview-expandable:hover {
     width: 60px;
     padding: 10px 8px;
     border-radius: 1rem;
@@ -219,7 +219,7 @@
     background: #a15bfd;
 }
 
-#ext-overview-ruler:hover .ext-overview-marker[data-kind="message"] {
+#ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"] {
     left: 10px;
     right: auto;
     width: auto;
@@ -229,19 +229,19 @@
     transform: translateY(-50%);
 }
 
-#ext-overview-ruler:hover .ext-overview-marker[data-kind="message"]::after {
+#ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"]::after {
     content: attr(data-label);
 }
 
-#ext-overview-ruler:hover .ext-overview-marker[data-kind="star"] {
+#ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="star"] {
     left: 22px;
 }
 
-#ext-overview-ruler:hover .ext-overview-marker[data-kind="tag"] {
+#ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="tag"] {
     left: 34px;
 }
 
-#ext-overview-ruler:hover .ext-overview-marker[data-kind="search"] {
+#ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="search"] {
     left: 46px;
 }
 

@@ -238,6 +238,10 @@ class ConfigService {
         return !!config.overviewEnabled;
     }
 
+    doesOverviewExpand() {
+        return !!config.overviewExpands;
+    }
+
     private notify() {
         this.listeners.forEach(listener => listener(config));
     }
@@ -264,6 +268,7 @@ const contentDefaultConfig = {
     overviewEnabled: true,
     searchExpands: true,
     tagsExpands: true,
+    overviewExpands: true,
 };
 let config = { ...contentDefaultConfig };
 let activeThreadAdapter: ThreadAdapter | null = null;
@@ -966,6 +971,7 @@ class OverviewRulerController {
     private lastMessageAnchor: HTMLElement | null = null;
     private viewportEl: HTMLElement | null = null;
     private lastAdapters: MessageAdapter[] = [];
+    private rulerCanExpand = true;
 
     private readonly handleViewportChange = () => {
         if (!this.container) return;
@@ -981,6 +987,7 @@ class OverviewRulerController {
         if (this.root) {
             this.container = container;
             this.updatePosition(container);
+            this.applyExpandState();
             return this.root;
         }
         const root = document.createElement('div');
@@ -1007,6 +1014,7 @@ class OverviewRulerController {
         this.container = container;
         window.addEventListener('scroll', this.handleViewportChange, { passive: true });
         window.addEventListener('resize', this.handleViewportChange);
+        this.applyExpandState();
         this.updatePosition(container);
         return root;
     }
@@ -1062,6 +1070,18 @@ class OverviewRulerController {
         this.searchMarkerData = [];
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
+        this.rulerCanExpand = true;
+    }
+
+    setExpandable(enabled: boolean) {
+        this.rulerCanExpand = enabled;
+        this.applyExpandState();
+    }
+
+    private applyExpandState() {
+        if (this.root) {
+            this.root.classList.toggle('ext-overview-expandable', this.rulerCanExpand);
+        }
     }
 
     private updatePosition(container: HTMLElement) {
@@ -1387,6 +1407,7 @@ focusController.attachSelectionSync(() => {
 });
 configService.onChange(cfg => {
     topPanelController.updateConfigUI();
+    overviewRulerController.setExpandable(!!cfg.overviewExpands);
     if (!cfg.overviewEnabled) {
         overviewRulerController.reset();
     } else {
@@ -2236,6 +2257,7 @@ class BootstrapOrchestrator {
         topPanelController.updateConfigUI();
         if (configService.isOverviewEnabled() && this.hasMessages(container)) {
             overviewRulerController.ensure(container);
+            overviewRulerController.setExpandable(configService.doesOverviewExpand());
         } else {
             overviewRulerController.reset();
         }
