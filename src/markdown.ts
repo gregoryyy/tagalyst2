@@ -34,6 +34,8 @@ class MarkdownSerializer {
         const el = node as HTMLElement;
         const katex = this.tryRenderKatex(el, ctx);
         if (katex !== null) return katex;
+        const rich = this.tryRenderInlineRich(el);
+        if (rich !== null) return rich;
         const tag = el.tagName.toLowerCase();
         switch (tag) {
             case 'p':
@@ -269,5 +271,17 @@ class MarkdownSerializer {
         }
         const inlineTex = trimmed.replace(/\s+/g, ' ');
         return `$${inlineTex}$`;
+    }
+
+    private tryRenderInlineRich(el: HTMLElement) {
+        if (!el.classList) return null;
+        const classes = Array.from(el.classList);
+        const richClasses = ['widget-inline', 'callout', 'attachment-card', 'attachment'];
+        const hasRichClass = classes.some(cls => richClasses.includes(cls));
+        if (!hasRichClass) return null;
+        const text = el.textContent?.trim();
+        if (!text) return null;
+        const safe = text.replace(/`/g, '\\`').replace(/\s+/g, ' ');
+        return `\`${safe}\``;
     }
 }

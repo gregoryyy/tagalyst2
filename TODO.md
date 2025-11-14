@@ -13,7 +13,8 @@ Behavioral Bugs:
   - topmost toolbar hides ChatGPT control (Share) DONE
   - when outside conversation view, hide toolbars
 - export:
-  - filter out UI and extension stuff
+  - filter out UI and extension stuff DONE
+  - handle LaTeX export DONE
   - allow targeted exports (stars, filter results, tags)
 - keep tags and annotations displayed when editing DONE
 - when user clicks a new focus that isn't a chat (project overview), clear toolbar state
@@ -45,21 +46,22 @@ Features:
     - BUG: after search or tag selection, becomes unresponsive FIXED
   - no star leads to navigate between plain (user) messages
     - BUG: Opening a chat should recognize if there's a star already
-  - export filters by focused items
-    - BUG: control stuff included, no full markup
+  - export filters by focused items DONE
+    - BUG: control stuff included, no full markup FIXED
   - overview ruler DONE
+    - more expressive overview ruler content, hover expand option
     - act like a scrollbar:click into track navigates, drag on thumb
       - BUG: no reasonable dragging
     - act like a diff ruler: click on focus item navigates
 - export without UI content but with:
   - links to graphics
-  - mathematical content, i.e., KaTeX
+  - mathematical content, i.e., KaTeX DONE
   - canvas and listings
 - Text range markup within responses
 - Cross-chat operations:
   - search including tags and annotations --> search results on dedicated dialog
   - create document from tags and annotations
-- Export visible thread to Markdown (DOM-only)
+- Export visible thread to Markdown (DOM-only) DONE
   - Selection within thread: tags, stars, search results
   - Assemble across threads: export session
 - Optional Shadow DOM for toolbar isolation
