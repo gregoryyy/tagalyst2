@@ -1821,12 +1821,14 @@ class HighlightController {
         const viewportRightLimit = window.scrollX + viewportWidth - offsetWidth - 8;
         const targetLeft = window.scrollX + rect.left + (rect.width - offsetWidth) / 2;
         const left = Math.max(minLeft, Math.min(viewportRightLimit, targetLeft));
-        const spaceBelow = viewportHeight - rect.bottom;
-        const targetTop = spaceBelow > offsetHeight + 16
-            ? window.scrollY + rect.bottom + 8
-            : window.scrollY + rect.top - offsetHeight - 8;
+        const preferredTop = window.scrollY + rect.bottom + 12;
         const minTop = window.scrollY + 8;
-        const top = Math.max(minTop, targetTop);
+        const maxTop = window.scrollY + viewportHeight - offsetHeight - 8;
+        let top = preferredTop;
+        if (top > maxTop) {
+            const fallback = window.scrollY + rect.top - offsetHeight - 12;
+            top = Math.max(Math.min(fallback, maxTop), minTop);
+        }
         menu.style.top = `${top}px`;
         menu.style.left = `${left}px`;
     }
@@ -1846,14 +1848,21 @@ class HighlightController {
         const menu = document.createElement('div');
         menu.className = 'ext-highlight-menu';
         Utils.markExtNode(menu);
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = 'Highlight';
-        button.onclick = (evt) => this.handleSelectionAction(evt);
-        menu.appendChild(button);
+        const highlightBtn = document.createElement('button');
+        highlightBtn.type = 'button';
+        highlightBtn.textContent = 'Highlight';
+        highlightBtn.className = 'ext-highlight-menu-btn';
+        highlightBtn.onclick = (evt) => this.handleSelectionAction(evt);
+        const annotateBtn = document.createElement('button');
+        annotateBtn.type = 'button';
+        annotateBtn.textContent = 'Annotate';
+        annotateBtn.className = 'ext-highlight-menu-btn ext-highlight-annotate';
+        annotateBtn.onclick = (evt) => this.handleAnnotateAction(evt);
+        menu.appendChild(highlightBtn);
+        menu.appendChild(annotateBtn);
         document.body.appendChild(menu);
         this.selectionMenu = menu;
-        this.selectionButton = button;
+        this.selectionButton = highlightBtn;
         menu.style.display = 'none';
         return menu;
     }
@@ -1890,6 +1899,15 @@ class HighlightController {
         }
         const selection = window.getSelection();
         selection?.removeAllRanges();
+        this.hideSelectionMenu();
+    }
+
+    private handleAnnotateAction(evt: MouseEvent) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const message = this.selectionMessage;
+        if (!message || !this.selectionText?.trim()) return;
+        editorController.openNoteEditor(message, Utils.getThreadKey());
         this.hideSelectionMenu();
     }
 }

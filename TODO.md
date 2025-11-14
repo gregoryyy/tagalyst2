@@ -48,7 +48,7 @@ Features:
     - BUG: Opening a chat should recognize if there's a star already
   - export filters by focused items DONE
     - BUG: control stuff included, no full markup FIXED
-  - overview ruler DONE
+  - overview ruler ONGOING --> feature/overview_ruler
     - more expressive overview ruler content, hover expand option
     - act like a scrollbar:click into track navigates, drag on thumb
       - BUG: no reasonable dragging
@@ -57,7 +57,9 @@ Features:
   - links to graphics
   - mathematical content, i.e., KaTeX DONE
   - canvas and listings DONE
-- Text range markup within responses
+- Text range markup within responses ONGOING --> feature/text_highlight
+  - annotate markup
+  - show highlights in overview ruler --> after merge feature/text_highlight, feature/overview_ruler
 - Cross-chat operations:
   - search including tags and annotations --> search results on dedicated dialog
   - create document from tags and annotations
@@ -65,3 +67,10 @@ Features:
   - Selection within thread: tags, stars, search results
   - Assemble across threads: export session
 - Optional Shadow DOM for toolbar isolation
+
+Moonshot:
+- text-based interface that allows text-based interaction with the texts
+  - using WebLLM with finetuning
+  - command API to internal extension functions
+- user agent
+  - use case: create glossary of what has been discussed
