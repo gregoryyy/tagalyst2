@@ -2096,8 +2096,10 @@ class ThreadActions {
      * Toggles the collapsed state for one message block.
      */
     collapse(el: HTMLElement, yes: boolean) {
-        el.classList.toggle('ext-collapsed', !!yes);
+        const collapsed = !!yes;
+        el.classList.toggle('ext-collapsed', collapsed);
         this.syncCollapseButton(el);
+        this.toggleMessageAttachments(el, collapsed);
     }
     
     /**
@@ -2125,6 +2127,36 @@ class ThreadActions {
 
     private getCollapseButton(el: HTMLElement) {
         return el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-collapse');
+    }
+
+    private toggleMessageAttachments(el: HTMLElement, collapsed: boolean) {
+        const parent = el.parentElement;
+        if (!parent) return;
+        const toggleNode = (node: Element | null) => {
+            if (!node) return;
+            if (this.isAttachmentNode(node)) {
+                node.classList.toggle('ext-hidden-attachment', collapsed);
+            }
+        };
+        let next = el.nextElementSibling;
+        while (next && !next.getAttribute('data-message-author-role')) {
+            toggleNode(next);
+            next = next.nextElementSibling;
+        }
+        let prev = el.previousElementSibling;
+        while (prev && !prev.getAttribute('data-message-author-role')) {
+            toggleNode(prev);
+            prev = prev.previousElementSibling;
+        }
+    }
+
+    private isAttachmentNode(node: Element) {
+        if (node.querySelector('canvas')) return true;
+        const id = node.id || '';
+        if (id.startsWith('textdoc-message') || id === 'codemirror') return true;
+        if (node.classList?.contains('textdoc-message')) return true;
+        if (node.querySelector('.cm-editor')) return true;
+        return false;
     }
 } // ThreadActions
 
