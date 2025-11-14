@@ -156,13 +156,14 @@
 .ext-overview-ruler-track {
     position: absolute;
     inset: 0;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
 }
 
 .ext-overview-marker-layer {
     position: absolute;
     inset: 0;
-    pointer-events: auto;
+    pointer-events: none;
     z-index: 3;
 }
 

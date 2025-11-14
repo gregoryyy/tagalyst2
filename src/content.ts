@@ -993,15 +993,18 @@ class OverviewRulerController {
         if (!target) return;
         const value = Number(target.dataset.docCenter);
         if (!Number.isFinite(value)) return;
-        const top = Math.max(0, value - window.innerHeight / 2);
-        window.scrollTo({ top, behavior: 'smooth' });
+        const viewport = this.getViewportHeight();
+        const top = Math.max(0, value - viewport / 2);
+        this.scrollContainerTo(top, 'smooth');
     };
     private pendingLayoutFrame: number | null = null;
     private pendingEntries: OverviewEntry[] | null = null;
     private pendingContainer: HTMLElement | null = null;
+    private scrollContainer: HTMLElement | null = null;
     private trackHandlersBound = false;
     private trackDragActive = false;
     private suppressNextClick = false;
+    private scrollEventTarget: EventTarget | null = null;
     private readonly handleTrackClick = (evt: MouseEvent) => this.onTrackClick(evt);
     private readonly handleTrackMouseDown = (evt: MouseEvent) => this.onTrackMouseDown(evt);
     private readonly handleTrackMouseMove = (evt: MouseEvent) => this.onTrackMouseMove(evt);
@@ -1021,8 +1024,10 @@ class OverviewRulerController {
     ensure(container: HTMLElement) {
         if (this.root) {
             this.container = container;
+            this.attachScrollContainer(container);
             this.updatePosition(container);
             this.applyExpandState();
+            this.bindTrackHandlers();
             return this.root;
         }
         const root = document.createElement('div');
@@ -1051,7 +1056,7 @@ class OverviewRulerController {
         this.focusMarkerLayer = focusLayer;
         this.viewportEl = viewport;
         this.container = container;
-        window.addEventListener('scroll', this.handleViewportChange, { passive: true });
+        this.attachScrollContainer(container);
         window.addEventListener('resize', this.handleViewportChange);
         this.applyExpandState();
         this.bindTrackHandlers();
@@ -1117,6 +1122,12 @@ class OverviewRulerController {
     }
 
     reset() {
+        if (this.trackHandlersBound && this.root) {
+            this.root.removeEventListener('click', this.handleTrackClick);
+            this.root.removeEventListener('mousedown', this.handleTrackMouseDown);
+            this.root.removeEventListener('wheel', this.handleTrackWheel);
+            this.trackHandlersBound = false;
+        }
         if (this.root?.parentElement) {
             this.root.parentElement.removeChild(this.root);
         }
@@ -1138,14 +1149,12 @@ class OverviewRulerController {
         this.starMarkerData = [];
         this.tagMarkerData = [];
         this.searchMarkerData = [];
-        window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
-        if (this.trackHandlersBound && this.root) {
-            this.root.removeEventListener('click', this.handleTrackClick);
-            this.root.removeEventListener('mousedown', this.handleTrackMouseDown);
-            this.root.removeEventListener('wheel', this.handleTrackWheel);
-            this.trackHandlersBound = false;
+        if (this.scrollEventTarget) {
+            (this.scrollEventTarget as any).removeEventListener('scroll', this.handleViewportChange);
+            this.scrollEventTarget = null;
         }
+        this.scrollContainer = null;
         this.endTrackDrag(true);
         this.rulerCanExpand = true;
         if (this.pendingLayoutFrame !== null) {
@@ -1189,8 +1198,8 @@ class OverviewRulerController {
     private updateViewportIndicator(scrollRange: { top: number; bottom: number }) {
         if (!this.viewportEl) return;
         const scrollHeight = Math.max(1, scrollRange.bottom - scrollRange.top);
-        const viewportTop = window.scrollY;
-        const viewportBottom = viewportTop + window.innerHeight;
+        const viewportTop = this.getScrollOffset();
+        const viewportBottom = viewportTop + this.getViewportHeight();
         const intersectionTop = Math.max(viewportTop, scrollRange.top);
         const intersectionBottom = Math.min(viewportBottom, scrollRange.bottom);
         const visibleSpan = Math.max(0, intersectionBottom - intersectionTop);
@@ -1443,6 +1452,61 @@ class OverviewRulerController {
         };
     }
 
+    private attachScrollContainer(container: HTMLElement) {
+        const candidate = this.findScrollContainer(container);
+        const target: EventTarget = candidate ?? window;
+        if (this.scrollEventTarget !== target) {
+            if (this.scrollEventTarget) {
+                (this.scrollEventTarget as any).removeEventListener('scroll', this.handleViewportChange);
+            }
+            (target as any).addEventListener('scroll', this.handleViewportChange, { passive: true });
+            this.scrollEventTarget = target;
+        }
+        this.scrollContainer = candidate;
+    }
+
+    private findScrollContainer(container: HTMLElement): HTMLElement | null {
+        const main = container.closest<HTMLElement>('main');
+        if (this.isScrollable(main)) return main;
+        const docScroll = document.scrollingElement as HTMLElement | null;
+        if (this.isScrollable(docScroll)) return docScroll;
+        return null;
+    }
+
+    private isScrollable(el: HTMLElement | null | undefined): el is HTMLElement {
+        if (!el) return false;
+        return el.scrollHeight - el.clientHeight > 8;
+    }
+
+    private getScrollOffset() {
+        return this.scrollContainer ? this.scrollContainer.scrollTop : window.scrollY;
+    }
+
+    private getViewportHeight() {
+        return this.scrollContainer ? this.scrollContainer.clientHeight : window.innerHeight;
+    }
+
+    private getViewportOriginOffset() {
+        if (!this.scrollContainer) return 0;
+        return this.scrollContainer.getBoundingClientRect().top;
+    }
+
+    private scrollContainerTo(top: number, behavior: ScrollBehavior) {
+        if (this.scrollContainer) {
+            this.scrollContainer.scrollTo({ top, behavior });
+        } else {
+            window.scrollTo({ top, behavior });
+        }
+    }
+
+    private scrollContainerBy(delta: number) {
+        if (this.scrollContainer) {
+            this.scrollContainer.scrollBy({ top: delta, behavior: 'auto' });
+        } else {
+            window.scrollBy({ top: delta, behavior: 'auto' });
+        }
+    }
+
     private bindTrackHandlers() {
         if (this.trackHandlersBound || !this.root) return;
         this.root.addEventListener('click', this.handleTrackClick);
@@ -1505,7 +1569,7 @@ class OverviewRulerController {
                 : 1;
         const delta = evt.deltaY * multiplier;
         console.debug('[overview] wheel', { delta });
-        window.scrollBy({ top: delta, behavior: 'auto' });
+        this.scrollContainerBy(delta);
     }
 
     private computeTrackRatio(evt: MouseEvent): number | null {
@@ -1518,10 +1582,13 @@ class OverviewRulerController {
     private scrollToRatio(ratio: number, behavior: ScrollBehavior = 'smooth') {
         if (!this.container) return;
         const scrollRange = this.computeScrollRange(this.container);
-        const scrollHeight = scrollRange.bottom - scrollRange.top - window.innerHeight;
-        if (scrollHeight <= 0) return;
-        const target = scrollRange.top + ratio * scrollHeight;
-        window.scrollTo({ top: target, behavior });
+        const viewport = this.getViewportHeight();
+        const minTop = scrollRange.top;
+        const maxTop = Math.max(scrollRange.top, scrollRange.bottom - viewport);
+        const span = Math.max(0, maxTop - minTop);
+        const target = minTop + span * ratio;
+        console.debug('[overview] scrollToRatio', { ratio, target, minTop, maxTop });
+        this.scrollContainerTo(target, behavior);
     }
 
     private computeBounds(container: HTMLElement) {
@@ -1617,16 +1684,18 @@ class OverviewRulerController {
         const topMessageRect = this.getTopAnchorRect(container);
         const bottomAnchorRect = this.getBottomAnchorRect(container);
         const lastMessageRect = this.getLastMessageRect();
+        const scrollTop = this.getScrollOffset();
+        const viewportOffset = this.getViewportOriginOffset();
         let top: number;
         if (topMessageRect) {
-            top = topMessageRect.top + window.scrollY;
+            top = scrollTop + (topMessageRect.top - viewportOffset);
         } else if (headerRect) {
-            top = headerRect.bottom + 4 + window.scrollY;
+            top = scrollTop + (headerRect.bottom - viewportOffset) + 4;
         } else {
-            top = containerRect.top + window.scrollY;
+            top = scrollTop + (containerRect.top - viewportOffset);
         }
         const bottomSource = lastMessageRect || bottomAnchorRect || containerRect;
-        let bottom = bottomSource.bottom + window.scrollY;
+        let bottom = scrollTop + (bottomSource.bottom - viewportOffset);
         if (bottom <= top) {
             bottom = top + 1;
         }
