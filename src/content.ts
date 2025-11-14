@@ -1540,17 +1540,21 @@ type HighlightEntry = {
     start: number;
     end: number;
     text: string;
+    annotation?: string;
 };
 
 class HighlightController {
     private selectionMenu: HTMLElement | null = null;
     private selectionButton: HTMLButtonElement | null = null;
+    private annotateButton: HTMLButtonElement | null = null;
+    private annotationPreview: HTMLElement | null = null;
     private selectionMessage: HTMLElement | null = null;
     private selectionCheckId: number | null = null;
     private selectionMode: 'add' | 'remove' | null = null;
     private selectionOffsets: { start: number; end: number } | null = null;
     private selectionText: string | null = null;
     private selectionTargetId: string | null = null;
+    private selectionTargetEntry: HighlightEntry | null = null;
     private initialized = false;
     private readonly highlightIdsByMessage = new Map<string, Set<string>>();
     private readonly activeHighlightNames = new Set<string>();
@@ -1691,6 +1695,7 @@ class HighlightController {
                 start: Number(entry?.start) || 0,
                 end: Number(entry?.end) || 0,
                 text: typeof entry?.text === 'string' ? entry.text : '',
+                annotation: typeof entry?.annotation === 'string' ? entry.annotation : '',
             }))
             .filter(entry => entry.end > entry.start)
             .sort((a, b) => a.start - b.start);
@@ -1790,9 +1795,11 @@ class HighlightController {
         if (match) {
             this.selectionMode = 'remove';
             this.selectionTargetId = match.id;
+            this.selectionTargetEntry = match;
         } else {
             this.selectionMode = 'add';
             this.selectionTargetId = null;
+            this.selectionTargetEntry = null;
         }
         this.showSelectionMenu(range);
     }
@@ -1810,6 +1817,18 @@ class HighlightController {
         if (!menu) return;
         if (this.selectionButton) {
             this.selectionButton.textContent = this.selectionMode === 'remove' ? 'Remove highlight' : 'Highlight';
+        }
+        if (this.annotateButton) {
+            this.annotateButton.disabled = this.selectionMode !== 'remove';
+        }
+        if (this.annotationPreview) {
+            if (this.selectionMode === 'remove' && this.selectionTargetEntry?.annotation) {
+                this.annotationPreview.textContent = this.selectionTargetEntry.annotation;
+                this.annotationPreview.style.display = '';
+            } else {
+                this.annotationPreview.textContent = '';
+                this.annotationPreview.style.display = 'none';
+            }
         }
         menu.style.display = 'flex';
         const rect = range.getBoundingClientRect();
@@ -1842,6 +1861,14 @@ class HighlightController {
         this.selectionOffsets = null;
         this.selectionText = null;
         this.selectionTargetId = null;
+        this.selectionTargetEntry = null;
+        if (this.annotationPreview) {
+            this.annotationPreview.textContent = '';
+            this.annotationPreview.style.display = 'none';
+        }
+        if (this.annotateButton) {
+            this.annotateButton.disabled = true;
+        }
     }
 
     private createSelectionMenu() {
@@ -1858,11 +1885,18 @@ class HighlightController {
         annotateBtn.textContent = 'Annotate';
         annotateBtn.className = 'ext-highlight-menu-btn ext-highlight-annotate';
         annotateBtn.onclick = (evt) => this.handleAnnotateAction(evt);
+        annotateBtn.disabled = true;
+        const notePreview = document.createElement('div');
+        notePreview.className = 'ext-highlight-note';
+        notePreview.style.display = 'none';
         menu.appendChild(highlightBtn);
         menu.appendChild(annotateBtn);
+        menu.appendChild(notePreview);
         document.body.appendChild(menu);
         this.selectionMenu = menu;
         this.selectionButton = highlightBtn;
+        this.annotateButton = annotateBtn;
+        this.annotationPreview = notePreview;
         menu.style.display = 'none';
         return menu;
     }
@@ -1891,6 +1925,7 @@ class HighlightController {
                 start: this.selectionOffsets.start,
                 end: this.selectionOffsets.end,
                 text: this.selectionText,
+                annotation: '',
             });
             highlights.sort((a, b) => a.start - b.start);
             value.highlights = highlights;
@@ -1902,14 +1937,41 @@ class HighlightController {
         this.hideSelectionMenu();
     }
 
-    private handleAnnotateAction(evt: MouseEvent) {
+    private async handleAnnotateAction(evt: MouseEvent) {
         evt.preventDefault();
         evt.stopPropagation();
+        if (this.selectionMode !== 'remove' || !this.selectionTargetEntry) return;
         const message = this.selectionMessage;
-        if (!message || !this.selectionText?.trim()) return;
-        editorController.openNoteEditor(message, Utils.getThreadKey());
-        this.hideSelectionMenu();
+        if (!message) return;
+        const adapter = messageMetaRegistry.resolveAdapter(message);
+        const threadKey = Utils.getThreadKey();
+        const value = await this.storage.readMessage(threadKey, adapter);
+        const highlights = this.normalizeHighlights(value.highlights);
+        const target = highlights.find(entry => entry.id === this.selectionTargetEntry?.id);
+        if (!target) return;
+        const next = window.prompt('Annotation for this highlight:', target.annotation || '');
+        if (next === null) return;
+        const trimmed = next.trim();
+        if (trimmed) {
+            target.annotation = trimmed;
+        } else {
+            delete target.annotation;
+        }
+        value.highlights = highlights;
+        await this.storage.writeMessage(threadKey, adapter, value);
+        this.applyHighlights(message, highlights, adapter, threadKey);
+        this.selectionTargetEntry = target;
+        if (this.annotationPreview) {
+            if (trimmed) {
+                this.annotationPreview.textContent = trimmed;
+                this.annotationPreview.style.display = '';
+            } else {
+                this.annotationPreview.textContent = '';
+                this.annotationPreview.style.display = 'none';
+            }
+        }
     }
+
 }
 
 const highlightController = new HighlightController(storageService);
