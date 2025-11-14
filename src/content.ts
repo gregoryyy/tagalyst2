@@ -961,7 +961,6 @@ class OverviewRulerController {
     private starMarkerData: MarkerDatum[] = [];
     private tagMarkerData: MarkerDatum[] = [];
     private searchMarkerData: MarkerDatum[] = [];
-    private pairPositionMap: Map<number, number> = new Map();
     private root: HTMLElement | null = null;
     private trackEl: HTMLElement | null = null;
     private container: HTMLElement | null = null;
@@ -1130,7 +1129,6 @@ class OverviewRulerController {
     private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
         const seenPairs = new Set<number>();
         let fallbackIndex = 0;
-        this.pairPositionMap.clear();
         const candidates: Array<{ docCenter: number; labelValue: number }> = [];
         for (const { adapter, pairIndex } of entries) {
             const el = adapter?.element;
@@ -1143,9 +1141,6 @@ class OverviewRulerController {
             const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
             if (!Number.isFinite(docCenter)) continue;
             const labelValue = typeof pairIndex === 'number' ? pairIndex + 1 : ++fallbackIndex;
-            if (typeof pairIndex === 'number') {
-                this.pairPositionMap.set(pairIndex, docCenter);
-            }
             candidates.push({ docCenter, labelValue });
         }
         const total = candidates.length;
@@ -1178,6 +1173,9 @@ class OverviewRulerController {
             return;
         }
         const query = (focusService.getSearchQuery() || '').toLowerCase();
+        const selectedTags = focusService.getTags();
+        const selectedTagSet = new Set(selectedTags.map(tag => tag.toLowerCase()));
+        const filterToSelectedTags = selectedTagSet.size > 0;
         const store = messageMetaRegistry.getStore();
         for (const adapter of adapters) {
             const el = adapter.element;
@@ -1187,29 +1185,21 @@ class OverviewRulerController {
             if (!Number.isFinite(docCenter)) continue;
             const meta = store.get(el);
             const tags = Array.isArray(meta?.value?.tags) ? meta.value.tags : [];
-            const pairIndex = typeof meta?.pairIndex === 'number'
-                ? meta.pairIndex
-                : typeof meta?.value?.pairIndex === 'number'
-                    ? meta.value.pairIndex
-                    : typeof (adapter as any).pairIndex === 'number'
-                        ? (adapter as any).pairIndex
-                        : null;
-            const mappedCenter = typeof pairIndex === 'number' ? this.pairPositionMap.get(pairIndex) : undefined;
-            const resolvedCenter = typeof mappedCenter === 'number' ? mappedCenter : docCenter;
+            const normalizedTags = tags.map(tag => tag.toLowerCase());
             if (meta?.value?.starred) {
-                starData.push({ docCenter: resolvedCenter, kind: 'star' });
+                starData.push({ docCenter, kind: 'star' });
             }
-            if (tags.length) {
-                tagData.push({ docCenter: resolvedCenter, kind: 'tag' });
+            if (filterToSelectedTags && normalizedTags.some(tag => selectedTagSet.has(tag))) {
+                tagData.push({ docCenter, kind: 'tag' });
             }
             if (query) {
                 const adapterText = (typeof (adapter as any).getText === 'function'
                     ? (adapter as any).getText()
                     : el.innerText || '').toLowerCase();
                 const note = typeof meta?.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
-                const hasTagMatch = tags.some(tag => tag.toLowerCase().includes(query));
+                const hasTagMatch = normalizedTags.some(tag => tag.includes(query));
                 if (adapterText.includes(query) || note.includes(query) || hasTagMatch) {
-                    searchData.push({ docCenter: resolvedCenter, kind: 'search' });
+                    searchData.push({ docCenter, kind: 'search' });
                 }
             }
         }
