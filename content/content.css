@@ -143,23 +143,19 @@
     background: var(--ext-toolbar-surface);
     box-shadow: var(--ext-toolbar-shadow);
     z-index: 2147483644;
-    padding: 4px 4px;
+    padding: 2px 2px;
     transition: width .25s ease, padding .25s ease, border-radius .25s ease;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover {
-    width: 60px;
+    width: 50px;
     padding: 10px 8px;
     border-radius: 1rem;
 }
 
 .ext-overview-ruler-track {
     position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 4px;
-    right: 4px;
-    border-radius: inherit;
+    inset: 0;
     pointer-events: none;
 }
 
@@ -192,45 +188,70 @@
 }
 
 .ext-overview-marker--message {
-    left: 1px;
-    right: 1px;
+    left: 0;
+    right: 0;
     transform: translateY(-50%);
-    height: 2px;
+    height: 1px;
     border-radius: 1px;
     background: rgba(120, 130, 150, .35);
 }
 
+.ext-overview-marker--message::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    color: rgba(30, 42, 68, .95);
+    opacity: 0;
+    transition: opacity .2s ease;
+}
+
 .ext-overview-marker--focus {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    opacity: .85;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    opacity: 1;
+}
+
+.ext-overview-marker--focus::after {
+    display: block;
+    font-size: 11px;
+    line-height: 1;
+    color: inherit;
+    content: '';
 }
 
 .ext-overview-marker--focus[data-kind="star"] {
-    background: #f2b400;
+    color: #f2b400;
+}
+.ext-overview-marker--focus[data-kind="star"]::after {
+    content: '★';
 }
 
 .ext-overview-marker--focus[data-kind="tag"] {
-    background: #4aa0ff;
+    color: #4aa0ff;
+}
+.ext-overview-marker--focus[data-kind="tag"]::after {
+    content: '●';
 }
 
 .ext-overview-marker--focus[data-kind="search"] {
-    background: #a15bfd;
+    color: #a15bfd;
+}
+.ext-overview-marker--focus[data-kind="search"]::after {
+    content: '■';
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"] {
-    left: 10px;
-    right: auto;
-    width: auto;
-    height: auto;
-    background: transparent;
-    color: rgba(30, 42, 68, .95);
-    transform: translateY(-50%);
+    left: 8px;
+    right: 8px;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"]::after {
-    content: attr(data-label);
+    opacity: 1;
+    left: 12px;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="star"] {
@@ -262,16 +283,14 @@
 }
 .ext-ruler-viewport {
     position: absolute;
-    left: 0;
-    right: 0;
+    left: -4px;
+    right: -4px;
     min-height: 14px;
     border-radius: 12px;
     background: transparent;
     border: 2px solid rgba(120, 130, 150, .95);
     pointer-events: none;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .65), 0 0 4px rgba(0, 0, 0, .15);
-    margin-left: -8px;
-    margin-right: -8px;
     z-index: 2;
 }
 

@@ -1110,7 +1110,7 @@ class OverviewRulerController {
         const intersectionTop = Math.max(viewportTop, scrollRange.top);
         const intersectionBottom = Math.min(viewportBottom, scrollRange.bottom);
         const visibleSpan = Math.max(0, intersectionBottom - intersectionTop);
-        if (visibleSpan <= 0 || scrollHeight <= 1) {
+        if (visibleSpan <= 0 || scrollHeight <= 1 || visibleSpan >= scrollHeight - 0.5) {
             this.viewportEl.style.display = 'none';
             return;
         }
