@@ -9,6 +9,7 @@
     "composite": true
   },
   "include": [
+    "../src/markdown.ts",
     "../src/content.ts",
     "../src/types/**/*.d.ts"
   ]
