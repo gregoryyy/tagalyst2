@@ -918,6 +918,15 @@ class TopPanelController {
         this.topPanelsEl.style.width = 'auto';
     }
 
+    focusSearchInput() {
+        if (!configService.isSearchEnabled()) return;
+        this.ensurePanels();
+        if (!this.searchInputEl) return;
+        this.searchInputEl.disabled = false;
+        this.searchInputEl.focus();
+        this.searchInputEl.select();
+    }
+
     reset() {
         this.topPanelsEl = null;
         this.tagListEl = null;
@@ -2252,6 +2261,133 @@ class HighlightController {
 const highlightController = new HighlightController(storageService);
 highlightController.init();
 
+type ShortcutAction =
+    | 'focusPrev'
+    | 'focusNext'
+    | 'collapseNonFocus'
+    | 'expandFocus'
+    | 'exportFocus'
+    | 'focusSearch'
+    | 'toggleStar'
+    | 'openTagEditor';
+type ShortcutConfigEntry = { action: ShortcutAction; combo: string };
+type ShortcutConfig = { shortcuts: ShortcutConfigEntry[] };
+
+class ShortcutManager {
+    private bindings = new Map<string, ShortcutAction>();
+    private initialized = false;
+
+    constructor(private readonly actions: Record<ShortcutAction, () => void>) { }
+
+    async init() {
+        if (this.initialized) return;
+        await this.loadConfig();
+        window.addEventListener('keydown', (evt) => this.onKeyDown(evt), true);
+        this.initialized = true;
+    }
+
+    private async loadConfig() {
+        try {
+            const url = chrome.runtime.getURL('shortcuts.json');
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = await res.json() as ShortcutConfig;
+            const entries = Array.isArray(json?.shortcuts) ? json.shortcuts : [];
+            entries.forEach(entry => {
+                if (!entry?.action || !entry?.combo) return;
+                if (!this.actions[entry.action]) return;
+                const combo = this.normalizeCombo(entry.combo);
+                if (!combo) return;
+                this.bindings.set(combo, entry.action);
+            });
+        } catch (err) {
+            console.warn('[Tagalyst] Failed to load shortcuts.json', err);
+        }
+    }
+
+    private onKeyDown(evt: KeyboardEvent) {
+        if (!this.bindings.size) return;
+        if (evt.defaultPrevented) return;
+        if (this.shouldIgnoreTarget(evt.target as HTMLElement | null)) return;
+        const combo = this.normalizeEvent(evt);
+        if (!combo) return;
+        const action = this.bindings.get(combo);
+        if (!action) return;
+        const handler = this.actions[action];
+        if (!handler) return;
+        evt.preventDefault();
+        handler();
+    }
+
+    private normalizeEvent(evt: KeyboardEvent) {
+        let key = evt.key;
+        if (!key) return null;
+        key = key.length === 1 ? key.toUpperCase() : key;
+        return this.composeCombo({
+            alt: evt.altKey,
+            ctrl: evt.ctrlKey,
+            meta: evt.metaKey,
+            shift: evt.shiftKey,
+        }, key);
+    }
+
+    private normalizeCombo(combo: string) {
+        const parts = combo.split('+').map(part => part.trim()).filter(Boolean);
+        if (!parts.length) return null;
+        const modifiers = { alt: false, ctrl: false, meta: false, shift: false };
+        let key = '';
+        for (const part of parts) {
+            const lower = part.toLowerCase();
+            switch (lower) {
+                case 'alt': modifiers.alt = true; break;
+                case 'ctrl':
+                case 'control': modifiers.ctrl = true; break;
+                case 'meta':
+                case 'cmd':
+                case 'command': modifiers.meta = true; break;
+                case 'shift': modifiers.shift = true; break;
+                default:
+                    if (!key) key = part.length === 1 ? part.toUpperCase() : part;
+                    break;
+            }
+        }
+        if (!key) return null;
+        return this.composeCombo(modifiers, key);
+    }
+
+    private composeCombo(mod: { alt: boolean; ctrl: boolean; meta: boolean; shift: boolean }, key: string) {
+        const tokens: string[] = [];
+        if (mod.ctrl) tokens.push('Ctrl');
+        if (mod.shift) tokens.push('Shift');
+        if (mod.alt) tokens.push('Alt');
+        if (mod.meta) tokens.push('Meta');
+        tokens.push(key.length === 1 ? key.toUpperCase() : key);
+        return tokens.join('+');
+    }
+
+    private shouldIgnoreTarget(target: HTMLElement | null) {
+        if (!target) return false;
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+        if (target.isContentEditable) return true;
+        return !!target.closest('[contenteditable=\"true\"]');
+    }
+}
+
+const shortcutActions: Record<ShortcutAction, () => void> = {
+    focusPrev: () => document.getElementById('ext-jump-star-prev')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    focusNext: () => document.getElementById('ext-jump-star-next')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    collapseNonFocus: () => document.getElementById('ext-collapse-unstarred')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    expandFocus: () => document.getElementById('ext-expand-starred')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    exportFocus: () => document.getElementById('ext-export-starred')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    focusSearch: () => focusSearchShortcut(),
+    toggleStar: () => toggleStarNearestMessage(),
+    openTagEditor: () => openTagEditorNearestMessage(),
+};
+
+const shortcutManager = new ShortcutManager(shortcutActions);
+shortcutManager.init();
+
 /**
  * Moves the caret to the end of a contenteditable element.
  */
@@ -2590,6 +2726,17 @@ class ToolbarController {
         focusController.setPageControls(null);
     }
 
+    async toggleStar(el: HTMLElement, threadKey: string) {
+        if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
+        const adapter = messageMetaRegistry.resolveAdapter(el);
+        const cur = await this.storage.readMessage(threadKey, adapter);
+        cur.starred = !cur.starred;
+        await this.storage.writeMessage(threadKey, adapter, cur);
+        this.updateBadges(el, threadKey, cur, adapter);
+        focusController.updateControlsUI();
+        overviewRulerController.refreshMarkers();
+    }
+
     private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'start', list?: HTMLElement[]) {
         const nodes = list || threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
@@ -2686,16 +2833,7 @@ class ToolbarController {
             collapseBtn.onclick = () => threadActions.collapse(el, !el.classList.contains('ext-collapsed'));
         }
         if (focusBtn) {
-            focusBtn.onclick = async () => {
-                if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
-                const adapter = messageMetaRegistry.resolveAdapter(el);
-                const cur = await this.storage.readMessage(threadKey, adapter);
-                cur.starred = !cur.starred;
-                await this.storage.writeMessage(threadKey, adapter, cur);
-                this.updateBadges(el, threadKey, cur, adapter);
-                focusController.updateControlsUI();
-                overviewRulerController.refreshMarkers();
-            };
+            focusBtn.onclick = () => this.toggleStar(el, threadKey);
         }
         if (tagBtn) tagBtn.onclick = () => editorController.openTagEditor(el, threadKey);
         if (noteBtn) noteBtn.onclick = () => editorController.openNoteEditor(el, threadKey);
@@ -3108,6 +3246,45 @@ class BootstrapOrchestrator {
 
 const toolbarController = new ToolbarController(focusService, storageService);
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
+
+function focusSearchShortcut() {
+    if (!getNearestMessageElement()) return;
+    topPanelController.focusSearchInput();
+}
+
+async function toggleStarNearestMessage() {
+    const el = getNearestMessageElement();
+    if (!el) return;
+    const threadKey = Utils.getThreadKey();
+    await toolbarController.toggleStar(el, threadKey);
+}
+
+function openTagEditorNearestMessage() {
+    const el = getNearestMessageElement();
+    if (!el) return;
+    const threadKey = Utils.getThreadKey();
+    editorController.openTagEditor(el, threadKey);
+}
+
+function getNearestMessageElement(): HTMLElement | null {
+    const container = threadDom.findTranscriptRoot();
+    if (!container) return null;
+    const nodes = threadDom.getNavigationNodes(container);
+    if (!nodes.length) return null;
+    const viewportCenter = window.scrollY + window.innerHeight / 2;
+    let closest: HTMLElement | null = null;
+    let smallest = Number.POSITIVE_INFINITY;
+    for (const node of nodes) {
+        const rect = node.getBoundingClientRect();
+        const center = window.scrollY + rect.top + rect.height / 2;
+        const dist = Math.abs(center - viewportCenter);
+        if (dist < smallest) {
+            smallest = dist;
+            closest = node;
+        }
+    }
+    return closest;
+}
 
 async function bootstrap(): Promise<void> {
     await bootstrapOrchestrator.run();

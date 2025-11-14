@@ -19,8 +19,13 @@ declare global {
         };
     }
 
+    interface ChromeRuntime {
+        getURL(path: string): string;
+    }
+
     interface Chrome {
         storage: ChromeStorage;
+        runtime: ChromeRuntime;
     }
 
     const chrome: Chrome;

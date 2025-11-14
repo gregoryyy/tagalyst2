@@ -1,0 +1,12 @@
+{
+  "shortcuts": [
+    { "action": "focusPrev", "combo": "Alt+Shift+ArrowUp" },
+    { "action": "focusNext", "combo": "Alt+Shift+ArrowDown" },
+    { "action": "collapseNonFocus", "combo": "Alt+Shift+C" },
+    { "action": "expandFocus", "combo": "Alt+Shift+E" },
+    { "action": "exportFocus", "combo": "Alt+Shift+X" },
+    { "action": "focusSearch", "combo": "Alt+Shift+S" },
+    { "action": "toggleStar", "combo": "Alt+Shift+F" },
+    { "action": "openTagEditor", "combo": "Alt+Shift+T" }
+  ]
+}
