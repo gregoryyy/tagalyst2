@@ -199,7 +199,7 @@
 .ext-overview-marker--message::after {
     content: attr(data-label);
     position: absolute;
-    left: 4px;
+    left: 3px;
     top: 50%;
     transform: translateY(-50%);
     font-size: 9px;
@@ -245,41 +245,41 @@
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"] {
-    left: 8px;
-    right: 8px;
+    left: 6px;
+    right: 0;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"]::after {
     opacity: 1;
-    left: 12px;
+    left: -2px;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="star"] {
-    left: 22px;
+    left: 18px;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="tag"] {
-    left: 34px;
+    left: 30px;
 }
 
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="search"] {
-    left: 46px;
+    left: 42px;
 }
 
 #ext-overview-ruler:hover .ext-overview-marker[data-kind="message"] {
-    left: 8px;
+    left: 6px;
 }
 
 #ext-overview-ruler:hover .ext-overview-marker[data-kind="star"] {
-    left: 20px;
+    left: 18px;
 }
 
 #ext-overview-ruler:hover .ext-overview-marker[data-kind="tag"] {
-    left: 32px;
+    left: 30px;
 }
 
 #ext-overview-ruler:hover .ext-overview-marker[data-kind="search"] {
-    left: 44px;
+    left: 42px;
 }
 .ext-ruler-viewport {
     position: absolute;
