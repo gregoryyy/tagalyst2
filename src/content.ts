@@ -1564,6 +1564,7 @@ class HighlightController {
     private readonly highlightIdsByMessage = new Map<string, Set<string>>();
     private readonly activeHighlightNames = new Set<string>();
     private readonly highlightMeta = new Map<string, { range: Range; annotation: string }>();
+    private readonly annotatedHighlightNames = new Set<string>();
     private highlightStyleEl: HTMLStyleElement | null = null;
     private hoverTooltip: HTMLElement | null = null;
     private hoverActiveId: string | null = null;
@@ -1590,6 +1591,7 @@ class HighlightController {
             (CSS as any).highlights.delete(name);
         }
         this.activeHighlightNames.clear();
+        this.annotatedHighlightNames.clear();
         this.highlightIdsByMessage.clear();
         this.highlightMeta.clear();
         this.syncHighlightStyle();
@@ -1613,6 +1615,11 @@ class HighlightController {
             ids.add(entry.id);
             this.activeHighlightNames.add(name);
             this.highlightMeta.set(entry.id, { range: built.range, annotation: entry.annotation || '' });
+            if (entry.annotation?.trim()) {
+                this.annotatedHighlightNames.add(name);
+            } else {
+                this.annotatedHighlightNames.delete(name);
+            }
         }
         if (ids.size) {
             this.highlightIdsByMessage.set(messageKey, ids);
@@ -1628,6 +1635,7 @@ class HighlightController {
             const name = this.getHighlightName(id);
             (CSS as any).highlights.delete(name);
             this.activeHighlightNames.delete(name);
+            this.annotatedHighlightNames.delete(name);
         }
         this.highlightIdsByMessage.delete(messageKey);
         for (const id of ids) {
@@ -1655,8 +1663,16 @@ class HighlightController {
             }
             return;
         }
-        const selectors = names.map(name => `::highlight(${name})`).join(', ');
-        const css = `${selectors} { background: rgba(255, 242, 168, .9); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 215, 64, .35); }`;
+        const plain = names.filter(name => !this.annotatedHighlightNames.has(name));
+        const annotated = names.filter(name => this.annotatedHighlightNames.has(name));
+        const segments: string[] = [];
+        if (plain.length) {
+            segments.push(`${plain.map(name => `::highlight(${name})`).join(', ')} { background: rgba(255, 242, 168, .9); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 215, 64, .35); }`);
+        }
+        if (annotated.length) {
+            segments.push(`${annotated.map(name => `::highlight(${name})`).join(', ')} { background: rgba(255, 190, 0, .5); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 120, 0, .45); }`);
+        }
+        const css = segments.join('\n');
         if (!this.highlightStyleEl) {
             this.highlightStyleEl = document.createElement('style');
             this.highlightStyleEl.id = 'ext-highlight-style';
