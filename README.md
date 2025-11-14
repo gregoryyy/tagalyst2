@@ -5,11 +5,14 @@ A Chrome extension that adds non-destructive UI on chat.openai.com / chatgpt.com
 - Tag and bookmark messages locally with inline editors; annotations and tags are managed via floating dialogs
 - Use the top-right Search + Tags panels (live filters) together with the bottom-right navigation stack to move through a thread
 - View tag frequencies, click any tag to focus matching messages, or type in the search box to filter responses before copying a Markdown snapshot (all or focus-only) via the MD Copy panel
+- Highlight any text range inside a prompt/response (with optional annotations), then revisit or remove those highlights later
+- Glance at the **overview ruler** that mirrors the thread from top to bottom so you can drag to scroll, click to jump, or inspect markers for message numbers, stars, tags, search hits, and highlights
 
 The guiding visual principle is polarity: ChatGPT keeps its affordances on the left, while Tagalyst draws its controls from the right (top-right panels, right-aligned per-message toolbars, bottom-right navigation). This keeps ownership clear at a glance.
 
 ## UI layout
 - **Top-right**: Search (type to match any prompt/response text) and Tags (click to toggle one or more tags) panels; these feed the focus controls described below. Feature toggles now live in the Chrome extension **Options** page.
+- **Left gutter**: the **Overview Ruler** (collapses to a slim line, expands on hover). Every message shows a horizontal hash with its number; focus markers (stars/tags/search hits) align in their own columns and the thumb mirrors the viewport. Click or drag anywhere on the ruler to scroll the actual thread. Toggle the ruler or its hover-expansion in the Options page.
 - **Bottom-right**: the navigation stack (Navigate / Collapse / Expand / Export) used to move around threads, batch actions, and trigger Markdown export.
 - **Per message**: a right-aligned toolbar (tags, annotations, star, collapse) plus a left-aligned pair number (`1.` `2.` …) so each exchange can be referenced quickly.
 
@@ -19,12 +22,17 @@ Tagalyst keeps one “focus” set at a time, which drives navigation, collapse/
 - **Stars (`☆`/`★`)** – default. Click the toolbar button on any message to bookmark it; navigation arrows (`★↑/★↓`), Collapse `☆`, Expand `★`, and the `★` MD Copy button operate on the starred subset.
 - **Tags (`○`/`●`)** – click any tag in the top-right list (multi-select is supported). The toolbar glyph switches to circles and fills whenever a message carries **any** of the selected tags. The per-message focus button is read-only in this mode because membership is derived from tags; navigation/export/collapse now operate on the highlighted tag matches. Disable tag filtering via the extension Options page if you want to hide the panel entirely.
 - **Search (`□`/`■`)** – typing in the Search panel swaps the glyph to squares and highlights every prompt/response that contains the query (case-insensitive substring). Controls again operate on the live search results, and clearing the search field returns to tags (if any) or stars.
-- **Extension Options** – open `chrome://extensions`, click **Tagalyst 2 → Details → Extension options**, and use the **Enable** column in the Features table to turn the Search and Tag panes on/off (the “Expands” column is a placeholder). Disabling a pane hides it and clears its state. The same page also shows current storage usage plus Import/Export controls and a “Delete” button if you need a full reset.
+- **Extension Options** – open `chrome://extensions`, click **Tagalyst 2 → Details → Extension options**, and use the **Enable** column in the Features table to turn the Search, Tag, and Overview surfaces on/off (each surface also has an “Expands” toggle that controls its hover widening behavior). Disabling a pane hides it and clears its state. The same page also shows current storage usage plus Import/Export controls and a “Delete” button if you need a full reset.
 
 The UI always reflects the active mode: the same glyph appears on the navigation buttons, Collapse/Expand focus controls, and the focus-only MD Copy action so it is clear which subset will move/export. Clear the search field and/or deselect tags to fall back to the base starred workflow.
 
-Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This version makes only light-weight assumptions and restricts to list item-level operations not actual text highlighting.
+Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This version makes only light-weight assumptions and keeps all overlays out-of-tree so highlights, toolbars, and markers survive DOM churn.
 
+## Text highlights & annotations
+- Select any text inside a single prompt or response to reveal the inline **Highlight / Annotate** palette. Highlights are stored per-message (alongside tags/notes) and rehydrated via the CSS Highlight API the next time the thread loads.
+- Clicking **Highlight** paints the selection with a soft yellow swatch; picking **Annotate** (available on existing highlights) lets you attach a short note that appears on hover.
+- Hovering over a highlight shows its annotation bubble; re-selecting an existing highlight switches the palette into “Remove highlight” mode so you can clear it or edit the note.
+- Highlights participate in the overview ruler: annotated snippets occupy the same track as their message lines so you can spot densely marked sections while scrolling.
 
 ## Install (Developer Mode)
 1. Clone or copy this folder.
