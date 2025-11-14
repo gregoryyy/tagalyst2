@@ -958,7 +958,7 @@ type MarkerDatum = {
     docCenter: number;
     visualCenter?: number | null;
     label?: string | null;
-    kind?: 'message' | 'star' | 'tag' | 'search';
+    kind?: 'message' | 'star' | 'tag' | 'search' | 'highlight';
 };
 
 type OverviewEntry = {
@@ -970,6 +970,9 @@ class OverviewRulerController {
     private messageMarkerLayer: HTMLElement | null = null;
     private messageMarkerPool: HTMLElement[] = [];
     private messageMarkerData: MarkerDatum[] = [];
+    private highlightMarkerLayer: HTMLElement | null = null;
+    private highlightMarkerPool: HTMLElement[] = [];
+    private highlightMarkerData: MarkerDatum[] = [];
     private focusMarkerLayer: HTMLElement | null = null;
     private focusMarkerPool: HTMLElement[] = [];
     private starMarkerData: MarkerDatum[] = [];
@@ -1012,11 +1015,14 @@ class OverviewRulerController {
         track.className = 'ext-overview-ruler-track';
         const messageLayer = document.createElement('div');
         messageLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--messages';
+        const highlightLayer = document.createElement('div');
+        highlightLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--highlights';
         const focusLayer = document.createElement('div');
         focusLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--focus';
         const viewport = document.createElement('div');
         viewport.className = 'ext-ruler-viewport';
         track.appendChild(messageLayer);
+        track.appendChild(highlightLayer);
         track.appendChild(focusLayer);
         track.appendChild(viewport);
         root.appendChild(track);
@@ -1025,6 +1031,7 @@ class OverviewRulerController {
         this.root = root;
         this.trackEl = track;
         this.messageMarkerLayer = messageLayer;
+        this.highlightMarkerLayer = highlightLayer;
         this.focusMarkerLayer = focusLayer;
         this.viewportEl = viewport;
         this.container = container;
@@ -1106,6 +1113,9 @@ class OverviewRulerController {
         this.messageMarkerLayer = null;
         this.messageMarkerPool = [];
         this.messageMarkerData = [];
+        this.highlightMarkerLayer = null;
+        this.highlightMarkerPool = [];
+        this.highlightMarkerData = [];
         this.focusMarkerLayer = null;
         this.focusMarkerPool = [];
         this.starMarkerData = [];
@@ -1173,7 +1183,18 @@ class OverviewRulerController {
 
     private layoutAllMarkers(scrollRange: { top: number; bottom: number }) {
         this.layoutMessageMarkers(scrollRange);
+        this.layoutHighlightMarkers(scrollRange);
         this.layoutSpecialMarkers(scrollRange);
+    }
+
+    private layoutHighlightMarkers(scrollRange: { top: number; bottom: number }) {
+        this.layoutMarkerSet({
+            layer: this.highlightMarkerLayer,
+            pool: this.highlightMarkerPool,
+            data: this.highlightMarkerData,
+            scrollRange,
+            className: 'ext-overview-marker ext-overview-marker--highlight'
+        });
     }
 
     private collectMessageMarkerData(entries: OverviewEntry[]): MarkerDatum[] {
@@ -1228,6 +1249,7 @@ class OverviewRulerController {
             this.starMarkerData = starData;
             this.tagMarkerData = tagData;
             this.searchMarkerData = searchData;
+            this.highlightMarkerData = [];
             return;
         }
         const query = (focusService.getSearchQuery() || '').toLowerCase();
@@ -1269,6 +1291,8 @@ class OverviewRulerController {
         this.starMarkerData = starData;
         this.tagMarkerData = tagData;
         this.searchMarkerData = searchData;
+        const threadKey = Utils.getThreadKey();
+        this.highlightMarkerData = highlightController.getOverviewMarkers(adapters, threadKey);
     }
 
     private layoutMessageMarkers(scrollRange: { top: number; bottom: number }) {
@@ -1334,6 +1358,15 @@ class OverviewRulerController {
                 marker.dataset.kind = datum.kind;
             } else {
                 delete marker.dataset.kind;
+            }
+            if (datum.kind === 'highlight') {
+                if (datum.label === 'annotated') {
+                    marker.dataset.annotated = 'true';
+                } else {
+                    delete marker.dataset.annotated;
+                }
+            } else {
+                delete marker.dataset.annotated;
             }
             if (datum.label) {
                 marker.dataset.label = datum.label;
@@ -1777,6 +1810,7 @@ class HighlightController {
         this.highlightMeta.clear();
         this.syncHighlightStyle();
         this.hideHoverTooltip();
+        overviewRulerController.refreshMarkers();
     }
 
     applyHighlights(messageEl: HTMLElement, highlights: any, adapter?: MessageAdapter | null, threadKey?: string) {
@@ -1806,6 +1840,7 @@ class HighlightController {
             this.highlightIdsByMessage.set(messageKey, ids);
         }
         this.syncHighlightStyle();
+        overviewRulerController.refreshMarkers();
     }
 
     private clearMessageHighlights(messageKey: string) {
@@ -1823,6 +1858,35 @@ class HighlightController {
             this.highlightMeta.delete(id);
         }
         this.syncHighlightStyle();
+        overviewRulerController.refreshMarkers();
+    }
+
+    getOverviewMarkers(adapters: MessageAdapter[], threadKey: string): MarkerDatum[] {
+        if (!this.cssHighlightSupported || !adapters?.length) return [];
+        const markers: MarkerDatum[] = [];
+        for (const adapter of adapters) {
+            const el = adapter?.element;
+            if (!el || !document.contains(el)) continue;
+            const key = this.getMessageKey(adapter, threadKey);
+            const ids = this.highlightIdsByMessage.get(key);
+            if (!ids?.size) continue;
+            for (const id of ids) {
+                const meta = this.highlightMeta.get(id);
+                const range = meta?.range;
+                if (!range) continue;
+                const rect = range.getBoundingClientRect();
+                if (!rect) continue;
+                const docCenter = rect.top + window.scrollY + (rect.height || 0) / 2;
+                if (!Number.isFinite(docCenter)) continue;
+                markers.push({
+                    docCenter,
+                    visualCenter: docCenter,
+                    kind: 'highlight',
+                    label: meta?.annotation ? 'annotated' : null
+                });
+            }
+        }
+        return markers;
     }
 
     private getMessageKey(adapter: MessageAdapter, threadKey: string) {
@@ -1851,7 +1915,7 @@ class HighlightController {
             segments.push(`${plain.map(name => `::highlight(${name})`).join(', ')} { background: rgba(255, 242, 168, .9); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 215, 64, .35); }`);
         }
         if (annotated.length) {
-            segments.push(`${annotated.map(name => `::highlight(${name})`).join(', ')} { background: rgba(255, 190, 0, .5); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 120, 0, .45); }`);
+            segments.push(`${annotated.map(name => `::highlight(${name})`).join(', ')} { background: rgba(170, 240, 200, .85); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(60, 170, 120, .45); }`);
         }
         const css = segments.join('\n');
         if (!this.highlightStyleEl) {
