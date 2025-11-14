@@ -162,7 +162,7 @@
 .ext-overview-marker-layer {
     position: absolute;
     inset: 0;
-    pointer-events: none;
+    pointer-events: auto;
     z-index: 3;
 }
 
@@ -193,6 +193,7 @@
     font-weight: 600;
     font-size: 9px;
     color: transparent;
+    cursor: pointer;
 }
 
 .ext-overview-marker--message {

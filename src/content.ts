@@ -988,9 +988,25 @@ class OverviewRulerController {
     private viewportEl: HTMLElement | null = null;
     private lastAdapters: MessageAdapter[] = [];
     private rulerCanExpand = true;
+    private readonly handleMarkerClick = (evt: MouseEvent) => {
+        const target = evt.currentTarget as HTMLElement | null;
+        if (!target) return;
+        const value = Number(target.dataset.docCenter);
+        if (!Number.isFinite(value)) return;
+        const top = Math.max(0, value - window.innerHeight / 2);
+        window.scrollTo({ top, behavior: 'smooth' });
+    };
     private pendingLayoutFrame: number | null = null;
     private pendingEntries: OverviewEntry[] | null = null;
     private pendingContainer: HTMLElement | null = null;
+    private trackHandlersBound = false;
+    private trackDragActive = false;
+    private suppressNextClick = false;
+    private readonly handleTrackClick = (evt: MouseEvent) => this.onTrackClick(evt);
+    private readonly handleTrackMouseDown = (evt: MouseEvent) => this.onTrackMouseDown(evt);
+    private readonly handleTrackMouseMove = (evt: MouseEvent) => this.onTrackMouseMove(evt);
+    private readonly handleTrackMouseUp = () => this.endTrackDrag();
+    private readonly handleTrackWheel = (evt: WheelEvent) => this.onTrackWheel(evt);
 
     private readonly handleViewportChange = () => {
         if (!this.container) return;
@@ -1038,6 +1054,7 @@ class OverviewRulerController {
         window.addEventListener('scroll', this.handleViewportChange, { passive: true });
         window.addEventListener('resize', this.handleViewportChange);
         this.applyExpandState();
+        this.bindTrackHandlers();
         this.updatePosition(container);
         return root;
     }
@@ -1123,6 +1140,13 @@ class OverviewRulerController {
         this.searchMarkerData = [];
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
+        if (this.trackHandlersBound && this.root) {
+            this.root.removeEventListener('click', this.handleTrackClick);
+            this.root.removeEventListener('mousedown', this.handleTrackMouseDown);
+            this.root.removeEventListener('wheel', this.handleTrackWheel);
+            this.trackHandlersBound = false;
+        }
+        this.endTrackDrag(true);
         this.rulerCanExpand = true;
         if (this.pendingLayoutFrame !== null) {
             cancelAnimationFrame(this.pendingLayoutFrame);
@@ -1384,6 +1408,7 @@ class OverviewRulerController {
         while (pool.length <= index) {
             const marker = document.createElement('div');
             marker.className = className;
+            marker.addEventListener('click', this.handleMarkerClick);
             layer.appendChild(marker);
             pool.push(marker);
         }
@@ -1416,6 +1441,87 @@ class OverviewRulerController {
             docCenter,
             visualCenter: messageCenter,
         };
+    }
+
+    private bindTrackHandlers() {
+        if (this.trackHandlersBound || !this.root) return;
+        this.root.addEventListener('click', this.handleTrackClick);
+        this.root.addEventListener('mousedown', this.handleTrackMouseDown);
+        this.root.addEventListener('wheel', this.handleTrackWheel, { passive: false });
+        this.trackHandlersBound = true;
+    }
+
+    private onTrackClick(evt: MouseEvent) {
+        if (!this.container || !this.root) return;
+        if (this.suppressNextClick) {
+            this.suppressNextClick = false;
+            return;
+        }
+        console.debug('[overview] click', { y: evt.clientY });
+        const ratio = this.computeTrackRatio(evt);
+        if (ratio === null) return;
+        this.scrollToRatio(ratio);
+    }
+
+    private onTrackMouseDown(evt: MouseEvent) {
+        if (evt.button !== 0) return;
+        if (!this.container) return;
+        evt.preventDefault();
+        evt.stopPropagation();
+        console.debug('[overview] drag-start', { y: evt.clientY });
+        this.trackDragActive = true;
+        this.suppressNextClick = false;
+        document.addEventListener('mousemove', this.handleTrackMouseMove, true);
+        document.addEventListener('mouseup', this.handleTrackMouseUp, true);
+    }
+
+    private onTrackMouseMove(evt: MouseEvent) {
+        if (!this.trackDragActive) return;
+        console.debug('[overview] drag-move', { y: evt.clientY });
+        const ratio = this.computeTrackRatio(evt);
+        if (ratio === null) return;
+        this.suppressNextClick = true;
+        this.scrollToRatio(ratio, 'auto');
+    }
+
+    private endTrackDrag(force = false) {
+        if (!this.trackDragActive && !force) return;
+        if (this.trackDragActive) {
+            console.debug('[overview] drag-end');
+        }
+        this.trackDragActive = false;
+        document.removeEventListener('mousemove', this.handleTrackMouseMove, true);
+        document.removeEventListener('mouseup', this.handleTrackMouseUp, true);
+    }
+
+    private onTrackWheel(evt: WheelEvent) {
+        if (!this.container) return;
+        evt.preventDefault();
+        evt.stopPropagation();
+        const multiplier = evt.deltaMode === 2
+            ? window.innerHeight
+            : evt.deltaMode === 1
+                ? 16
+                : 1;
+        const delta = evt.deltaY * multiplier;
+        console.debug('[overview] wheel', { delta });
+        window.scrollBy({ top: delta, behavior: 'auto' });
+    }
+
+    private computeTrackRatio(evt: MouseEvent): number | null {
+        const trackRect = this.root?.getBoundingClientRect();
+        if (!trackRect || !trackRect.height) return null;
+        const ratio = (evt.clientY - trackRect.top) / trackRect.height;
+        return Math.min(1, Math.max(0, ratio));
+    }
+
+    private scrollToRatio(ratio: number, behavior: ScrollBehavior = 'smooth') {
+        if (!this.container) return;
+        const scrollRange = this.computeScrollRange(this.container);
+        const scrollHeight = scrollRange.bottom - scrollRange.top - window.innerHeight;
+        if (scrollHeight <= 0) return;
+        const target = scrollRange.top + ratio * scrollHeight;
+        window.scrollTo({ top: target, behavior });
     }
 
     private computeBounds(container: HTMLElement) {
