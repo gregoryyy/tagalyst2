@@ -961,6 +961,11 @@ type MarkerDatum = {
     kind?: 'message' | 'star' | 'tag' | 'search';
 };
 
+type OverviewEntry = {
+    adapter: MessageAdapter;
+    pairIndex?: number | null;
+};
+
 class OverviewRulerController {
     private messageMarkerLayer: HTMLElement | null = null;
     private messageMarkerPool: HTMLElement[] = [];
@@ -980,6 +985,9 @@ class OverviewRulerController {
     private viewportEl: HTMLElement | null = null;
     private lastAdapters: MessageAdapter[] = [];
     private rulerCanExpand = true;
+    private pendingLayoutFrame: number | null = null;
+    private pendingEntries: OverviewEntry[] | null = null;
+    private pendingContainer: HTMLElement | null = null;
 
     private readonly handleViewportChange = () => {
         if (!this.container) return;
@@ -1027,9 +1035,36 @@ class OverviewRulerController {
         return root;
     }
 
-    update(container: HTMLElement, entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>) {
+    update(container: HTMLElement, entries: OverviewEntry[]) {
         if (!entries.length) return;
         this.ensure(container);
+        if (!this.root) return;
+        this.pendingContainer = container;
+        this.pendingEntries = entries;
+        this.requestDeferredLayout();
+    }
+
+    private requestDeferredLayout() {
+        if (this.pendingLayoutFrame !== null) return;
+        const runSecondFrame = () => {
+            this.pendingLayoutFrame = null;
+            this.flushPendingUpdate();
+        };
+        const runFirstFrame = () => {
+            this.pendingLayoutFrame = requestAnimationFrame(runSecondFrame);
+        };
+        this.pendingLayoutFrame = requestAnimationFrame(runFirstFrame);
+    }
+
+    private flushPendingUpdate() {
+        const container = this.pendingContainer;
+        const entries = this.pendingEntries;
+        this.pendingEntries = null;
+        if (!container || !entries?.length) return;
+        this.performUpdate(container, entries);
+    }
+
+    private performUpdate(container: HTMLElement, entries: OverviewEntry[]) {
         if (!this.trackEl || !this.root) return;
         this.container = container;
         this.lastAdapters = entries.map(entry => entry.adapter);
@@ -1079,6 +1114,12 @@ class OverviewRulerController {
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
         this.rulerCanExpand = true;
+        if (this.pendingLayoutFrame !== null) {
+            cancelAnimationFrame(this.pendingLayoutFrame);
+            this.pendingLayoutFrame = null;
+        }
+        this.pendingEntries = null;
+        this.pendingContainer = null;
     }
 
     setExpandable(enabled: boolean) {
@@ -1135,7 +1176,7 @@ class OverviewRulerController {
         this.layoutSpecialMarkers(scrollRange);
     }
 
-    private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
+    private collectMessageMarkerData(entries: OverviewEntry[]): MarkerDatum[] {
         const seenPairs = new Set<number>();
         let fallbackIndex = 0;
         const candidates: Array<{ docCenter: number; visualCenter: number; labelValue: number }> = [];
