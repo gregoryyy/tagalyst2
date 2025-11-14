@@ -169,6 +169,8 @@
 .ext-overview-marker-layer--messages {
     --marker-color: rgba(90, 102, 120, .75);
     z-index: 1;
+    top: 4px;
+    bottom: 4px;
 }
 
 .ext-overview-marker-layer--focus {
