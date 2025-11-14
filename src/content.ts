@@ -760,6 +760,26 @@ class TopPanelController {
         return wrap;
     }
 
+    teardown() {
+        const wrap = this.topPanelsEl;
+        if (wrap) {
+            wrap.remove();
+        }
+        this.topPanelsEl = null;
+        this.tagListEl = null;
+        this.searchInputEl = null;
+        this.searchResultCountEl = null;
+        this.lastTagSignature = '';
+        (['search', 'tags'] as const).forEach(panel => {
+            const state = this.frameState[panel];
+            if (state.timer) {
+                clearTimeout(state.timer);
+                state.timer = null;
+            }
+            state.el = null;
+        });
+    }
+
     updateTagList(counts: Array<{ tag: string; count: number }>) {
         this.ensurePanels();
         const tagsEnabled = configService.areTagsEnabled();
@@ -2564,6 +2584,12 @@ class ToolbarController {
         focusController.setPageControls(controlsState);
     }
 
+    removePageControls() {
+        const controls = document.getElementById('ext-page-controls');
+        if (controls) controls.remove();
+        focusController.setPageControls(null);
+    }
+
     private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'start', list?: HTMLElement[]) {
         const nodes = list || threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
@@ -2963,15 +2989,6 @@ class BootstrapOrchestrator {
         const container = threadDom.findTranscriptRoot();
 
         const threadKey = Utils.getThreadKey();
-        this.toolbar.ensurePageControls(container, threadKey);
-        topPanelController.ensurePanels();
-        topPanelController.updateConfigUI();
-        if (configService.isOverviewEnabled() && this.hasMessages(container)) {
-            overviewRulerController.ensure(container);
-            overviewRulerController.setExpandable(configService.doesOverviewExpand());
-        } else {
-            overviewRulerController.reset();
-        }
 
         const render = async () => {
             if (this.refreshRunning) {
@@ -2991,7 +3008,22 @@ class BootstrapOrchestrator {
                         key: messageAdapter.storageKey(threadKey),
                         pairIndex: pairMap.get(messageAdapter) ?? null,
                     }));
-                    if (!entries.length) break;
+                    if (!entries.length) {
+                        this.toolbar.removePageControls();
+                        topPanelController.teardown();
+                        overviewRulerController.reset();
+                        break;
+                    }
+                    this.toolbar.ensurePageControls(container, threadKey);
+                    topPanelController.ensurePanels();
+                    topPanelController.updateConfigUI();
+                    topPanelController.syncWidth();
+                    if (configService.isOverviewEnabled()) {
+                        overviewRulerController.ensure(container);
+                        overviewRulerController.setExpandable(configService.doesOverviewExpand());
+                    } else {
+                        overviewRulerController.reset();
+                    }
                     const keys = entries.map(e => e.key);
                     const store = await this.storage.read(keys);
                     const tagCounts = new Map<string, number>();

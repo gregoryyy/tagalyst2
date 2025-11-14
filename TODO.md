@@ -57,10 +57,11 @@ Features:
   - links to graphics
   - mathematical content, i.e., KaTeX DONE
   - canvas and listings DONE
-- Text range markup within responses ONGOING --> feature/text_highlight
-  - annotate markup
-  - show highlights in overview ruler --> after merge feature/text_highlight, feature/overview_ruler
-- Cross-chat operations:
+- Text range markup within responses DONE <-- feature/text_highlight
+  - annotate markup DONE
+  - show highlights in overview ruler <-- after merge feature/text_highlight, feature/overview_ruler
+  - use overview ruler to navigate (mouse) ONGOING --> 3-navigation-through-overview-ruler
+- Cross-chat operations: ONGOING --> 7-navigation-improvements
   - search including tags and annotations --> search results on dedicated dialog
   - create document from tags and annotations
 - Export visible thread to Markdown (DOM-only) DONE
