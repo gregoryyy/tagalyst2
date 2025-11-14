@@ -961,6 +961,7 @@ class OverviewRulerController {
     private starMarkerData: MarkerDatum[] = [];
     private tagMarkerData: MarkerDatum[] = [];
     private searchMarkerData: MarkerDatum[] = [];
+    private pairPositionMap: Map<number, number> = new Map();
     private root: HTMLElement | null = null;
     private trackEl: HTMLElement | null = null;
     private container: HTMLElement | null = null;
@@ -1127,9 +1128,10 @@ class OverviewRulerController {
     }
 
     private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
-        const data: MarkerDatum[] = [];
         const seenPairs = new Set<number>();
         let fallbackIndex = 0;
+        this.pairPositionMap.clear();
+        const candidates: Array<{ docCenter: number; labelValue: number }> = [];
         for (const { adapter, pairIndex } of entries) {
             const el = adapter?.element;
             if (!el || !document.contains(el)) continue;
@@ -1140,10 +1142,29 @@ class OverviewRulerController {
             const rect = el.getBoundingClientRect();
             const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
             if (!Number.isFinite(docCenter)) continue;
-            const label = typeof pairIndex === 'number' ? String(pairIndex + 1) : String(++fallbackIndex);
-            data.push({ docCenter, label, kind: 'message' });
+            const labelValue = typeof pairIndex === 'number' ? pairIndex + 1 : ++fallbackIndex;
+            if (typeof pairIndex === 'number') {
+                this.pairPositionMap.set(pairIndex, docCenter);
+            }
+            candidates.push({ docCenter, labelValue });
         }
-        return data;
+        const total = candidates.length;
+        let step = 1;
+        if (total < 30) {
+            step = 1;
+        } else if (total < 60) {
+            step = 5;
+        } else if (total < 120) {
+            step = 10;
+        } else if (total < 200) {
+            step = 20;
+        } else {
+            step = 20;
+        }
+        return candidates.map(({ docCenter, labelValue }) => {
+            const label = step === 1 || labelValue % step === 0 ? String(labelValue) : null;
+            return { docCenter, label, kind: 'message' };
+        });
     }
 
     private collectSpecialMarkerData(adapters: MessageAdapter[] = this.lastAdapters) {
@@ -1166,11 +1187,20 @@ class OverviewRulerController {
             if (!Number.isFinite(docCenter)) continue;
             const meta = store.get(el);
             const tags = Array.isArray(meta?.value?.tags) ? meta.value.tags : [];
+            const pairIndex = typeof meta?.pairIndex === 'number'
+                ? meta.pairIndex
+                : typeof meta?.value?.pairIndex === 'number'
+                    ? meta.value.pairIndex
+                    : typeof (adapter as any).pairIndex === 'number'
+                        ? (adapter as any).pairIndex
+                        : null;
+            const mappedCenter = typeof pairIndex === 'number' ? this.pairPositionMap.get(pairIndex) : undefined;
+            const resolvedCenter = typeof mappedCenter === 'number' ? mappedCenter : docCenter;
             if (meta?.value?.starred) {
-                starData.push({ docCenter, kind: 'star' });
+                starData.push({ docCenter: resolvedCenter, kind: 'star' });
             }
             if (tags.length) {
-                tagData.push({ docCenter, kind: 'tag' });
+                tagData.push({ docCenter: resolvedCenter, kind: 'tag' });
             }
             if (query) {
                 const adapterText = (typeof (adapter as any).getText === 'function'
@@ -1179,7 +1209,7 @@ class OverviewRulerController {
                 const note = typeof meta?.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
                 const hasTagMatch = tags.some(tag => tag.toLowerCase().includes(query));
                 if (adapterText.includes(query) || note.includes(query) || hasTagMatch) {
-                    searchData.push({ docCenter, kind: 'search' });
+                    searchData.push({ docCenter: resolvedCenter, kind: 'search' });
                 }
             }
         }
