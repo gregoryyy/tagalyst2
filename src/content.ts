@@ -948,6 +948,7 @@ const topPanelController = new TopPanelController();
 
 type MarkerDatum = {
     docCenter: number;
+    visualCenter?: number | null;
     label?: string | null;
     kind?: 'message' | 'star' | 'tag' | 'search';
 };
@@ -1129,7 +1130,7 @@ class OverviewRulerController {
     private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
         const seenPairs = new Set<number>();
         let fallbackIndex = 0;
-        const candidates: Array<{ docCenter: number; labelValue: number }> = [];
+        const candidates: Array<{ docCenter: number; visualCenter: number; labelValue: number }> = [];
         for (const { adapter, pairIndex } of entries) {
             const el = adapter?.element;
             if (!el || !document.contains(el)) continue;
@@ -1137,11 +1138,16 @@ class OverviewRulerController {
                 if (seenPairs.has(pairIndex)) continue;
                 seenPairs.add(pairIndex);
             }
-            const rect = el.getBoundingClientRect();
-            const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
-            if (!Number.isFinite(docCenter)) continue;
+            const { docCenter, visualCenter } = this.resolveMarkerPositions(adapter);
+            const doc = (Number.isFinite(docCenter ?? NaN) ? docCenter : visualCenter);
+            if (!Number.isFinite(doc ?? NaN)) continue;
+            const visual = visualCenter ?? doc ?? 0;
             const labelValue = typeof pairIndex === 'number' ? pairIndex + 1 : ++fallbackIndex;
-            candidates.push({ docCenter, labelValue });
+            candidates.push({
+                docCenter: doc ?? 0,
+                visualCenter: visual,
+                labelValue
+            });
         }
         const total = candidates.length;
         let step = 1;
@@ -1156,9 +1162,9 @@ class OverviewRulerController {
         } else {
             step = 20;
         }
-        return candidates.map(({ docCenter, labelValue }) => {
+        return candidates.map(({ docCenter, visualCenter, labelValue }) => {
             const label = step === 1 || labelValue % step === 0 ? String(labelValue) : null;
-            return { docCenter, label, kind: 'message' };
+            return { docCenter, visualCenter, label, kind: 'message' };
         });
     }
 
@@ -1180,17 +1186,18 @@ class OverviewRulerController {
         for (const adapter of adapters) {
             const el = adapter.element;
             if (!el || !document.contains(el)) continue;
-            const rect = el.getBoundingClientRect();
-            const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
-            if (!Number.isFinite(docCenter)) continue;
+            const { docCenter, visualCenter } = this.resolveMarkerPositions(adapter);
+            const doc = (Number.isFinite(docCenter ?? NaN) ? docCenter : visualCenter);
+            if (!Number.isFinite(doc ?? NaN)) continue;
+            const visual = visualCenter ?? doc ?? 0;
             const meta = store.get(el);
             const tags = Array.isArray(meta?.value?.tags) ? meta.value.tags : [];
             const normalizedTags = tags.map(tag => tag.toLowerCase());
             if (meta?.value?.starred) {
-                starData.push({ docCenter, kind: 'star' });
+                starData.push({ docCenter: doc ?? 0, visualCenter: visual, kind: 'star' });
             }
             if (filterToSelectedTags && normalizedTags.some(tag => selectedTagSet.has(tag))) {
-                tagData.push({ docCenter, kind: 'tag' });
+                tagData.push({ docCenter: doc ?? 0, visualCenter: visual, kind: 'tag' });
             }
             if (query) {
                 const adapterText = (typeof (adapter as any).getText === 'function'
@@ -1199,7 +1206,7 @@ class OverviewRulerController {
                 const note = typeof meta?.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
                 const hasTagMatch = normalizedTags.some(tag => tag.includes(query));
                 if (adapterText.includes(query) || note.includes(query) || hasTagMatch) {
-                    searchData.push({ docCenter, kind: 'search' });
+                    searchData.push({ docCenter: doc ?? 0, visualCenter: visual, kind: 'search' });
                 }
             }
         }
@@ -1258,7 +1265,14 @@ class OverviewRulerController {
             const marker = this.ensureMarker(layer, pool, className, i);
             const datum = data[i];
             const ratio = Math.min(1, Math.max(0, (datum.docCenter - scrollRange.top) / scrollHeight));
-            marker.style.top = `${ratio * 100}%`;
+            const visualAnchor = typeof datum.visualCenter === 'number' ? datum.visualCenter : datum.docCenter;
+            const visualRatio = Math.min(1, Math.max(0, (visualAnchor - scrollRange.top) / scrollHeight));
+            marker.style.top = `${visualRatio * 100}%`;
+            if (typeof datum.docCenter === 'number' && Number.isFinite(datum.docCenter)) {
+                marker.dataset.docCenter = String(datum.docCenter);
+            } else {
+                delete marker.dataset.docCenter;
+            }
             marker.style.display = 'block';
             if (datum.kind) {
                 marker.dataset.kind = datum.kind;
@@ -1290,6 +1304,29 @@ class OverviewRulerController {
     private getMarkerColor(): string {
         const mode = focusService.getMode();
         return focusMarkerColors[mode] || focusMarkerColors[FOCUS_MODES.STARS];
+    }
+
+    private resolveMarkerPositions(adapter: MessageAdapter | null): { docCenter: number | null; visualCenter: number | null } {
+        const el = adapter?.element;
+        if (!el || !document.contains(el)) return { docCenter: null, visualCenter: null };
+        const messageRect = el.getBoundingClientRect();
+        const messageCenter = messageRect
+            ? messageRect.top + window.scrollY + (messageRect.height / 2 || 0)
+            : null;
+        const toolbar =
+            el.querySelector<HTMLElement>('.ext-toolbar-row') ||
+            el.querySelector<HTMLElement>('.ext-toolbar');
+        let docCenter = messageCenter;
+        if (toolbar) {
+            const toolbarRect = toolbar.getBoundingClientRect();
+            if (toolbarRect) {
+                docCenter = toolbarRect.top + window.scrollY + (toolbarRect.height / 2 || 0);
+            }
+        }
+        return {
+            docCenter,
+            visualCenter: messageCenter,
+        };
     }
 
     private computeBounds(container: HTMLElement) {
@@ -1964,7 +2001,9 @@ class ToolbarController {
             const idx = this.focus.adjustNav(delta, adapters.length);
             if (idx < 0 || idx >= adapters.length) return;
             const target = adapters[idx];
-            if (target) target.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (target) {
+                this.scrollElementToToolbar(target.element, 'smooth');
+            }
             return;
         }
         if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
@@ -1979,7 +2018,10 @@ class ToolbarController {
         const currentIdx = this.findClosestMessageIndex(nodes);
         const step = delta >= 0 ? 1 : -1;
         const targetIdx = Math.max(0, Math.min(nodes.length - 1, currentIdx + step));
-        this.scrollToNode(container, targetIdx, 'center', nodes);
+        const target = nodes[targetIdx];
+        if (target) {
+            this.scrollElementToToolbar(target, 'smooth');
+        }
     }
 
     private findClosestMessageIndex(nodes: HTMLElement[]): number {
@@ -1996,6 +2038,13 @@ class ToolbarController {
             }
         });
         return closestIdx;
+    }
+
+    private scrollElementToToolbar(target: HTMLElement | null, behavior: ScrollBehavior = 'smooth') {
+        if (!target || !document.contains(target)) return;
+        const toolbar = target.querySelector<HTMLElement>('.ext-toolbar-row') || target.querySelector<HTMLElement>('.ext-toolbar');
+        const anchor = toolbar || target;
+        anchor.scrollIntoView({ behavior, block: toolbar ? 'start' : 'center' });
     }
 
     injectToolbar(el: HTMLElement, threadKey: string) {
