@@ -612,6 +612,7 @@ class FocusController {
             }
             this.updateMessageButton(el, meta);
         });
+        this.updateControlsUI();
     }
 
     syncMode() {
@@ -1863,7 +1864,7 @@ class ToolbarController {
         focusController.setPageControls(controlsState);
     }
 
-    private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'nearest', list?: HTMLElement[]) {
+    private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'start', list?: HTMLElement[]) {
         const nodes = list || threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
         const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
