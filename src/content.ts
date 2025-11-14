@@ -1175,10 +1175,7 @@ class OverviewRulerController {
             pool: this.messageMarkerPool,
             data: this.messageMarkerData,
             scrollRange,
-            className: 'ext-overview-marker ext-overview-marker--message',
-            formatter: (marker, datum) => {
-                marker.textContent = datum.label ?? '';
-            }
+            className: 'ext-overview-marker ext-overview-marker--message'
         });
     }
 
