@@ -137,18 +137,29 @@
 
 #ext-overview-ruler {
     position: absolute;
-    width: 50px;
-    border-radius: 1rem;
+    width: 20px;
+    border-radius: 999px;
     border: 1px solid var(--ext-toolbar-border);
     background: var(--ext-toolbar-surface);
     box-shadow: var(--ext-toolbar-shadow);
     z-index: 2147483644;
-    padding: 8px 10px;
+    padding: 4px 4px;
+    transition: width .25s ease, padding .25s ease, border-radius .25s ease;
+}
+
+#ext-overview-ruler:hover {
+    width: 60px;
+    padding: 10px 8px;
+    border-radius: 1rem;
 }
 
 .ext-overview-ruler-track {
     position: absolute;
-    inset: 0;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    right: 4px;
+    border-radius: inherit;
     pointer-events: none;
 }
 
@@ -174,30 +185,64 @@
     left: 50%;
     transform: translate(-50%, -50%);
     border-radius: 999px;
-    background: transparent;
-    color: rgba(36, 48, 70, .95);
+    user-select: none;
     font-weight: 600;
     font-size: 9px;
-    user-select: none;
+    color: transparent;
 }
 
-.ext-overview-marker[data-label]::after {
+.ext-overview-marker--message {
+    left: 1px;
+    right: 1px;
+    transform: translateY(-50%);
+    height: 2px;
+    border-radius: 1px;
+    background: rgba(120, 130, 150, .35);
+}
+
+.ext-overview-marker--focus {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    opacity: .85;
+}
+
+.ext-overview-marker--focus[data-kind="star"] {
+    background: #f2b400;
+}
+
+.ext-overview-marker--focus[data-kind="tag"] {
+    background: #4aa0ff;
+}
+
+.ext-overview-marker--focus[data-kind="search"] {
+    background: #a15bfd;
+}
+
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="message"] {
+    left: 10px;
+    right: auto;
+    width: auto;
+    height: auto;
+    background: transparent;
+    color: rgba(30, 42, 68, .95);
+    transform: translateY(-50%);
+}
+
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="message"]::after {
     content: attr(data-label);
 }
 
-.ext-overview-marker--focus[data-kind="star"]::after {
-    content: '★';
-    color: #f2b400;
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="star"] {
+    left: 22px;
 }
 
-.ext-overview-marker--focus[data-kind="tag"]::after {
-    content: '●';
-    color: #4aa0ff;
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="tag"] {
+    left: 34px;
 }
 
-.ext-overview-marker--focus[data-kind="search"]::after {
-    content: '■';
-    color: #a15bfd;
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="search"] {
+    left: 46px;
 }
 
 #ext-overview-ruler:hover .ext-overview-marker[data-kind="message"] {
