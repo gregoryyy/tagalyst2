@@ -1566,7 +1566,10 @@ class DomMessageAdapter implements MessageAdapter {
 
     getText(): string {
         if (this.textCache !== null) return this.textCache;
-        const source = this.element.textContent ?? this.element.innerText ?? '';
+        const clone = this.element.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll(`[${EXT_ATTR}]`).forEach(node => node.remove());
+        clone.querySelectorAll('.ext-toolbar-row').forEach(node => node.remove());
+        const source = clone.textContent ?? clone.innerText ?? '';
         this.textCache = Utils.normalizeText(source);
         return this.textCache;
     }

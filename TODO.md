@@ -56,7 +56,7 @@ Features:
 - export without UI content but with:
   - links to graphics
   - mathematical content, i.e., KaTeX DONE
-  - canvas and listings
+  - canvas and listings DONE
 - Text range markup within responses
 - Cross-chat operations:
   - search including tags and annotations --> search results on dedicated dialog
