@@ -1139,13 +1139,16 @@ class OverviewRulerController {
                 seenPairs.add(pairIndex);
             }
             const { docCenter, visualCenter } = this.resolveMarkerPositions(adapter);
-            const doc = (Number.isFinite(docCenter ?? NaN) ? docCenter : visualCenter);
-            if (!Number.isFinite(doc ?? NaN)) continue;
-            const visual = visualCenter ?? doc ?? 0;
+            const anchor = Number.isFinite(docCenter ?? NaN)
+                ? docCenter
+                : Number.isFinite(visualCenter ?? NaN)
+                    ? visualCenter
+                    : null;
+            if (!Number.isFinite(anchor ?? NaN)) continue;
             const labelValue = typeof pairIndex === 'number' ? pairIndex + 1 : ++fallbackIndex;
             candidates.push({
-                docCenter: doc ?? 0,
-                visualCenter: visual,
+                docCenter: anchor!,
+                visualCenter: anchor!,
                 labelValue
             });
         }
@@ -1187,17 +1190,21 @@ class OverviewRulerController {
             const el = adapter.element;
             if (!el || !document.contains(el)) continue;
             const { docCenter, visualCenter } = this.resolveMarkerPositions(adapter);
-            const doc = (Number.isFinite(docCenter ?? NaN) ? docCenter : visualCenter);
-            if (!Number.isFinite(doc ?? NaN)) continue;
-            const visual = visualCenter ?? doc ?? 0;
+            const anchor = Number.isFinite(docCenter ?? NaN)
+                ? docCenter
+                : Number.isFinite(visualCenter ?? NaN)
+                    ? visualCenter
+                    : null;
+            if (!Number.isFinite(anchor ?? NaN)) continue;
+            const visual = anchor!;
             const meta = store.get(el);
             const tags = Array.isArray(meta?.value?.tags) ? meta.value.tags : [];
             const normalizedTags = tags.map(tag => tag.toLowerCase());
             if (meta?.value?.starred) {
-                starData.push({ docCenter: doc ?? 0, visualCenter: visual, kind: 'star' });
+                starData.push({ docCenter: anchor!, visualCenter: visual, kind: 'star' });
             }
             if (filterToSelectedTags && normalizedTags.some(tag => selectedTagSet.has(tag))) {
-                tagData.push({ docCenter: doc ?? 0, visualCenter: visual, kind: 'tag' });
+                tagData.push({ docCenter: anchor!, visualCenter: visual, kind: 'tag' });
             }
             if (query) {
                 const adapterText = (typeof (adapter as any).getText === 'function'
@@ -1206,7 +1213,7 @@ class OverviewRulerController {
                 const note = typeof meta?.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
                 const hasTagMatch = normalizedTags.some(tag => tag.includes(query));
                 if (adapterText.includes(query) || note.includes(query) || hasTagMatch) {
-                    searchData.push({ docCenter: doc ?? 0, visualCenter: visual, kind: 'search' });
+                    searchData.push({ docCenter: anchor!, visualCenter: visual, kind: 'search' });
                 }
             }
         }
