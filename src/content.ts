@@ -1786,7 +1786,7 @@ class HighlightController {
         this.selectionText = text;
         const meta = messageMetaRegistry.get(startMessage);
         const highlights = this.normalizeHighlights(meta?.value?.highlights);
-        const match = highlights.find(entry => entry.start === offsets.start && entry.end === offsets.end);
+        const match = highlights.find(entry => !(offsets.end <= entry.start || offsets.start >= entry.end));
         if (match) {
             this.selectionMode = 'remove';
             this.selectionTargetId = match.id;
