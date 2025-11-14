@@ -944,6 +944,7 @@ const topPanelController = new TopPanelController();
 type MarkerDatum = {
     docCenter: number;
     label?: string | null;
+    kind?: 'message' | 'star' | 'tag' | 'search';
 };
 
 class OverviewRulerController {
@@ -952,7 +953,9 @@ class OverviewRulerController {
     private messageMarkerData: MarkerDatum[] = [];
     private focusMarkerLayer: HTMLElement | null = null;
     private focusMarkerPool: HTMLElement[] = [];
-    private focusMarkerData: MarkerDatum[] = [];
+    private starMarkerData: MarkerDatum[] = [];
+    private tagMarkerData: MarkerDatum[] = [];
+    private searchMarkerData: MarkerDatum[] = [];
     private root: HTMLElement | null = null;
     private trackEl: HTMLElement | null = null;
     private container: HTMLElement | null = null;
@@ -961,6 +964,7 @@ class OverviewRulerController {
     private bottomAnchor: HTMLElement | null = null;
     private lastMessageAnchor: HTMLElement | null = null;
     private viewportEl: HTMLElement | null = null;
+    private lastAdapters: MessageAdapter[] = [];
 
     private readonly handleViewportChange = () => {
         if (!this.container) return;
@@ -1011,13 +1015,14 @@ class OverviewRulerController {
         this.ensure(container);
         if (!this.trackEl || !this.root) return;
         this.container = container;
+        this.lastAdapters = entries.map(entry => entry.adapter);
         this.topAnchor = entries[0]?.adapter.element || null;
         this.lastMessageAnchor = entries[entries.length - 1]?.adapter.element || null;
         this.bottomAnchor = this.resolveComposerAnchor(container);
         const bounds = this.computeBounds(container);
         const scrollRange = this.computeScrollRange(container);
         this.messageMarkerData = this.collectMessageMarkerData(entries);
-        this.focusMarkerData = this.collectFocusMarkerData();
+        this.collectSpecialMarkerData();
         this.applyFrame(container, bounds);
         if (!this.viewportEl || !this.viewportEl.isConnected) {
             this.viewportEl = document.createElement('div');
@@ -1031,8 +1036,8 @@ class OverviewRulerController {
     refreshMarkers() {
         if (!this.container || !configService.isOverviewEnabled()) return;
         const scrollRange = this.computeScrollRange(this.container);
-        this.focusMarkerData = this.collectFocusMarkerData();
-        this.layoutFocusMarkers(scrollRange);
+        this.collectSpecialMarkerData();
+        this.layoutSpecialMarkers(scrollRange);
     }
 
     reset() {
@@ -1051,7 +1056,9 @@ class OverviewRulerController {
         this.messageMarkerData = [];
         this.focusMarkerLayer = null;
         this.focusMarkerPool = [];
-        this.focusMarkerData = [];
+        this.starMarkerData = [];
+        this.tagMarkerData = [];
+        this.searchMarkerData = [];
         window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
     }
@@ -1096,7 +1103,7 @@ class OverviewRulerController {
 
     private layoutAllMarkers(scrollRange: { top: number; bottom: number }) {
         this.layoutMessageMarkers(scrollRange);
-        this.layoutFocusMarkers(scrollRange);
+        this.layoutSpecialMarkers(scrollRange);
     }
 
     private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
@@ -1114,23 +1121,51 @@ class OverviewRulerController {
             const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
             if (!Number.isFinite(docCenter)) continue;
             const label = typeof pairIndex === 'number' ? String(pairIndex + 1) : String(++fallbackIndex);
-            data.push({ docCenter, label });
+            data.push({ docCenter, label, kind: 'message' });
         }
         return data;
     }
 
-    private collectFocusMarkerData(): MarkerDatum[] {
-        const adapters = focusController.getMatches();
-        const data: MarkerDatum[] = [];
+    private collectSpecialMarkerData(adapters: MessageAdapter[] = this.lastAdapters) {
+        const starData: MarkerDatum[] = [];
+        const tagData: MarkerDatum[] = [];
+        const searchData: MarkerDatum[] = [];
+        if (!adapters || !adapters.length) {
+            this.starMarkerData = starData;
+            this.tagMarkerData = tagData;
+            this.searchMarkerData = searchData;
+            return;
+        }
+        const query = (focusService.getSearchQuery() || '').toLowerCase();
+        const store = messageMetaRegistry.getStore();
         for (const adapter of adapters) {
-            const el = adapter?.element;
+            const el = adapter.element;
             if (!el || !document.contains(el)) continue;
             const rect = el.getBoundingClientRect();
             const docCenter = rect.top + window.scrollY + (rect.height / 2 || 0);
             if (!Number.isFinite(docCenter)) continue;
-            data.push({ docCenter });
+            const meta = store.get(el);
+            const tags = Array.isArray(meta?.value?.tags) ? meta.value.tags : [];
+            if (meta?.value?.starred) {
+                starData.push({ docCenter, kind: 'star' });
+            }
+            if (tags.length) {
+                tagData.push({ docCenter, kind: 'tag' });
+            }
+            if (query) {
+                const adapterText = (typeof (adapter as any).getText === 'function'
+                    ? (adapter as any).getText()
+                    : el.innerText || '').toLowerCase();
+                const note = typeof meta?.value?.note === 'string' ? meta.value.note.toLowerCase() : '';
+                const hasTagMatch = tags.some(tag => tag.toLowerCase().includes(query));
+                if (adapterText.includes(query) || note.includes(query) || hasTagMatch) {
+                    searchData.push({ docCenter, kind: 'search' });
+                }
+            }
         }
-        return data;
+        this.starMarkerData = starData;
+        this.tagMarkerData = tagData;
+        this.searchMarkerData = searchData;
     }
 
     private layoutMessageMarkers(scrollRange: { top: number; bottom: number }) {
@@ -1146,14 +1181,18 @@ class OverviewRulerController {
         });
     }
 
-    private layoutFocusMarkers(scrollRange: { top: number; bottom: number }) {
+    private layoutSpecialMarkers(scrollRange: { top: number; bottom: number }) {
+        const combined = [
+            ...this.starMarkerData,
+            ...this.tagMarkerData,
+            ...this.searchMarkerData
+        ];
         this.layoutMarkerSet({
             layer: this.focusMarkerLayer,
             pool: this.focusMarkerPool,
-            data: this.focusMarkerData,
+            data: combined,
             scrollRange,
-            className: 'ext-overview-marker ext-overview-marker--focus',
-            color: this.getMarkerColor()
+            className: 'ext-overview-marker ext-overview-marker--focus'
         });
     }
 
@@ -1184,6 +1223,16 @@ class OverviewRulerController {
             const ratio = Math.min(1, Math.max(0, (datum.docCenter - scrollRange.top) / scrollHeight));
             marker.style.top = `${ratio * 100}%`;
             marker.style.display = 'block';
+            if (datum.kind) {
+                marker.dataset.kind = datum.kind;
+            } else {
+                delete marker.dataset.kind;
+            }
+            if (datum.label) {
+                marker.dataset.label = datum.label;
+            } else {
+                delete marker.dataset.label;
+            }
             if (formatter) formatter(marker, datum);
         }
         for (let i = data.length; i < pool.length; i++) {

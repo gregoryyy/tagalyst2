@@ -137,11 +137,20 @@
 
 #ext-overview-ruler {
     position: absolute;
-    width: 14px;
+    width: 18px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 1);
-    box-shadow: inset 0 0 0 1px rgba(150, 160, 175, .6);
+    border: 1px solid var(--ext-toolbar-border);
+    background: var(--ext-toolbar-surface);
+    box-shadow: var(--ext-toolbar-shadow);
     z-index: 2147483644;
+    padding: 6px 3px;
+    transition: width .25s ease, padding .25s ease, border-radius .25s ease;
+}
+
+#ext-overview-ruler:hover {
+    width: 50px;
+    padding: 10px 8px;
+    border-radius: 1rem;
 }
 
 .ext-overview-ruler-track {
@@ -149,6 +158,12 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
+    cursor: pointer;
+    touch-action: none;
+    border: 1px solid var(--ext-toolbar-border);
+    border-radius: inherit;
+    background: rgba(255, 255, 255, .95);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .65);
 }
 
 .ext-overview-marker-layer {
@@ -159,7 +174,7 @@
 }
 
 .ext-overview-marker-layer--messages {
-    --marker-color: rgba(110, 125, 150, .7);
+    --marker-color: rgba(90, 102, 120, .75);
     z-index: 1;
 }
 
@@ -171,17 +186,14 @@
 .ext-overview-marker {
     position: absolute;
     left: 50%;
-    width: 4px;
-    height: 4px;
+    width: 8px;
+    height: 8px;
     transform: translate(-50%, -50%);
-    border-radius: 1px;
+    border-radius: 999px;
     background: var(--marker-color);
-    border: 1px solid rgba(255, 255, 255, .8);
-    box-shadow: 0 0 2px rgba(0, 0, 0, .2);
-    opacity: .7;
-    font-size: 0;
-    line-height: 1;
-    color: transparent;
+    border: none;
+    box-shadow: 0 0 4px rgba(0, 0, 0, .25);
+    opacity: .85;
     font-weight: 600;
     user-select: none;
 }
@@ -189,27 +201,62 @@
 .ext-overview-marker--focus {
     width: 9px;
     height: 9px;
-    border-radius: 3px;
-    opacity: .95;
-    border-color: rgba(255, 255, 255, .95);
-    box-shadow: 0 0 4px rgba(0, 0, 0, .3);
 }
 
 .ext-overview-marker--message {
-    min-width: 12px;
+    width: 12px;
     height: 12px;
-    padding: 0 1px;
-    border-radius: 999px;
-    font-size: 8px;
     line-height: 12px;
-    color: #fff;
-    letter-spacing: -0.2px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, .95);
     text-align: center;
-    opacity: .5;
-    border-color: rgba(255, 255, 255, .85);
-    box-shadow: 0 0 3px rgba(0, 0, 0, .25);
+    background: #596fe3;
+    position: relative;
 }
 
+.ext-overview-marker--message::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 150%;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    color: rgba(30, 42, 68, .95);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ext-overview-marker--focus[data-kind="star"] {
+    background: #f2b400;
+}
+
+.ext-overview-marker--focus[data-kind="tag"] {
+    background: #4aa0ff;
+}
+
+.ext-overview-marker--focus[data-kind="search"] {
+    background: #a15bfd;
+}
+
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="message"] {
+    left: 10px;
+}
+
+#ext-overview-ruler:hover .ext-overview-marker--message::after {
+    opacity: 1;
+}
+
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="star"] {
+    left: 22px;
+}
+
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="tag"] {
+    left: 34px;
+}
+
+#ext-overview-ruler:hover .ext-overview-marker[data-kind="search"] {
+    left: 46px;
+}
 .ext-ruler-viewport {
     position: absolute;
     left: 2px;
