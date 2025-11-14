@@ -125,7 +125,7 @@ class MarkdownSerializer {
         if (!text) return '';
         return text
             .replace(/\s+/g, ' ')
-            .replace(/([\\`*_{}\[\]()#+\-!>])/g, '\\$1');
+            .replace(/([\\`*_{}\[\]])/g, '\\$1');
     }
 
     private wrapBlock(content: string, ctx: MarkdownContext) {
