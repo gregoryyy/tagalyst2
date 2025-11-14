@@ -329,10 +329,27 @@
     font-size: 11px;
     color: #1f1f28;
     padding: .15rem .25rem;
-    max-width: 280px;
+    max-width: 260px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    margin-left: .25rem;
+    border-left: 1px solid rgba(15, 23, 42, .15);
+    padding-left: .4rem;
+}
+
+.ext-highlight-tooltip {
+    position: absolute;
+    z-index: 2147483647;
+    display: none;
+    pointer-events: none;
+    background: rgba(17, 24, 39, .95);
+    color: #fefefe;
+    font-size: 11px;
+    font-weight: 500;
+    padding: .2rem .45rem;
+    border-radius: .35rem;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .25);
 }
 
 

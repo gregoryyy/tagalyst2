@@ -1543,6 +1543,11 @@ type HighlightEntry = {
     annotation?: string;
 };
 
+type HighlightRange = {
+    range: Range;
+    rects: DOMRect[];
+};
+
 class HighlightController {
     private selectionMenu: HTMLElement | null = null;
     private selectionButton: HTMLButtonElement | null = null;
@@ -1558,7 +1563,11 @@ class HighlightController {
     private initialized = false;
     private readonly highlightIdsByMessage = new Map<string, Set<string>>();
     private readonly activeHighlightNames = new Set<string>();
+    private readonly highlightMeta = new Map<string, { range: Range; annotation: string }>();
     private highlightStyleEl: HTMLStyleElement | null = null;
+    private hoverTooltip: HTMLElement | null = null;
+    private hoverActiveId: string | null = null;
+    private readonly onMouseMove = (evt: MouseEvent) => this.handleMouseMove(evt);
     private readonly cssHighlightSupported = typeof CSS !== 'undefined' && 'highlights' in CSS && typeof (window as any).Highlight !== 'undefined';
 
     constructor(private readonly storage: StorageService) { }
@@ -1570,6 +1579,8 @@ class HighlightController {
         document.addEventListener('keyup', handler, true);
         document.addEventListener('selectionchange', handler);
         document.addEventListener('mousedown', (evt) => this.handleDocumentMouseDown(evt), true);
+        document.addEventListener('mousemove', this.onMouseMove, true);
+        document.addEventListener('scroll', () => this.hideHoverTooltip(), true);
         this.initialized = true;
     }
 
@@ -1580,7 +1591,9 @@ class HighlightController {
         }
         this.activeHighlightNames.clear();
         this.highlightIdsByMessage.clear();
+        this.highlightMeta.clear();
         this.syncHighlightStyle();
+        this.hideHoverTooltip();
     }
 
     applyHighlights(messageEl: HTMLElement, highlights: any, adapter?: MessageAdapter | null, threadKey?: string) {
@@ -1592,13 +1605,14 @@ class HighlightController {
         if (!normalized.length) return;
         const ids = new Set<string>();
         for (const entry of normalized) {
-            const range = this.buildRange(messageEl, entry.start, entry.end);
-            if (!range) continue;
-            const highlight = new (window as any).Highlight(range);
+            const built = this.buildRange(messageEl, entry.start, entry.end);
+            if (!built) continue;
+            const highlight = new (window as any).Highlight(built.range);
             const name = this.getHighlightName(entry.id);
             (CSS as any).highlights.set(name, highlight);
             ids.add(entry.id);
             this.activeHighlightNames.add(name);
+            this.highlightMeta.set(entry.id, { range: built.range, annotation: entry.annotation || '' });
         }
         if (ids.size) {
             this.highlightIdsByMessage.set(messageKey, ids);
@@ -1616,6 +1630,9 @@ class HighlightController {
             this.activeHighlightNames.delete(name);
         }
         this.highlightIdsByMessage.delete(messageKey);
+        for (const id of ids) {
+            this.highlightMeta.delete(id);
+        }
         this.syncHighlightStyle();
     }
 
@@ -1649,7 +1666,7 @@ class HighlightController {
         this.highlightStyleEl.textContent = css;
     }
 
-    private buildRange(root: HTMLElement, start: number, end: number) {
+    private buildRange(root: HTMLElement, start: number, end: number): HighlightRange | null {
         if (end <= start) return null;
         const startPos = this.locatePosition(root, start);
         const endPos = this.locatePosition(root, end);
@@ -1658,7 +1675,8 @@ class HighlightController {
             const range = document.createRange();
             range.setStart(startPos.node, startPos.offset);
             range.setEnd(endPos.node, endPos.offset);
-            return range;
+            const rects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0);
+            return { range, rects };
         } catch {
             return null;
         }
@@ -1972,6 +1990,62 @@ class HighlightController {
         }
     }
 
+
+    private handleMouseMove(evt: MouseEvent) {
+        if (!this.highlightMeta.size) {
+            this.hideHoverTooltip();
+            return;
+        }
+        const x = evt.clientX;
+        const y = evt.clientY;
+        let match: { text: string; rect: DOMRect; id: string } | null = null;
+        for (const [id, meta] of this.highlightMeta) {
+            if (!meta.annotation) continue;
+            const rects = meta.range.getClientRects();
+            for (const rect of Array.from(rects)) {
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    match = { text: meta.annotation || 'Hello World', rect, id };
+                    break;
+                }
+            }
+            if (match) break;
+        }
+        if (match) {
+            this.showHoverTooltip(match.text, match.rect, match.id);
+        } else {
+            this.hideHoverTooltip();
+        }
+    }
+
+    private showHoverTooltip(text: string, rect: DOMRect, id: string) {
+        const tooltip = this.ensureHoverTooltip();
+        tooltip.textContent = text || 'Hello World';
+        tooltip.style.display = 'block';
+        const top = window.scrollY + rect.bottom + 6;
+        const left = window.scrollX + rect.left;
+        tooltip.style.top = `${top}px`;
+        tooltip.style.left = `${left}px`;
+        this.hoverActiveId = id;
+    }
+
+    private hideHoverTooltip() {
+        if (this.hoverTooltip) {
+            this.hoverTooltip.style.display = 'none';
+        }
+        this.hoverActiveId = null;
+    }
+
+    private ensureHoverTooltip() {
+        if (!this.hoverTooltip) {
+            const el = document.createElement('div');
+            el.className = 'ext-highlight-tooltip';
+            Utils.markExtNode(el);
+            document.body.appendChild(el);
+            this.hoverTooltip = el;
+        }
+        return this.hoverTooltip;
+    }
 }
 
 const highlightController = new HighlightController(storageService);
