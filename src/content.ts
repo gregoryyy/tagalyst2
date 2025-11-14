@@ -511,6 +511,13 @@ class FocusService {
                 matches.push(adapter);
             }
         });
+        matches.sort((a, b) => {
+            const aRect = a.element?.getBoundingClientRect();
+            const bRect = b.element?.getBoundingClientRect();
+            const aTop = aRect ? aRect.top + window.scrollY : 0;
+            const bTop = bRect ? bRect.top + window.scrollY : 0;
+            return aTop - bTop;
+        });
         return matches;
     }
 
