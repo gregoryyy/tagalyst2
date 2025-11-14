@@ -1535,6 +1535,297 @@ class EditorController {
 
 const editorController = new EditorController(storageService);
 
+type HighlightEntry = {
+    id: string;
+    start: number;
+    end: number;
+    text: string;
+};
+
+class HighlightController {
+    private selectionMenu: HTMLElement | null = null;
+    private selectionMessage: HTMLElement | null = null;
+    private selectionCheckId: number | null = null;
+    private initialized = false;
+
+    constructor(private readonly storage: StorageService) { }
+
+    init() {
+        if (this.initialized) return;
+        const handler = () => this.scheduleSelectionCheck();
+        document.addEventListener('mouseup', handler, true);
+        document.addEventListener('keyup', handler, true);
+        document.addEventListener('selectionchange', handler);
+        document.addEventListener('mousedown', (evt) => this.handleDocumentMouseDown(evt), true);
+        this.initialized = true;
+    }
+
+    async captureSelection(messageEl: HTMLElement, threadKey: string) {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0);
+        if (!range || range.collapsed) return;
+        if (!messageEl.contains(range.startContainer) || !messageEl.contains(range.endContainer)) return;
+        if (Utils.closestExtNode(range.startContainer) || Utils.closestExtNode(range.endContainer)) return;
+        const adapter = messageMetaRegistry.resolveAdapter(messageEl);
+        if (!adapter) return;
+        const offsets = this.computeOffsets(messageEl, range);
+        if (!offsets) return;
+        const text = range.toString();
+        if (!text.trim()) return;
+        const value = await this.storage.readMessage(threadKey, adapter);
+        const highlights = this.normalizeHighlights(value.highlights);
+        highlights.push({
+            id: this.makeHighlightId(),
+            start: offsets.start,
+            end: offsets.end,
+            text,
+        });
+        highlights.sort((a, b) => a.start - b.start);
+        value.highlights = highlights;
+        await this.storage.writeMessage(threadKey, adapter, value);
+        this.applyHighlights(messageEl, highlights, adapter, threadKey);
+        selection.removeAllRanges();
+    }
+
+    applyHighlights(messageEl: HTMLElement, highlights: any, adapter?: MessageAdapter | null, threadKey?: string) {
+        this.clearHighlights(messageEl);
+        const normalized = this.normalizeHighlights(highlights);
+        if (!normalized.length) return;
+        for (const entry of normalized) {
+            this.drawHighlight(messageEl, entry, adapter || null, threadKey || '');
+        }
+    }
+
+    private clearHighlights(messageEl: HTMLElement) {
+        messageEl.querySelectorAll('.ext-highlight').forEach(mark => {
+            const parent = mark.parentNode;
+            if (!parent) return;
+            while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+            mark.remove();
+        });
+    }
+
+    private drawHighlight(messageEl: HTMLElement, entry: HighlightEntry, adapter: MessageAdapter | null, threadKey: string) {
+        if (entry.end <= entry.start) return;
+        const startPos = this.locatePosition(messageEl, entry.start);
+        const endPos = this.locatePosition(messageEl, entry.end);
+        if (!startPos || !endPos) return;
+        try {
+            const range = document.createRange();
+            range.setStart(startPos.node, startPos.offset);
+            range.setEnd(endPos.node, endPos.offset);
+            const wrapper = document.createElement('mark');
+            wrapper.className = 'ext-highlight';
+            wrapper.dataset.highlightId = entry.id;
+            wrapper.title = 'Click to remove highlight';
+            const fragment = range.extractContents();
+            wrapper.appendChild(fragment);
+            range.insertNode(wrapper);
+            wrapper.addEventListener('click', evt => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                if (!adapter || !threadKey) return;
+                this.removeHighlight(messageEl, adapter, threadKey, entry.id);
+            });
+        } catch (err) {
+            console.error('Failed to render highlight', err);
+        }
+    }
+
+    private locatePosition(root: HTMLElement, target: number) {
+        if (target < 0) return null;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => Utils.closestExtNode(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+        });
+        let remaining = target;
+        let lastText: Text | null = null;
+        while (walker.nextNode()) {
+            const node = walker.currentNode as Text;
+            lastText = node;
+            const len = node.textContent?.length ?? 0;
+            if (remaining <= len) {
+                return { node, offset: remaining };
+            }
+            remaining -= len;
+        }
+        if (remaining === 0 && lastText) {
+            const len = lastText.textContent?.length ?? 0;
+            return { node: lastText, offset: len };
+        }
+        return null;
+    }
+
+    private normalizeHighlights(raw: any): HighlightEntry[] {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map(entry => ({
+                id: typeof entry?.id === 'string' ? entry.id : this.makeHighlightId(),
+                start: Number(entry?.start) || 0,
+                end: Number(entry?.end) || 0,
+                text: typeof entry?.text === 'string' ? entry.text : '',
+            }))
+            .filter(entry => entry.end > entry.start)
+            .sort((a, b) => a.start - b.start);
+    }
+
+    private computeOffsets(root: HTMLElement, range: Range) {
+        try {
+            const startRange = document.createRange();
+            startRange.setStart(root, 0);
+            startRange.setEnd(range.startContainer, range.startOffset);
+            const endRange = document.createRange();
+            endRange.setStart(root, 0);
+            endRange.setEnd(range.endContainer, range.endOffset);
+            const start = this.getRangeLength(startRange);
+            const end = this.getRangeLength(endRange);
+            if (end <= start) return null;
+            return { start, end };
+        } catch (err) {
+            console.error('Failed to compute highlight offsets', err);
+            return null;
+        }
+    }
+
+    private getRangeLength(range: Range) {
+        const fragment = range.cloneContents();
+        this.stripExtensionNodes(fragment);
+        return (fragment.textContent || '').length;
+    }
+
+    private stripExtensionNodes(node: DocumentFragment | Element) {
+        const highlights = node.querySelectorAll?.('.ext-highlight') || [];
+        highlights.forEach(mark => {
+            const text = mark.textContent || '';
+            mark.replaceWith(text);
+        });
+        const extNodes = node.querySelectorAll?.(`[${EXT_ATTR}], .ext-toolbar-row`) || [];
+        extNodes.forEach(extNode => extNode.remove());
+    }
+
+    private makeHighlightId() {
+        return `hl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    }
+
+    private async removeHighlight(messageEl: HTMLElement, adapter: MessageAdapter, threadKey: string, id: string) {
+        const value = await this.storage.readMessage(threadKey, adapter);
+        const highlights = this.normalizeHighlights(value.highlights);
+        const next = highlights.filter(entry => entry.id !== id);
+        if (next.length) {
+            value.highlights = next;
+        } else {
+            delete value.highlights;
+        }
+        await this.storage.writeMessage(threadKey, adapter, value);
+        this.applyHighlights(messageEl, next, adapter, threadKey);
+    }
+
+    private scheduleSelectionCheck() {
+        if (this.selectionCheckId) cancelAnimationFrame(this.selectionCheckId);
+        this.selectionCheckId = requestAnimationFrame(() => {
+            this.selectionCheckId = null;
+            this.evaluateSelection();
+        });
+    }
+
+    private evaluateSelection() {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount || selection.isCollapsed) {
+            this.hideSelectionMenu();
+            return;
+        }
+        const range = selection.getRangeAt(0);
+        if (!range || range.collapsed) {
+            this.hideSelectionMenu();
+            return;
+        }
+        const startMessage = this.findMessage(range.startContainer);
+        const endMessage = this.findMessage(range.endContainer);
+        if (!startMessage || startMessage !== endMessage) {
+            this.hideSelectionMenu();
+            return;
+        }
+        if (Utils.closestExtNode(range.startContainer) || Utils.closestExtNode(range.endContainer)) {
+            this.hideSelectionMenu();
+            return;
+        }
+        this.selectionMessage = startMessage;
+        this.showSelectionMenu(range);
+    }
+
+    private findMessage(node: Node | null) {
+        if (!node) return null;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            return (node as Element).closest<HTMLElement>('[data-message-author-role]');
+        }
+        return node.parentElement?.closest<HTMLElement>('[data-message-author-role]') || null;
+    }
+
+    private showSelectionMenu(range: Range) {
+        const menu = this.selectionMenu ?? this.createSelectionMenu();
+        if (!menu) return;
+        menu.style.display = 'flex';
+        const rect = range.getBoundingClientRect();
+        const { offsetWidth, offsetHeight } = menu;
+        const doc = document.documentElement;
+        const viewportWidth = doc?.clientWidth || window.innerWidth;
+        const viewportHeight = doc?.clientHeight || window.innerHeight;
+        const minLeft = window.scrollX + 8;
+        const viewportRightLimit = window.scrollX + viewportWidth - offsetWidth - 8;
+        const targetLeft = window.scrollX + rect.left + (rect.width - offsetWidth) / 2;
+        const left = Math.max(minLeft, Math.min(viewportRightLimit, targetLeft));
+        const spaceBelow = viewportHeight - rect.bottom;
+        const targetTop = spaceBelow > offsetHeight + 16
+            ? window.scrollY + rect.bottom + 8
+            : window.scrollY + rect.top - offsetHeight - 8;
+        const minTop = window.scrollY + 8;
+        const top = Math.max(minTop, targetTop);
+        menu.style.top = `${top}px`;
+        menu.style.left = `${left}px`;
+    }
+
+    private hideSelectionMenu() {
+        if (this.selectionMenu) {
+            this.selectionMenu.style.display = 'none';
+        }
+        this.selectionMessage = null;
+    }
+
+    private createSelectionMenu() {
+        const menu = document.createElement('div');
+        menu.className = 'ext-highlight-menu';
+        Utils.markExtNode(menu);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Highlight';
+        button.onclick = async (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            const message = this.selectionMessage;
+            if (!message) return;
+            const threadKey = Utils.getThreadKey();
+            await this.captureSelection(message, threadKey);
+            this.hideSelectionMenu();
+        };
+        menu.appendChild(button);
+        document.body.appendChild(menu);
+        this.selectionMenu = menu;
+        menu.style.display = 'none';
+        return menu;
+    }
+
+    private handleDocumentMouseDown(evt: MouseEvent) {
+        if (this.selectionMenu && evt.target instanceof Node) {
+            if (!this.selectionMenu.contains(evt.target)) {
+                this.hideSelectionMenu();
+            }
+        }
+    }
+}
+
+const highlightController = new HighlightController(storageService);
+highlightController.init();
+
 /**
  * Moves the caret to the end of a contenteditable element.
  */
@@ -2063,6 +2354,7 @@ class ToolbarController {
             noteChip.title = note;
             badges.appendChild(noteChip);
         }
+        highlightController.applyHighlights(el, cur.highlights, adapterRef, threadKey);
         focusController.updateMessageButton(el, meta);
     }
 
