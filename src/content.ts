@@ -1466,6 +1466,12 @@ class OverviewRulerController {
     }
 
     private findScrollContainer(container: HTMLElement): HTMLElement | null {
+        let current: HTMLElement | null = container;
+        while (current) {
+            const parent = current.parentElement as HTMLElement | null;
+            if (this.isScrollable(current)) return current;
+            current = parent;
+        }
         const main = container.closest<HTMLElement>('main');
         if (this.isScrollable(main)) return main;
         const docScroll = document.scrollingElement as HTMLElement | null;
@@ -1475,7 +1481,13 @@ class OverviewRulerController {
 
     private isScrollable(el: HTMLElement | null | undefined): el is HTMLElement {
         if (!el) return false;
-        return el.scrollHeight - el.clientHeight > 8;
+        if (el === document.scrollingElement || el === document.documentElement || el === document.body) {
+            return true;
+        }
+        const scrollableHeight = el.scrollHeight - el.clientHeight;
+        if (scrollableHeight > 8) return true;
+        const overflowY = getComputedStyle(el).overflowY;
+        return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
     }
 
     private getScrollOffset() {
@@ -1492,6 +1504,11 @@ class OverviewRulerController {
     }
 
     private scrollContainerTo(top: number, behavior: ScrollBehavior) {
+        console.debug('[overview] scrollContainerTo', {
+            targetTop: top,
+            behavior,
+            hasScrollContainer: !!this.scrollContainer,
+        });
         if (this.scrollContainer) {
             this.scrollContainer.scrollTo({ top, behavior });
         } else {
@@ -1500,6 +1517,10 @@ class OverviewRulerController {
     }
 
     private scrollContainerBy(delta: number) {
+        console.debug('[overview] scrollContainerBy', {
+            delta,
+            hasScrollContainer: !!this.scrollContainer,
+        });
         if (this.scrollContainer) {
             this.scrollContainer.scrollBy({ top: delta, behavior: 'auto' });
         } else {
