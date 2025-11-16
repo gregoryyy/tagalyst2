@@ -26,7 +26,6 @@ class ConfigService {
         config = { ...contentDefaultConfig, ...(obj || {}) };
         this.enforceState();
         this.notify();
-        focusController.syncMode();
         this.scheduler.request();
     }
     /**
@@ -90,18 +89,6 @@ class ConfigService {
      * Ensures derived state (focus mode/tag selection) stays valid when config disables features.
      */
     enforceState() {
-        let changed = false;
-        if (!this.isSearchEnabled()) {
-            focusService.setSearchQuery('');
-            topPanelController.clearSearchInput();
-            changed = true;
-        }
-        if (!this.areTagsEnabled()) {
-            focusService.clearTags();
-            changed = true;
-        }
-        if (changed)
-            focusController.syncMode();
     }
 } // ConfigService
 const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';

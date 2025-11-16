@@ -23,6 +23,8 @@
                 "content/content/services/storage.js",
                 "content/content/services/render-scheduler.js",
                 "content/content/services/config.js",
+                "content/content/state/message-meta.js",
+                "content/content/state/focus.js",
                 "content/markdown.js",
                 "content/content.js"
             ],
