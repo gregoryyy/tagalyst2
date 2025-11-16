@@ -156,7 +156,8 @@
 .ext-overview-ruler-track {
     position: absolute;
     inset: 0;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
 }
 
 .ext-overview-marker-layer {
@@ -173,6 +174,12 @@
     bottom: 4px;
 }
 
+.ext-overview-marker-layer--highlights {
+    z-index: 2;
+    top: 3px;
+    bottom: 3px;
+}
+
 .ext-overview-marker-layer--focus {
     --marker-color: #6a7bff;
     z-index: 3;
@@ -187,6 +194,7 @@
     font-weight: 600;
     font-size: 9px;
     color: transparent;
+    cursor: pointer;
 }
 
 .ext-overview-marker--message {
@@ -196,6 +204,21 @@
     height: 1px;
     border-radius: 1px;
     background: rgba(120, 130, 150, .35);
+}
+
+.ext-overview-marker--highlight {
+    left: 10%;
+    right: 10%;
+    transform: translateY(-50%);
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(255, 204, 64, .9);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .4);
+}
+
+.ext-overview-marker--highlight[data-annotated="true"] {
+    background: rgba(120, 230, 170, .95);
+    box-shadow: 0 0 0 1px rgba(40, 150, 100, .5);
 }
 
 .ext-overview-marker--message::after {
