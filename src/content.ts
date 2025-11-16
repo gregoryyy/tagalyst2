@@ -1454,6 +1454,11 @@ class OverviewRulerController {
 
     private attachScrollContainer(container: HTMLElement) {
         const candidate = this.findScrollContainer(container);
+        console.debug('[overview] attachScrollContainer', {
+            container,
+            candidate,
+            containerPath: this.debugContainerPath(container),
+        });
         const target: EventTarget = candidate ?? window;
         if (this.scrollEventTarget !== target) {
             if (this.scrollEventTarget) {
@@ -1465,7 +1470,20 @@ class OverviewRulerController {
         this.scrollContainer = candidate;
     }
 
+    private debugContainerPath(container: HTMLElement) {
+        const nodes: string[] = [];
+        let current: HTMLElement | null = container;
+        while (current) {
+            const descriptor = `${current.tagName.toLowerCase()}#${current.id || ''}.${current.className || ''}`.replace(/\s+/g, '.');
+            nodes.push(descriptor);
+            current = current.parentElement;
+        }
+        return nodes;
+    }
+
     private findScrollContainer(container: HTMLElement): HTMLElement | null {
+        const dedicated = this.locateTranscriptScroller(container);
+        if (dedicated) return dedicated;
         let current: HTMLElement | null = container;
         while (current) {
             const parent = current.parentElement as HTMLElement | null;
@@ -1476,6 +1494,23 @@ class OverviewRulerController {
         if (this.isScrollable(main)) return main;
         const docScroll = document.scrollingElement as HTMLElement | null;
         if (this.isScrollable(docScroll)) return docScroll;
+        return null;
+    }
+
+    private locateTranscriptScroller(container: HTMLElement): HTMLElement | null {
+        if (!container) return null;
+        const directParent = container.parentElement as HTMLElement | null;
+        if (this.isScrollable(directParent)) return directParent;
+        const scope = container.closest('main') || document.body;
+        const selectors = [
+            'div.flex.h-full.flex-col.overflow-y-auto',
+            'div.flex.flex-col.overflow-y-auto',
+            '[data-testid="conversation-main"] div.overflow-y-auto'
+        ];
+        for (const selector of selectors) {
+            const candidate = scope.querySelector<HTMLElement>(selector);
+            if (this.isScrollable(candidate)) return candidate;
+        }
         return null;
     }
 
@@ -1514,6 +1549,7 @@ class OverviewRulerController {
         } else {
             window.scrollTo({ top, behavior });
         }
+        this.handleViewportChange();
     }
 
     private scrollContainerBy(delta: number) {
@@ -1526,6 +1562,7 @@ class OverviewRulerController {
         } else {
             window.scrollBy({ top: delta, behavior: 'auto' });
         }
+        this.handleViewportChange();
     }
 
     private bindTrackHandlers() {
