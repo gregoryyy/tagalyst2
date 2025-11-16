@@ -1433,9 +1433,7 @@ class OverviewRulerController {
         const el = adapter?.element;
         if (!el || !document.contains(el)) return { docCenter: null, visualCenter: null };
         const messageRect = el.getBoundingClientRect();
-        const messageCenter = messageRect
-            ? messageRect.top + window.scrollY + (messageRect.height / 2 || 0)
-            : null;
+        const messageCenter = this.measureScrollSpaceCenter(messageRect);
         const toolbar =
             el.querySelector<HTMLElement>('.ext-toolbar-row') ||
             el.querySelector<HTMLElement>('.ext-toolbar');
@@ -1443,13 +1441,21 @@ class OverviewRulerController {
         if (toolbar) {
             const toolbarRect = toolbar.getBoundingClientRect();
             if (toolbarRect) {
-                docCenter = toolbarRect.top + window.scrollY + (toolbarRect.height / 2 || 0);
+                docCenter = this.measureScrollSpaceCenter(toolbarRect);
             }
         }
         return {
             docCenter,
             visualCenter: messageCenter,
         };
+    }
+
+    private measureScrollSpaceCenter(rect: DOMRect | null): number | null {
+        if (!rect) return null;
+        const scrollOffset = this.getScrollOffset();
+        const originOffset = this.getViewportOriginOffset();
+        const height = rect.height || 0;
+        return scrollOffset + (rect.top - originOffset) + height / 2;
     }
 
     private attachScrollContainer(container: HTMLElement) {
