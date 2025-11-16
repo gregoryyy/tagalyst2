@@ -81,3 +81,16 @@ All business logic lives in the dedicated modules; `content.ts` becomes straight
 ### Why not just move classes?
 
 Simply copying existing classes into separate files would still leave them tightly coupled to global singletons (`focusController`, `messageMetaRegistry`, etc.). The planned layout goes further: each module exposes explicit exports, consumes dependencies through constructors, and drops side effects so we can test or replace pieces without dragging in the whole content script. That’s why the refactor is more than a file shuffle—it’s also about untangling ownership and wiring while we split the code.
+
+## Step 4 Breakdown (UI Controllers)
+
+Split one controller at a time, running `npm run build` after each move. Suggested order:
+
+1. **TopPanelController** → `controllers/top-panel.ts` (inject `focusService`, `configService`, `focusController`).
+2. **OverviewRulerController** → `controllers/overview-ruler.ts` (inject `focusController`, `highlightController` as needed).
+3. **EditorController** → `controllers/editor.ts` (inject `storageService`, `toolbarController` hooks).
+4. **HighlightController** → `controllers/highlight.ts`.
+5. **ToolbarController** → `controllers/toolbar.ts` (takes focus/editor/thread actions/export deps).
+6. **ThreadActions** + **ExportController** → `controllers/thread-actions.ts` / `controllers/export.ts`.
+
+Each extraction removes the class from `content.ts`, moves it into the controller file with constructor-based dependencies, adds its compiled JS to the manifest, and verifies the build. After all six, `content.ts` just wires the controllers together.

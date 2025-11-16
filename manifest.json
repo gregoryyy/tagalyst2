@@ -25,6 +25,8 @@
                 "content/content/services/config.js",
                 "content/content/state/message-meta.js",
                 "content/content/state/focus.js",
+                "content/content/controllers/top-panel.js",
+                "content/content/controllers/overview-ruler.js",
                 "content/content/dom/message-adapters.js",
                 "content/content/dom/thread-dom.js",
                 "content/content/dom/chatgpt-adapter.js",

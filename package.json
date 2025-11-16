@@ -3,7 +3,7 @@
   "version": "0.5.0",
   "private": true,
   "scripts": {
-    "clean": "rm -rf .tsbuild content/content.js options/options.js dist",
+    "clean": "rm -rf .tsbuild content/content.js content/markdown.js content/content dom",
     "build": "tsc -b",
     "watch": "tsc -b --watch --preserveWatchOutput",
     "dist": "npm run clean && npm run build && node scripts/build.js"
