@@ -18,6 +18,11 @@
                 "https://chatgpt.com/*"
             ],
             "js": [
+                "content/content/constants.js",
+                "content/content/utils.js",
+                "content/content/services/storage.js",
+                "content/content/services/render-scheduler.js",
+                "content/content/services/config.js",
                 "content/markdown.js",
                 "content/content.js"
             ],
