@@ -1,6 +1,6 @@
 {
   "name": "tagalyst2",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "scripts": {
     "clean": "rm -rf .tsbuild content/content.js options/options.js dist",

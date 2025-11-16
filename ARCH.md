@@ -14,7 +14,9 @@ BootstrapOrchestrator
  ├─ TopPanelController (Search/Tags panels)
  ├─ ToolbarController (per-message + global controls)
  ├─ ThreadActions / ExportController (batch ops & Markdown)
- └─ EditorController (tag + note editors)
+ ├─ EditorController (tag + note editors)
+ ├─ HighlightController (CSS Highlight API orchestration)
+ └─ OverviewRulerController (conversation minimap + viewport sync)
 ```
 
 ### ThreadDom, Adapters, and Scheduler
@@ -36,9 +38,18 @@ BootstrapOrchestrator
 
 ### ToolbarController
 - Owns both the bottom navigation stack and the per-message toolbar injection. It now handles badge rendering, pair number chips, collapse button wiring, and the documented-but-disabled user button skeleton. `ThreadActions` supplies the actual collapse logic, but the controller determines when to call it.
+- Emits hover menus for text-selection actions by delegating to `HighlightController` (see below) so highlight UX hooks live next to the per-message toolbar.
 
 ### EditorController
 - Still encapsulates note/tag editor lifecycles. The bootstrapper’s teardown path simply calls `editorController.teardown()` before removing DOM nodes.
+
+### HighlightController
+- Provides text range capture, persistence, and rendering using the CSS Highlight API. It normalizes selections relative to each message, stores highlights/annotations alongside other message metadata, and restores them by creating/deleting named highlights.
+- Exposes a selection palette (Highlight / Annotate / Remove) that appears only when the user selects text inside a single message. Hover tooltips reuse stored annotations, and highlight IDs feed into the overview ruler so marked regions show up in the minimap.
+
+### OverviewRulerController
+- Renders the left-hand “overview ruler,” a slim scrollbar-like track that mirrors the entire thread. It lays out message number ticks, focus markers (stars/tags/search hits), highlight markers, and a viewport thumb that tracks real scroll position.
+- Supports hover expansion plus click/drag interactions that scroll the actual conversation. Marker columns are deterministic: message ticks, focus glyphs, and special markers all share the same coordinate system so navigation feels natural.
 
 ### ThreadActions + ExportController
 - `ThreadActions` gained helpers to keep collapse button glyphs in sync, so no other code pokes `.ext-collapse` buttons directly.
@@ -68,4 +79,4 @@ BootstrapOrchestrator
 3. **Pluggable DOM Adapters**  
    - After splitting modules, experiment with alternate `ThreadAdapter` implementations (e.g., for future ChatGPT layouts or other chat platforms) without touching higher-level controllers. `ThreadDom` already hides the fallback heuristics; the next step is swapping adapter instances via dependency injection.
 
-These steps continue the same philosophy as earlier refactors: isolate ChatGPT-specific details, ensure behavior stays 1:1, and make every feature depend on adapters + services instead of raw DOM.
+ These steps continue the same philosophy as earlier refactors: isolate ChatGPT-specific details, ensure behavior stays 1:1, and make every feature depend on adapters + services instead of raw DOM.

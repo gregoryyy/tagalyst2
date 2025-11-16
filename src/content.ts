@@ -978,13 +978,21 @@ type MarkerDatum = {
     docCenter: number;
     visualCenter?: number | null;
     label?: string | null;
-    kind?: 'message' | 'star' | 'tag' | 'search';
+    kind?: 'message' | 'star' | 'tag' | 'search' | 'highlight';
+};
+
+type OverviewEntry = {
+    adapter: MessageAdapter;
+    pairIndex?: number | null;
 };
 
 class OverviewRulerController {
     private messageMarkerLayer: HTMLElement | null = null;
     private messageMarkerPool: HTMLElement[] = [];
     private messageMarkerData: MarkerDatum[] = [];
+    private highlightMarkerLayer: HTMLElement | null = null;
+    private highlightMarkerPool: HTMLElement[] = [];
+    private highlightMarkerData: MarkerDatum[] = [];
     private focusMarkerLayer: HTMLElement | null = null;
     private focusMarkerPool: HTMLElement[] = [];
     private starMarkerData: MarkerDatum[] = [];
@@ -1000,6 +1008,28 @@ class OverviewRulerController {
     private viewportEl: HTMLElement | null = null;
     private lastAdapters: MessageAdapter[] = [];
     private rulerCanExpand = true;
+    private readonly handleMarkerClick = (evt: MouseEvent) => {
+        const target = evt.currentTarget as HTMLElement | null;
+        if (!target) return;
+        const value = Number(target.dataset.docCenter);
+        if (!Number.isFinite(value)) return;
+        const viewport = this.getViewportHeight();
+        const top = Math.max(0, value - viewport / 2);
+        this.scrollContainerTo(top, 'smooth');
+    };
+    private pendingLayoutFrame: number | null = null;
+    private pendingEntries: OverviewEntry[] | null = null;
+    private pendingContainer: HTMLElement | null = null;
+    private scrollContainer: HTMLElement | null = null;
+    private trackHandlersBound = false;
+    private trackDragActive = false;
+    private suppressNextClick = false;
+    private scrollEventTarget: EventTarget | null = null;
+    private readonly handleTrackClick = (evt: MouseEvent) => this.onTrackClick(evt);
+    private readonly handleTrackMouseDown = (evt: MouseEvent) => this.onTrackMouseDown(evt);
+    private readonly handleTrackMouseMove = (evt: MouseEvent) => this.onTrackMouseMove(evt);
+    private readonly handleTrackMouseUp = () => this.endTrackDrag();
+    private readonly handleTrackWheel = (evt: WheelEvent) => this.onTrackWheel(evt);
 
     private readonly handleViewportChange = () => {
         if (!this.container) return;
@@ -1014,8 +1044,10 @@ class OverviewRulerController {
     ensure(container: HTMLElement) {
         if (this.root) {
             this.container = container;
+            this.attachScrollContainer(container);
             this.updatePosition(container);
             this.applyExpandState();
+            this.bindTrackHandlers();
             return this.root;
         }
         const root = document.createElement('div');
@@ -1024,11 +1056,14 @@ class OverviewRulerController {
         track.className = 'ext-overview-ruler-track';
         const messageLayer = document.createElement('div');
         messageLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--messages';
+        const highlightLayer = document.createElement('div');
+        highlightLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--highlights';
         const focusLayer = document.createElement('div');
         focusLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--focus';
         const viewport = document.createElement('div');
         viewport.className = 'ext-ruler-viewport';
         track.appendChild(messageLayer);
+        track.appendChild(highlightLayer);
         track.appendChild(focusLayer);
         track.appendChild(viewport);
         root.appendChild(track);
@@ -1037,19 +1072,48 @@ class OverviewRulerController {
         this.root = root;
         this.trackEl = track;
         this.messageMarkerLayer = messageLayer;
+        this.highlightMarkerLayer = highlightLayer;
         this.focusMarkerLayer = focusLayer;
         this.viewportEl = viewport;
         this.container = container;
-        window.addEventListener('scroll', this.handleViewportChange, { passive: true });
+        this.attachScrollContainer(container);
         window.addEventListener('resize', this.handleViewportChange);
         this.applyExpandState();
+        this.bindTrackHandlers();
         this.updatePosition(container);
         return root;
     }
 
-    update(container: HTMLElement, entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>) {
+    update(container: HTMLElement, entries: OverviewEntry[]) {
         if (!entries.length) return;
         this.ensure(container);
+        if (!this.root) return;
+        this.pendingContainer = container;
+        this.pendingEntries = entries;
+        this.requestDeferredLayout();
+    }
+
+    private requestDeferredLayout() {
+        if (this.pendingLayoutFrame !== null) return;
+        const runSecondFrame = () => {
+            this.pendingLayoutFrame = null;
+            this.flushPendingUpdate();
+        };
+        const runFirstFrame = () => {
+            this.pendingLayoutFrame = requestAnimationFrame(runSecondFrame);
+        };
+        this.pendingLayoutFrame = requestAnimationFrame(runFirstFrame);
+    }
+
+    private flushPendingUpdate() {
+        const container = this.pendingContainer;
+        const entries = this.pendingEntries;
+        this.pendingEntries = null;
+        if (!container || !entries?.length) return;
+        this.performUpdate(container, entries);
+    }
+
+    private performUpdate(container: HTMLElement, entries: OverviewEntry[]) {
         if (!this.trackEl || !this.root) return;
         this.container = container;
         this.lastAdapters = entries.map(entry => entry.adapter);
@@ -1078,6 +1142,12 @@ class OverviewRulerController {
     }
 
     reset() {
+        if (this.trackHandlersBound && this.root) {
+            this.root.removeEventListener('click', this.handleTrackClick);
+            this.root.removeEventListener('mousedown', this.handleTrackMouseDown);
+            this.root.removeEventListener('wheel', this.handleTrackWheel);
+            this.trackHandlersBound = false;
+        }
         if (this.root?.parentElement) {
             this.root.parentElement.removeChild(this.root);
         }
@@ -1091,14 +1161,28 @@ class OverviewRulerController {
         this.messageMarkerLayer = null;
         this.messageMarkerPool = [];
         this.messageMarkerData = [];
+        this.highlightMarkerLayer = null;
+        this.highlightMarkerPool = [];
+        this.highlightMarkerData = [];
         this.focusMarkerLayer = null;
         this.focusMarkerPool = [];
         this.starMarkerData = [];
         this.tagMarkerData = [];
         this.searchMarkerData = [];
-        window.removeEventListener('scroll', this.handleViewportChange);
         window.removeEventListener('resize', this.handleViewportChange);
+        if (this.scrollEventTarget) {
+            (this.scrollEventTarget as any).removeEventListener('scroll', this.handleViewportChange);
+            this.scrollEventTarget = null;
+        }
+        this.scrollContainer = null;
+        this.endTrackDrag(true);
         this.rulerCanExpand = true;
+        if (this.pendingLayoutFrame !== null) {
+            cancelAnimationFrame(this.pendingLayoutFrame);
+            this.pendingLayoutFrame = null;
+        }
+        this.pendingEntries = null;
+        this.pendingContainer = null;
     }
 
     setExpandable(enabled: boolean) {
@@ -1134,8 +1218,8 @@ class OverviewRulerController {
     private updateViewportIndicator(scrollRange: { top: number; bottom: number }) {
         if (!this.viewportEl) return;
         const scrollHeight = Math.max(1, scrollRange.bottom - scrollRange.top);
-        const viewportTop = window.scrollY;
-        const viewportBottom = viewportTop + window.innerHeight;
+        const viewportTop = this.getScrollOffset();
+        const viewportBottom = viewportTop + this.getViewportHeight();
         const intersectionTop = Math.max(viewportTop, scrollRange.top);
         const intersectionBottom = Math.min(viewportBottom, scrollRange.bottom);
         const visibleSpan = Math.max(0, intersectionBottom - intersectionTop);
@@ -1152,10 +1236,21 @@ class OverviewRulerController {
 
     private layoutAllMarkers(scrollRange: { top: number; bottom: number }) {
         this.layoutMessageMarkers(scrollRange);
+        this.layoutHighlightMarkers(scrollRange);
         this.layoutSpecialMarkers(scrollRange);
     }
 
-    private collectMessageMarkerData(entries: Array<{ adapter: MessageAdapter; pairIndex?: number | null }>): MarkerDatum[] {
+    private layoutHighlightMarkers(scrollRange: { top: number; bottom: number }) {
+        this.layoutMarkerSet({
+            layer: this.highlightMarkerLayer,
+            pool: this.highlightMarkerPool,
+            data: this.highlightMarkerData,
+            scrollRange,
+            className: 'ext-overview-marker ext-overview-marker--highlight'
+        });
+    }
+
+    private collectMessageMarkerData(entries: OverviewEntry[]): MarkerDatum[] {
         const seenPairs = new Set<number>();
         let fallbackIndex = 0;
         const candidates: Array<{ docCenter: number; visualCenter: number; labelValue: number }> = [];
@@ -1207,6 +1302,7 @@ class OverviewRulerController {
             this.starMarkerData = starData;
             this.tagMarkerData = tagData;
             this.searchMarkerData = searchData;
+            this.highlightMarkerData = [];
             return;
         }
         const query = (focusService.getSearchQuery() || '').toLowerCase();
@@ -1248,6 +1344,8 @@ class OverviewRulerController {
         this.starMarkerData = starData;
         this.tagMarkerData = tagData;
         this.searchMarkerData = searchData;
+        const threadKey = Utils.getThreadKey();
+        this.highlightMarkerData = highlightController.getOverviewMarkers(adapters, threadKey);
     }
 
     private layoutMessageMarkers(scrollRange: { top: number; bottom: number }) {
@@ -1314,6 +1412,15 @@ class OverviewRulerController {
             } else {
                 delete marker.dataset.kind;
             }
+            if (datum.kind === 'highlight') {
+                if (datum.label === 'annotated') {
+                    marker.dataset.annotated = 'true';
+                } else {
+                    delete marker.dataset.annotated;
+                }
+            } else {
+                delete marker.dataset.annotated;
+            }
             if (datum.label) {
                 marker.dataset.label = datum.label;
             } else {
@@ -1330,6 +1437,7 @@ class OverviewRulerController {
         while (pool.length <= index) {
             const marker = document.createElement('div');
             marker.className = className;
+            marker.addEventListener('click', this.handleMarkerClick);
             layer.appendChild(marker);
             pool.push(marker);
         }
@@ -1345,9 +1453,7 @@ class OverviewRulerController {
         const el = adapter?.element;
         if (!el || !document.contains(el)) return { docCenter: null, visualCenter: null };
         const messageRect = el.getBoundingClientRect();
-        const messageCenter = messageRect
-            ? messageRect.top + window.scrollY + (messageRect.height / 2 || 0)
-            : null;
+        const messageCenter = this.measureScrollSpaceCenter(messageRect);
         const toolbar =
             el.querySelector<HTMLElement>('.ext-toolbar-row') ||
             el.querySelector<HTMLElement>('.ext-toolbar');
@@ -1355,13 +1461,187 @@ class OverviewRulerController {
         if (toolbar) {
             const toolbarRect = toolbar.getBoundingClientRect();
             if (toolbarRect) {
-                docCenter = toolbarRect.top + window.scrollY + (toolbarRect.height / 2 || 0);
+                docCenter = this.measureScrollSpaceCenter(toolbarRect);
             }
         }
         return {
             docCenter,
             visualCenter: messageCenter,
         };
+    }
+
+    measureScrollSpaceCenter(rect: DOMRect | null): number | null {
+        if (!rect) return null;
+        const scrollOffset = this.getScrollOffset();
+        const originOffset = this.getViewportOriginOffset();
+        const height = rect.height || 0;
+        return scrollOffset + (rect.top - originOffset) + height / 2;
+    }
+
+    private attachScrollContainer(container: HTMLElement) {
+        const candidate = this.findScrollContainer(container);
+        const target: EventTarget = candidate ?? window;
+        if (this.scrollEventTarget !== target) {
+            if (this.scrollEventTarget) {
+                (this.scrollEventTarget as any).removeEventListener('scroll', this.handleViewportChange);
+            }
+            (target as any).addEventListener('scroll', this.handleViewportChange, { passive: true });
+            this.scrollEventTarget = target;
+        }
+        this.scrollContainer = candidate;
+    }
+
+    private findScrollContainer(container: HTMLElement): HTMLElement | null {
+        const dedicated = this.locateTranscriptScroller(container);
+        if (dedicated) return dedicated;
+        let current: HTMLElement | null = container;
+        while (current) {
+            const parent = current.parentElement as HTMLElement | null;
+            if (this.isScrollable(current)) return current;
+            current = parent;
+        }
+        const main = container.closest<HTMLElement>('main');
+        if (this.isScrollable(main)) return main;
+        const docScroll = document.scrollingElement as HTMLElement | null;
+        if (this.isScrollable(docScroll)) return docScroll;
+        return null;
+    }
+
+    private locateTranscriptScroller(container: HTMLElement): HTMLElement | null {
+        if (!container) return null;
+        const directParent = container.parentElement as HTMLElement | null;
+        if (this.isScrollable(directParent)) return directParent;
+        const scope = container.closest('main') || document.body;
+        const selectors = [
+            'div.flex.h-full.flex-col.overflow-y-auto',
+            'div.flex.flex-col.overflow-y-auto',
+            '[data-testid="conversation-main"] div.overflow-y-auto'
+        ];
+        for (const selector of selectors) {
+            const candidate = scope.querySelector<HTMLElement>(selector);
+            if (this.isScrollable(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    private isScrollable(el: HTMLElement | null | undefined): el is HTMLElement {
+        if (!el) return false;
+        if (el === document.scrollingElement || el === document.documentElement || el === document.body) {
+            return true;
+        }
+        const scrollableHeight = el.scrollHeight - el.clientHeight;
+        if (scrollableHeight > 8) return true;
+        const overflowY = getComputedStyle(el).overflowY;
+        return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+    }
+
+    private getScrollOffset() {
+        return this.scrollContainer ? this.scrollContainer.scrollTop : window.scrollY;
+    }
+
+    private getViewportHeight() {
+        return this.scrollContainer ? this.scrollContainer.clientHeight : window.innerHeight;
+    }
+
+    private getViewportOriginOffset() {
+        if (!this.scrollContainer) return 0;
+        return this.scrollContainer.getBoundingClientRect().top;
+    }
+
+    private scrollContainerTo(top: number, behavior: ScrollBehavior) {
+        if (this.scrollContainer) {
+            this.scrollContainer.scrollTo({ top, behavior });
+        } else {
+            window.scrollTo({ top, behavior });
+        }
+        this.handleViewportChange();
+    }
+
+    private scrollContainerBy(delta: number) {
+        if (this.scrollContainer) {
+            this.scrollContainer.scrollBy({ top: delta, behavior: 'auto' });
+        } else {
+            window.scrollBy({ top: delta, behavior: 'auto' });
+        }
+        this.handleViewportChange();
+    }
+
+    private bindTrackHandlers() {
+        if (this.trackHandlersBound || !this.root) return;
+        this.root.addEventListener('click', this.handleTrackClick);
+        this.root.addEventListener('mousedown', this.handleTrackMouseDown);
+        this.root.addEventListener('wheel', this.handleTrackWheel, { passive: false });
+        this.trackHandlersBound = true;
+    }
+
+    private onTrackClick(evt: MouseEvent) {
+        if (!this.container || !this.root) return;
+        if (this.suppressNextClick) {
+            this.suppressNextClick = false;
+            return;
+        }
+        const ratio = this.computeTrackRatio(evt);
+        if (ratio === null) return;
+        this.scrollToRatio(ratio);
+    }
+
+    private onTrackMouseDown(evt: MouseEvent) {
+        if (evt.button !== 0) return;
+        if (!this.container) return;
+        evt.preventDefault();
+        evt.stopPropagation();
+        this.trackDragActive = true;
+        this.suppressNextClick = false;
+        document.addEventListener('mousemove', this.handleTrackMouseMove, true);
+        document.addEventListener('mouseup', this.handleTrackMouseUp, true);
+    }
+
+    private onTrackMouseMove(evt: MouseEvent) {
+        if (!this.trackDragActive) return;
+        const ratio = this.computeTrackRatio(evt);
+        if (ratio === null) return;
+        this.suppressNextClick = true;
+        this.scrollToRatio(ratio, 'auto');
+    }
+
+    private endTrackDrag(force = false) {
+        if (!this.trackDragActive && !force) return;
+        if (this.trackDragActive) {
+        }
+        this.trackDragActive = false;
+        document.removeEventListener('mousemove', this.handleTrackMouseMove, true);
+        document.removeEventListener('mouseup', this.handleTrackMouseUp, true);
+    }
+
+    private onTrackWheel(evt: WheelEvent) {
+        if (!this.container) return;
+        evt.preventDefault();
+        evt.stopPropagation();
+        const multiplier = evt.deltaMode === 2
+            ? window.innerHeight
+            : evt.deltaMode === 1
+                ? 16
+                : 1;
+        const delta = evt.deltaY * multiplier;
+        this.scrollContainerBy(delta);
+    }
+
+    private computeTrackRatio(evt: MouseEvent): number | null {
+        const trackRect = this.root?.getBoundingClientRect();
+        if (!trackRect || !trackRect.height) return null;
+        const ratio = (evt.clientY - trackRect.top) / trackRect.height;
+        return Math.min(1, Math.max(0, ratio));
+    }
+
+    private scrollToRatio(ratio: number, behavior: ScrollBehavior = 'smooth') {
+        if (!this.container) return;
+        const scrollRange = this.computeScrollRange(this.container);
+        const viewport = this.getViewportHeight();
+        const minTop = scrollRange.top;
+        const maxTop = Math.max(scrollRange.top, scrollRange.bottom - viewport);
+        const span = Math.max(0, maxTop - minTop);
+        const target = minTop + span * ratio;
+        this.scrollContainerTo(target, behavior);
     }
 
     private computeBounds(container: HTMLElement) {
@@ -1457,16 +1737,18 @@ class OverviewRulerController {
         const topMessageRect = this.getTopAnchorRect(container);
         const bottomAnchorRect = this.getBottomAnchorRect(container);
         const lastMessageRect = this.getLastMessageRect();
+        const scrollTop = this.getScrollOffset();
+        const viewportOffset = this.getViewportOriginOffset();
         let top: number;
         if (topMessageRect) {
-            top = topMessageRect.top + window.scrollY;
+            top = scrollTop + (topMessageRect.top - viewportOffset);
         } else if (headerRect) {
-            top = headerRect.bottom + 4 + window.scrollY;
+            top = scrollTop + (headerRect.bottom - viewportOffset) + 4;
         } else {
-            top = containerRect.top + window.scrollY;
+            top = scrollTop + (containerRect.top - viewportOffset);
         }
         const bottomSource = lastMessageRect || bottomAnchorRect || containerRect;
-        let bottom = bottomSource.bottom + window.scrollY;
+        let bottom = scrollTop + (bottomSource.bottom - viewportOffset);
         if (bottom <= top) {
             bottom = top + 1;
         }
@@ -1756,6 +2038,7 @@ class HighlightController {
         this.highlightMeta.clear();
         this.syncHighlightStyle();
         this.hideHoverTooltip();
+        overviewRulerController.refreshMarkers();
     }
 
     applyHighlights(messageEl: HTMLElement, highlights: any, adapter?: MessageAdapter | null, threadKey?: string) {
@@ -1785,6 +2068,7 @@ class HighlightController {
             this.highlightIdsByMessage.set(messageKey, ids);
         }
         this.syncHighlightStyle();
+        overviewRulerController.refreshMarkers();
     }
 
     private clearMessageHighlights(messageKey: string) {
@@ -1802,6 +2086,36 @@ class HighlightController {
             this.highlightMeta.delete(id);
         }
         this.syncHighlightStyle();
+        overviewRulerController.refreshMarkers();
+    }
+
+    getOverviewMarkers(adapters: MessageAdapter[], threadKey: string): MarkerDatum[] {
+        if (!this.cssHighlightSupported || !adapters?.length) return [];
+        const markers: MarkerDatum[] = [];
+        for (const adapter of adapters) {
+            const el = adapter?.element;
+            if (!el || !document.contains(el)) continue;
+            if (el.classList.contains('ext-collapsed')) continue;
+            const key = this.getMessageKey(adapter, threadKey);
+            const ids = this.highlightIdsByMessage.get(key);
+            if (!ids?.size) continue;
+            for (const id of ids) {
+                const meta = this.highlightMeta.get(id);
+                const range = meta?.range;
+                if (!range) continue;
+                const rect = range.getBoundingClientRect();
+                if (!rect) continue;
+                const docCenter = overviewRulerController.measureScrollSpaceCenter(rect);
+                if (!Number.isFinite(docCenter)) continue;
+                markers.push({
+                    docCenter,
+                    visualCenter: docCenter,
+                    kind: 'highlight',
+                    label: meta?.annotation ? 'annotated' : null
+                });
+            }
+        }
+        return markers;
     }
 
     private getMessageKey(adapter: MessageAdapter, threadKey: string) {
@@ -1830,7 +2144,7 @@ class HighlightController {
             segments.push(`${plain.map(name => `::highlight(${name})`).join(', ')} { background: rgba(255, 242, 168, .9); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 215, 64, .35); }`);
         }
         if (annotated.length) {
-            segments.push(`${annotated.map(name => `::highlight(${name})`).join(', ')} { background: rgba(255, 190, 0, .5); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 120, 0, .45); }`);
+            segments.push(`${annotated.map(name => `::highlight(${name})`).join(', ')} { background: rgba(170, 240, 200, .85); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(60, 170, 120, .45); }`);
         }
         const css = segments.join('\n');
         if (!this.highlightStyleEl) {
@@ -2839,6 +3153,9 @@ class ThreadActions {
         el.classList.toggle('ext-collapsed', collapsed);
         this.syncCollapseButton(el);
         this.toggleMessageAttachments(el, collapsed);
+        if (configService.isOverviewEnabled()) {
+            overviewRulerController.refreshMarkers();
+        }
     }
     
     /**
