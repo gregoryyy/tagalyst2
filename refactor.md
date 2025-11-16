@@ -78,3 +78,6 @@ Once the modules above exist, `src/content.ts` shrinks to a thin entrypoint:
 - Expose the public API (`window.__tagalyst`) and nothing else.
 
 All business logic lives in the dedicated modules; `content.ts` becomes straightforward glue.
+### Why not just move classes?
+
+Simply copying existing classes into separate files would still leave them tightly coupled to global singletons (`focusController`, `messageMetaRegistry`, etc.). The planned layout goes further: each module exposes explicit exports, consumes dependencies through constructors, and drops side effects so we can test or replace pieces without dragging in the whole content script. That’s why the refactor is more than a file shuffle—it’s also about untangling ownership and wiring while we split the code.
