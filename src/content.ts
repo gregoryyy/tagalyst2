@@ -1,3 +1,7 @@
+/// <reference path="./types/domain.d.ts" />
+/// <reference path="./types/globals.d.ts" />
+/// <reference path="./markdown.ts" />
+
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
  * - Defensive discovery with MutationObserver
@@ -157,27 +161,45 @@ namespace Utils {
     }
 } // Utils
 
+/**
+ * Thin wrapper around chrome.storage APIs for per-message persistence.
+ */
 class StorageService {
+    /**
+     * Reads a set of message keys from local storage.
+     */
     async read(keys: string[]): Promise<Record<string, MessageValue>> {
         if (!Array.isArray(keys) || !keys.length) return {};
         return new Promise(resolve => chrome.storage.local.get(keys, resolve));
     }
 
+    /**
+     * Writes the provided record to chrome.storage.
+     */
     async write(record: Record<string, MessageValue>): Promise<void> {
         if (!record || !Object.keys(record).length) return;
         await new Promise<void>(resolve => chrome.storage.local.set(record, () => resolve()));
     }
 
+    /**
+     * Derives the storage key for a specific message.
+     */
     keyForMessage(threadKey: string, adapter: MessageAdapter): string {
         return adapter.storageKey(threadKey);
     }
 
+    /**
+     * Reads a single message entry identified by thread/message keys.
+     */
     async readMessage(threadKey: string, adapter: MessageAdapter): Promise<MessageValue> {
         const key = this.keyForMessage(threadKey, adapter);
         const record = await this.read([key]);
         return record[key] || {};
     }
 
+    /**
+     * Persists a single message entry identified by thread/message keys.
+     */
     async writeMessage(threadKey: string, adapter: MessageAdapter, value: MessageValue): Promise<void> {
         const key = this.keyForMessage(threadKey, adapter);
         await this.write({ [key]: value });
@@ -185,12 +207,18 @@ class StorageService {
 } // StorageService
 
 const storageService = new StorageService();
+/**
+ * Manages extension configuration toggles and notifies listeners on change.
+ */
 class ConfigService {
     private loaded = false;
     private listeners = new Set<(cfg: typeof contentDefaultConfig) => void>();
 
     constructor(private storage: StorageService, private readonly scheduler: RenderScheduler) { }
 
+    /**
+     * Loads config from storage (once) and returns the in-memory snapshot.
+     */
     async load(): Promise<typeof contentDefaultConfig> {
         if (this.loaded) return config;
         const store = await this.storage.read([CONTENT_CONFIG_STORAGE_KEY]);
@@ -199,6 +227,9 @@ class ConfigService {
         return config;
     }
 
+    /**
+     * Applies a partial config update and refreshes dependent services.
+     */
     apply(obj?: Partial<typeof contentDefaultConfig>) {
         config = { ...contentDefaultConfig, ...(obj || {}) };
         this.enforceState();
@@ -207,45 +238,75 @@ class ConfigService {
         this.scheduler.request();
     }
 
+    /**
+     * Writes a config patch to storage and applies it locally.
+     */
     async update(partial: Partial<typeof contentDefaultConfig>) {
         const next = { ...config, ...partial };
         await this.storage.write({ [CONTENT_CONFIG_STORAGE_KEY]: next });
         this.apply(next);
     }
 
+    /**
+     * Registers a listener for config change events.
+     */
     onChange(listener: (cfg: typeof contentDefaultConfig) => void): () => void {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);
     }
 
+    /**
+     * Returns true when search UI should be available.
+     */
     isSearchEnabled() {
         return !!config.searchEnabled;
     }
 
+    /**
+     * Returns true when tagging UI should be available.
+     */
     areTagsEnabled() {
         return !!config.tagsEnabled;
     }
 
+    /**
+     * Returns true if search UI is allowed to expand on hover.
+     */
     doesSearchExpand() {
         return this.isSearchEnabled() && !!config.searchExpands;
     }
 
+    /**
+     * Returns true if the tag panel is allowed to expand on hover.
+     */
     doTagsExpand() {
         return this.areTagsEnabled() && !!config.tagsExpands;
     }
 
+    /**
+     * Returns true when overview ruler UI should be rendered.
+     */
     isOverviewEnabled() {
         return !!config.overviewEnabled;
     }
 
+    /**
+     * Returns true if the overview ruler can expand on hover.
+     */
     doesOverviewExpand() {
         return !!config.overviewExpands;
     }
 
+    /**
+     * Notifies subscribed listeners about a config change.
+     */
     private notify() {
         this.listeners.forEach(listener => listener(config));
     }
 
+    /**
+     * Ensures derived state (focus mode/tag selection) stays valid when config disables features.
+     */
     private enforceState() {
         let changed = false;
         if (!this.isSearchEnabled()) {
@@ -282,25 +343,43 @@ type MessageMeta = {
     adapter: MessageAdapter | null;
 };
 
+/**
+ * Tracks metadata for DOM message elements such as storage keys, values, and adapters.
+ */
 class MessageMetaRegistry {
     private readonly store = new Map<HTMLElement, MessageMeta>();
 
+    /**
+     * Clears all cached metadata entries.
+     */
     clear() {
         this.store.clear();
     }
 
+    /**
+     * Retrieves the metadata record for a given element, if any.
+     */
     get(el: HTMLElement) {
         return this.store.get(el) || null;
     }
 
+    /**
+     * Deletes the metadata record for a given element.
+     */
     delete(el: HTMLElement) {
         this.store.delete(el);
     }
 
+    /**
+     * Iterates over all metadata entries.
+     */
     forEach(cb: (meta: MessageMeta, el: HTMLElement) => void) {
         this.store.forEach(cb);
     }
 
+    /**
+     * Ensures a metadata record exists for the element and optionally seeds key/adapter.
+     */
     ensure(el: HTMLElement, key?: string | null, adapter?: MessageAdapter | null) {
         let meta = this.store.get(el);
         if (!meta) {
@@ -312,6 +391,9 @@ class MessageMetaRegistry {
         return meta;
     }
 
+    /**
+     * Updates portions of a metadata record in place.
+     */
     update(el: HTMLElement, opts: { key?: string | null; value?: MessageValue; pairIndex?: number | null; adapter?: MessageAdapter | null } = {}) {
         const meta = this.ensure(el, opts.key ?? null, opts.adapter ?? null);
         if (typeof opts.pairIndex === 'number') {
@@ -323,6 +405,9 @@ class MessageMetaRegistry {
         return meta;
     }
 
+    /**
+     * Resolves (or creates) a DomMessageAdapter for the element.
+     */
     resolveAdapter(el: HTMLElement): MessageAdapter {
         const meta = this.ensure(el);
         if (meta.adapter && meta.adapter.element === el) {
@@ -333,6 +418,9 @@ class MessageMetaRegistry {
         return adapter;
     }
 
+    /**
+     * Returns the internal metadata map. Consumers must handle stale nodes.
+     */
     getStore() {
         return this.store;
     }
@@ -354,14 +442,23 @@ type PageControls = {
     exportFocus: HTMLButtonElement | null;
 };
 
+/**
+ * Throttles expensive renders through requestAnimationFrame.
+ */
 class RenderScheduler {
     private rafId: number | null = null;
     private renderer: (() => Promise<void>) | null = null;
 
+    /**
+     * Sets the current renderer callback.
+     */
     setRenderer(renderer: () => Promise<void>) {
         this.renderer = renderer;
     }
 
+    /**
+     * Requests a render tick, optionally swapping the renderer.
+     */
     request(renderer?: () => Promise<void>) {
         if (renderer) this.renderer = renderer;
         const target = renderer ?? this.renderer;
@@ -397,6 +494,9 @@ const focusMarkerColors: Record<FocusMode, string> = {
     [FOCUS_MODES.SEARCH]: '#a15bfd',
 };
 
+/**
+ * Holds focus mode state derived from tags/search/stars and exposes helpers to evaluate matches.
+ */
 class FocusService {
     private mode: FocusMode = FOCUS_MODES.STARS;
     private readonly selectedTags = new Set<string>();
@@ -404,6 +504,9 @@ class FocusService {
     private searchQueryLower = '';
     private navIndex = -1;
 
+    /**
+     * Resets focus mode and criteria to default stars-based navigation.
+     */
     reset() {
         this.selectedTags.clear();
         this.searchQuery = '';
@@ -412,12 +515,18 @@ class FocusService {
         this.navIndex = -1;
     }
 
+    /**
+     * Updates the normalized search query.
+     */
     setSearchQuery(raw: string) {
         const normalized = (raw || '').trim();
         this.searchQuery = normalized;
         this.searchQueryLower = normalized.toLowerCase();
     }
 
+    /**
+     * Toggles a tag selection on or off.
+     */
     toggleTag(tag: string) {
         if (!tag) return;
         const wasSelected = this.selectedTags.has(tag);
@@ -428,28 +537,46 @@ class FocusService {
         }
     }
 
+    /**
+     * Clears all selected tags.
+     */
     clearTags() {
         if (this.selectedTags.size) {
             this.selectedTags.clear();
         }
     }
 
+    /**
+     * Returns true when the tag is presently selected.
+     */
     isTagSelected(tag: string): boolean {
         return this.selectedTags.has(tag);
     }
 
+    /**
+     * Returns a copy of the selected tag list.
+     */
     getTags(): string[] {
         return Array.from(this.selectedTags);
     }
 
+    /**
+     * Returns the raw search query.
+     */
     getSearchQuery(): string {
         return this.searchQuery;
     }
 
+    /**
+     * Returns the current focus mode.
+     */
     getMode(): FocusMode {
         return this.mode;
     }
 
+    /**
+     * Human friendly description of the active focus mode.
+     */
     describeMode(): string {
         switch (this.mode) {
             case FOCUS_MODES.TAGS:
@@ -461,6 +588,9 @@ class FocusService {
         }
     }
 
+    /**
+     * Returns a singular label for the current focus type (used by tooltips).
+     */
     getModeLabel(): string {
         switch (this.mode) {
             case FOCUS_MODES.TAGS:
@@ -472,22 +602,34 @@ class FocusService {
         }
     }
 
+    /**
+     * Returns the UI glyph representing the focus mode.
+     */
     getGlyph(isFilled: boolean): string {
         const glyph = focusGlyphs[this.mode] || focusGlyphs[FOCUS_MODES.STARS];
         return isFilled ? glyph.filled : glyph.empty;
     }
 
+    /**
+     * Derives the current mode based on config + search/tags.
+     */
     computeMode(): FocusMode {
         if (configService.isSearchEnabled() && this.searchQueryLower) return FOCUS_MODES.SEARCH;
         if (configService.areTagsEnabled() && this.selectedTags.size) return FOCUS_MODES.TAGS;
         return FOCUS_MODES.STARS;
     }
 
+    /**
+     * Recomputes the active mode and resets navigation index.
+     */
     syncMode() {
         this.mode = this.computeMode();
         this.navIndex = -1;
     }
 
+    /**
+     * Determines if a given message matches the current focus criteria.
+     */
     isMessageFocused(meta: MessageMeta, el: HTMLElement): boolean {
         switch (this.mode) {
             case FOCUS_MODES.TAGS:
@@ -499,6 +641,9 @@ class FocusService {
         }
     }
 
+    /**
+     * Enumerates message adapters that match focus state, sorted top-to-bottom.
+     */
     getMatches(store: MessageMetaRegistry): MessageAdapter[] {
         const matches: MessageAdapter[] = [];
         store.forEach((meta, el) => {
@@ -521,6 +666,9 @@ class FocusService {
         return matches;
     }
 
+    /**
+     * Advances the navigation index through the focused items.
+     */
     adjustNav(delta: number, total: number): number {
         if (total <= 0) {
             this.navIndex = -1;
@@ -534,6 +682,9 @@ class FocusService {
         return this.navIndex;
     }
 
+    /**
+     * Checks whether the provided message contains any selected tags.
+     */
     private matchesSelectedTags(value: MessageValue): boolean {
         if (!configService.areTagsEnabled() || !this.selectedTags.size) return false;
         const tags = Array.isArray(value?.tags) ? value.tags : [];
@@ -541,6 +692,9 @@ class FocusService {
         return tags.some(tag => this.selectedTags.has(tag.toLowerCase()));
     }
 
+    /**
+     * Determines if search query matches message text, tags, or notes.
+     */
     private matchesSearch(meta: MessageMeta, el: HTMLElement): boolean {
         if (!this.searchQueryLower) return false;
         const adapter = meta.adapter;
@@ -557,27 +711,42 @@ class FocusService {
 
 const focusService = new FocusService();
 
+/**
+ * Bridges FocusService state with UI controls/buttons on the page.
+ */
 class FocusController {
     private pageControls: PageControls | null = null;
     private selectionSync: (() => void) | null = null;
 
     constructor(private readonly focus: FocusService, private readonly messages: MessageMetaRegistry) { }
 
+    /**
+     * Resets focus service and clears UI bindings.
+     */
     reset() {
         this.focus.reset();
         this.pageControls = null;
         this.messages.clear();
     }
 
+    /**
+     * Registers a callback to keep selection overlays in sync with focus state.
+     */
     attachSelectionSync(handler: () => void) {
         this.selectionSync = handler;
     }
 
+    /**
+     * Assigns the DOM controls used for page-level navigation.
+     */
     setPageControls(controls: PageControls | null) {
         this.pageControls = controls;
         this.updateControlsUI();
     }
 
+    /**
+     * Updates the toolbar focus button state for a message.
+     */
     updateMessageButton(el: HTMLElement, meta: MessageMeta) {
         const btn = el.querySelector<HTMLButtonElement>('.ext-toolbar .ext-focus-button');
         if (!btn) return;
@@ -613,6 +782,9 @@ class FocusController {
         }
     }
 
+    /**
+     * Re-renders all message buttons to reflect the latest focus state.
+     */
     refreshButtons() {
         this.messages.forEach((meta, el) => {
             if (!document.contains(el)) {
@@ -627,6 +799,9 @@ class FocusController {
         this.updateControlsUI();
     }
 
+    /**
+     * Re-synchronizes focus mode and refreshes UI + selection state.
+     */
     syncMode() {
         this.focus.syncMode();
         this.refreshButtons();
@@ -634,22 +809,37 @@ class FocusController {
         this.selectionSync?.();
     }
 
+    /**
+     * Returns the currently focused message adapters.
+     */
     getMatches(): MessageAdapter[] {
         return this.focus.getMatches(this.messages);
     }
 
+    /**
+     * Returns the glyph for the active focus mode.
+     */
     getGlyph(isFilled: boolean) {
         return this.focus.getGlyph(isFilled);
     }
 
+    /**
+     * Returns a human readable description for focus mode.
+     */
     describeMode() {
         return this.focus.describeMode();
     }
 
+    /**
+     * Returns the singular label used for focus UI hints.
+     */
     getModeLabel() {
         return this.focus.getModeLabel();
     }
 
+    /**
+     * Syncs page control button labels/titles with focus mode.
+     */
     updateControlsUI() {
         if (!this.pageControls) return;
         const mode = this.focus.getMode();
@@ -681,6 +871,9 @@ class FocusController {
         }
     }
 
+    /**
+     * Returns true when either element in the pair is focused.
+     */
     isPairFocused(pair: TagalystPair) {
         const nodes: HTMLElement[] = [];
         if (pair.query) nodes.push(pair.query);
@@ -711,6 +904,9 @@ class FocusController {
 
 const focusController = new FocusController(focusService, messageMetaRegistry);
 
+/**
+ * Manages the floating search/tag control panel at the top of the page.
+ */
 class TopPanelController {
     private topPanelsEl: HTMLElement | null = null;
     private tagListEl: HTMLElement | null = null;
@@ -722,6 +918,9 @@ class TopPanelController {
         tags: { el: null, timer: null },
     };
 
+    /**
+     * Ensures the panel DOM exists and returns the root element.
+     */
     ensurePanels(): HTMLElement {
         if (this.topPanelsEl) return this.topPanelsEl;
         const wrap = document.createElement('div');
@@ -760,6 +959,9 @@ class TopPanelController {
         return wrap;
     }
 
+    /**
+     * Renders the tag list sidebar with counts.
+     */
     updateTagList(counts: Array<{ tag: string; count: number }>) {
         this.ensurePanels();
         const tagsEnabled = configService.areTagsEnabled();
@@ -800,6 +1002,9 @@ class TopPanelController {
         this.syncSelectionUI();
     }
 
+    /**
+     * Applies selection styles to each tag row.
+     */
     syncSelectionUI() {
         if (!this.tagListEl) return;
         this.tagListEl.querySelectorAll<HTMLElement>('.ext-tag-sidebar-row').forEach(row => {
@@ -808,6 +1013,9 @@ class TopPanelController {
         });
     }
 
+    /**
+     * Binds hover/focus handlers that expand the panel when enabled.
+     */
     private bindFrameHover(panel: 'search' | 'tags', frame: HTMLElement | null) {
         if (!frame) return;
         if (frame.dataset.hoverBound === '1') return;
@@ -818,6 +1026,9 @@ class TopPanelController {
         frame.addEventListener('focusout', () => this.handleFrameHover(panel, false));
     }
 
+    /**
+     * Expands/collapses a panel section when hovering or leaving.
+     */
     private handleFrameHover(panel: 'search' | 'tags', entering: boolean) {
         if (!this.shouldExpand(panel)) return;
         const state = this.frameState[panel];
@@ -838,12 +1049,18 @@ class TopPanelController {
         }
     }
 
+    /**
+     * Returns true if the requested panel is allowed to expand on hover.
+     */
     private shouldExpand(panel: 'search' | 'tags') {
         return panel === 'search'
             ? configService.doesSearchExpand()
             : configService.doTagsExpand();
     }
 
+    /**
+     * Applies expandable styling based on config flags.
+     */
     private updateExpandState() {
         (['search', 'tags'] as const).forEach(panel => {
             const state = this.frameState[panel];
@@ -861,11 +1078,17 @@ class TopPanelController {
         });
     }
 
+    /**
+     * Produces a hash-like signature of the tag list used to skip redundant renders.
+     */
     private computeTagSignature(counts: Array<{ tag: string; count: number }>, tagsEnabled: boolean) {
         const suffix = counts.map(({ tag, count }) => `${tag}:${count}`).join('|');
         return `${tagsEnabled ? '1' : '0'}|${suffix}`;
     }
 
+    /**
+     * Synchronizes the panel UI with current config settings.
+     */
     updateConfigUI() {
         if (!this.topPanelsEl) return;
         const searchPanel = this.topPanelsEl.querySelector<HTMLElement>('.ext-top-search');
@@ -885,10 +1108,16 @@ class TopPanelController {
         this.updateExpandState();
     }
 
+    /**
+     * Clears the search input field.
+     */
     clearSearchInput() {
         if (this.searchInputEl) this.searchInputEl.value = '';
     }
 
+    /**
+     * Aligns the panel width with the main toolbar to avoid jitter.
+     */
     syncWidth() {
         if (!this.topPanelsEl) return;
         const controls = document.getElementById('ext-page-controls');
@@ -898,6 +1127,9 @@ class TopPanelController {
         this.topPanelsEl.style.width = 'auto';
     }
 
+    /**
+     * Tears down panel references and timers.
+     */
     reset() {
         this.topPanelsEl = null;
         this.tagListEl = null;
@@ -913,10 +1145,16 @@ class TopPanelController {
         });
     }
 
+    /**
+     * Returns the current panel root element if mounted.
+     */
     getElement(): HTMLElement | null {
         return this.topPanelsEl;
     }
 
+    /**
+     * Handles search input changes and notifies focus state.
+     */
     private handleSearchInput(value: string) {
         if (!configService.isSearchEnabled()) return;
         focusService.setSearchQuery(value || '');
@@ -924,6 +1162,9 @@ class TopPanelController {
         this.updateSearchResultCount();
     }
 
+    /**
+     * Displays search result counts or hides them when inactive.
+     */
     updateSearchResultCount() {
         if (!this.searchResultCountEl) return;
         if (!configService.isSearchEnabled()) {
@@ -939,6 +1180,9 @@ class TopPanelController {
         this.searchResultCountEl.textContent = count === 1 ? '1 result' : `${count} results`;
     }
 
+    /**
+     * Handles clicking a tag row to toggle it within focus state.
+     */
     private toggleTagSelection(tag: string, row?: HTMLElement) {
         if (!configService.areTagsEnabled()) {
             return;
@@ -966,6 +1210,9 @@ type OverviewEntry = {
     pairIndex?: number | null;
 };
 
+/**
+ * Renders the miniature overview ruler showing message, highlight, and focus markers.
+ */
 class OverviewRulerController {
     private messageMarkerLayer: HTMLElement | null = null;
     private messageMarkerPool: HTMLElement[] = [];
@@ -1021,6 +1268,9 @@ class OverviewRulerController {
         });
     };
 
+    /**
+     * Ensures the overview ruler DOM exists and attaches to the container.
+     */
     ensure(container: HTMLElement) {
         if (this.root) {
             this.container = container;
@@ -1064,6 +1314,9 @@ class OverviewRulerController {
         return root;
     }
 
+    /**
+     * Schedules an update of marker data for the provided message entries.
+     */
     update(container: HTMLElement, entries: OverviewEntry[]) {
         if (!entries.length) return;
         this.ensure(container);
@@ -1114,6 +1367,9 @@ class OverviewRulerController {
         this.layoutAllMarkers(scrollRange);
     }
 
+    /**
+     * Re-evaluates highlight/focus markers without re-running full layout.
+     */
     refreshMarkers() {
         if (!this.container || !configService.isOverviewEnabled()) return;
         const scrollRange = this.computeScrollRange(this.container);
@@ -1121,6 +1377,9 @@ class OverviewRulerController {
         this.layoutSpecialMarkers(scrollRange);
     }
 
+    /**
+     * Removes the overview ruler and clears pooled DOM nodes.
+     */
     reset() {
         if (this.trackHandlersBound && this.root) {
             this.root.removeEventListener('click', this.handleTrackClick);
@@ -1165,6 +1424,9 @@ class OverviewRulerController {
         this.pendingContainer = null;
     }
 
+    /**
+     * Enables or disables hover expansion support for the ruler UI.
+     */
     setExpandable(enabled: boolean) {
         this.rulerCanExpand = enabled;
         this.applyExpandState();
@@ -1450,6 +1712,9 @@ class OverviewRulerController {
         };
     }
 
+    /**
+     * Converts a DOMRect into a document-space center value used by markers.
+     */
     measureScrollSpaceCenter(rect: DOMRect | null): number | null {
         if (!rect) return null;
         const scrollOffset = this.getScrollOffset();
@@ -1768,17 +2033,26 @@ configService.onChange(cfg => {
     }
 });
 
+/**
+ * Manages floating editors for tags and notes attached to messages.
+ */
 class EditorController {
     private activeTagEditor: ActiveEditor | null = null;
     private activeNoteEditor: ActiveEditor | null = null;
 
     constructor(private readonly storage: StorageService) { }
 
+    /**
+     * Tears down any active editors.
+     */
     teardown() {
         this.closeTagEditor();
         this.closeNoteEditor();
     }
 
+    /**
+     * Closes the tag editor if open.
+     */
     private closeTagEditor() {
         if (this.activeTagEditor) {
             this.activeTagEditor.cleanup();
@@ -1786,6 +2060,9 @@ class EditorController {
         }
     }
 
+    /**
+     * Closes the note editor if open.
+     */
     private closeNoteEditor() {
         if (this.activeNoteEditor) {
             this.activeNoteEditor.cleanup();
@@ -1793,6 +2070,9 @@ class EditorController {
         }
     }
 
+    /**
+     * Opens the floating tag editor for the specified message.
+     */
     async openTagEditor(messageEl: HTMLElement, threadKey: string) {
         if (this.activeTagEditor?.message === messageEl) {
             this.closeTagEditor();
@@ -1871,6 +2151,9 @@ class EditorController {
         this.activeTagEditor = { message: messageEl, cleanup };
     }
 
+    /**
+     * Opens the floating note editor for the specified message.
+     */
     async openNoteEditor(messageEl: HTMLElement, threadKey: string) {
         if (this.activeNoteEditor?.message === messageEl) {
             this.closeNoteEditor();
@@ -1968,6 +2251,9 @@ type HighlightRange = {
     rects: DOMRect[];
 };
 
+/**
+ * Handles CSS highlighter interactions, selection menus, and hover annotations.
+ */
 class HighlightController {
     private selectionMenu: HTMLElement | null = null;
     private selectionButton: HTMLButtonElement | null = null;
@@ -1995,6 +2281,9 @@ class HighlightController {
 
     constructor(private readonly storage: StorageService) { }
 
+    /**
+     * Lazily wires document event listeners for highlight selection.
+     */
     init() {
         if (this.initialized) return;
         const handler = () => this.scheduleSelectionCheck();
@@ -2007,6 +2296,9 @@ class HighlightController {
         this.initialized = true;
     }
 
+    /**
+     * Clears all highlights and UI artifacts.
+     */
     resetAll() {
         if (!this.cssHighlightSupported) return;
         for (const name of this.activeHighlightNames) {
@@ -2021,6 +2313,9 @@ class HighlightController {
         overviewRulerController.refreshMarkers();
     }
 
+    /**
+     * Applies serialized highlight data to a message element.
+     */
     applyHighlights(messageEl: HTMLElement, highlights: any, adapter?: MessageAdapter | null, threadKey?: string) {
         const adapterRef = adapter ?? messageMetaRegistry.resolveAdapter(messageEl);
         if (!threadKey || !this.cssHighlightSupported) return;
@@ -2069,6 +2364,9 @@ class HighlightController {
         overviewRulerController.refreshMarkers();
     }
 
+    /**
+     * Builds ruler marker entries based on highlight positions.
+     */
     getOverviewMarkers(adapters: MessageAdapter[], threadKey: string): MarkerDatum[] {
         if (!this.cssHighlightSupported || !adapters?.length) return [];
         const markers: MarkerDatum[] = [];
@@ -2086,7 +2384,7 @@ class HighlightController {
                 const rect = range.getBoundingClientRect();
                 if (!rect) continue;
                 const docCenter = overviewRulerController.measureScrollSpaceCenter(rect);
-                if (!Number.isFinite(docCenter)) continue;
+                if (typeof docCenter !== 'number' || !Number.isFinite(docCenter)) continue;
                 markers.push({
                     docCenter,
                     visualCenter: docCenter,
@@ -2546,25 +2844,14 @@ class HighlightController {
 const highlightController = new HighlightController(storageService);
 highlightController.init();
 
-/**
- * Moves the caret to the end of a contenteditable element.
- */
-function placeCaretAtEnd(el: HTMLElement) {
-    Utils.placeCaretAtEnd(el);
-}
-
-/**
- * Positions floating editor UI relative to an anchor and keeps it in view.
- */
-function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
-    return Utils.mountFloatingEditor(editor, anchor);
-}
-
 // --------------------- Discovery & Enumeration -----------------
 /**
  * Finds the primary scrollable container that holds the conversation.
  */
 
+/**
+ * Default MessageAdapter implementation built around raw DOM nodes.
+ */
 class DomMessageAdapter implements MessageAdapter {
     readonly key: string;
     readonly role: string;
@@ -2575,6 +2862,9 @@ class DomMessageAdapter implements MessageAdapter {
         this.role = element.getAttribute('data-message-author-role') || 'unknown';
     }
 
+    /**
+     * Returns normalized text content without extension UI nodes.
+     */
     getText(): string {
         if (this.textCache !== null) return this.textCache;
         const clone = this.element.cloneNode(true) as HTMLElement;
@@ -2585,15 +2875,24 @@ class DomMessageAdapter implements MessageAdapter {
         return this.textCache;
     }
 
+    /**
+     * Indicates whether collapse controls should render for this message.
+     */
     shouldShowCollapse(): boolean {
         return true;
     }
 
+    /**
+     * Builds the storage key for this message instance.
+     */
     storageKey(threadKey: string): string {
         return `${threadKey}:${this.key}`;
     }
 } // DomMessageAdapter
 
+/**
+ * Default PairAdapter mapping user/assistant message pairs.
+ */
 class DomPairAdapter implements PairAdapter {
     constructor(
         readonly index: number,
@@ -2601,18 +2900,30 @@ class DomPairAdapter implements PairAdapter {
         readonly response: MessageAdapter | null,
     ) { }
 
+    /**
+     * Returns the defined messages, filtering out nulls.
+     */
     getMessages(): MessageAdapter[] {
         return [this.query, this.response].filter(Boolean) as MessageAdapter[];
     }
 } // DomPairAdapter
 
+/**
+ * Provides DOM traversal helpers abstracted behind the ThreadAdapter interface.
+ */
 class ThreadDom {
     constructor(private readonly adapterProvider: () => ThreadAdapter | null) { }
 
+    /**
+     * Locates the main scrollable transcript container.
+     */
     findTranscriptRoot(): HTMLElement {
         return this.adapterProvider()?.getTranscriptRoot() ?? ThreadDom.defaultFindTranscriptRoot();
     }
 
+    /**
+     * Returns DOM message elements within the provided root.
+     */
     enumerateMessages(root: HTMLElement): HTMLElement[] {
         const adapter = this.adapterProvider();
         if (adapter) {
@@ -2621,24 +2932,36 @@ class ThreadDom {
         return ThreadDom.defaultEnumerateMessages(root);
     }
 
+    /**
+     * Builds prompt/response pairs from the current transcript.
+     */
     getPairs(root: HTMLElement): TagalystPair[] {
         const adapter = this.adapterProvider();
         if (adapter) return adapter.getPairs(root).map(ThreadDom.toTagalystPair);
         return ThreadDom.defaultGetPairs(root);
     }
 
+    /**
+     * Returns nodes considered to be user prompts for navigation.
+     */
     getPromptNodes(root: HTMLElement): HTMLElement[] {
         const adapter = this.adapterProvider();
         if (adapter) return adapter.getPromptMessages(root).map(ad => ad.element);
         return ThreadDom.defaultGetPromptNodes(root);
     }
 
+    /**
+     * Returns nodes used for focus navigation (prompts or fallback messages).
+     */
     getNavigationNodes(root: HTMLElement): HTMLElement[] {
         const adapter = this.adapterProvider();
         if (adapter) return adapter.getNavigationMessages(root).map(ad => ad.element);
         return ThreadDom.defaultGetNavigationNodes(root);
     }
 
+    /**
+     * Returns the nth prompt/response pair.
+     */
     getPair(root: HTMLElement, idx: number): TagalystPair | null {
         const adapter = this.adapterProvider();
         if (adapter) {
@@ -2648,6 +2971,9 @@ class ThreadDom {
         return ThreadDom.defaultGetPair(root, idx);
     }
 
+    /**
+     * Builds pair adapters from a flat list of MessageAdapters.
+     */
     buildPairAdaptersFromMessages(messages: MessageAdapter[]): DomPairAdapter[] {
         return ThreadDom.buildDomPairAdaptersFromMessages(messages);
     }
@@ -2736,6 +3062,9 @@ class ThreadDom {
 
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 
+/**
+ * ThreadAdapter specialized for ChatGPT's DOM structure.
+ */
 class ChatGptThreadAdapter implements ThreadAdapter {
     private observer: MutationObserver | null = null;
 
@@ -2792,9 +3121,15 @@ class ChatGptThreadAdapter implements ThreadAdapter {
     }
 } // ChatGptThreadAdapter
 
+/**
+ * Composes toolbar rows for each message and manages the global control panel.
+ */
 class ToolbarController {
     constructor(private readonly focus: FocusService, private readonly storage: StorageService) { }
 
+    /**
+     * Creates the page-level navigation/collapse/export controls.
+     */
     ensurePageControls(container: HTMLElement, threadKey: string) {
         const existing = document.getElementById('ext-page-controls');
         if (existing) existing.remove();
@@ -2938,6 +3273,9 @@ class ToolbarController {
         anchor.scrollIntoView({ behavior, block: toolbar ? 'start' : 'center' });
     }
 
+    /**
+     * Injects (or refreshes) a per-message toolbar with actions and badges.
+     */
     injectToolbar(el: HTMLElement, threadKey: string) {
         let toolbar = el.querySelector<HTMLElement>('.ext-toolbar');
         if (toolbar) {
@@ -2999,6 +3337,9 @@ class ToolbarController {
         threadActions.syncCollapseButton(el);
     }
 
+    /**
+     * Shows the pair index badge on user messages.
+     */
     updatePairNumber(adapter: MessageAdapter, pairIndex: number | null) {
         const el = adapter.element;
         this.ensureUserToolbarButton(el);
@@ -3025,6 +3366,9 @@ class ToolbarController {
         badge.textContent = `${pairIndex + 1}.`;
     }
 
+    /**
+     * Updates the character count badge for a message.
+     */
     updateMessageLength(adapter: MessageAdapter) {
         const el = adapter.element;
         const row = el.querySelector<HTMLElement>('.ext-toolbar-row');
@@ -3058,6 +3402,9 @@ class ToolbarController {
         return `${length} chars`;
     }
 
+    /**
+     * Renders tag/star/note badges and keeps focus/highlight state synced.
+     */
     updateBadges(el: HTMLElement, threadKey: string, value: MessageValue, adapter?: MessageAdapter | null) {
         const adapterRef = adapter ?? messageMetaRegistry.resolveAdapter(el);
         const k = `${threadKey}:${adapterRef.key}`;
@@ -3102,13 +3449,22 @@ class ToolbarController {
 } // ToolbarController
 
 
+/**
+ * Provides DOM mutations for collapsing/expanding message rows.
+ */
 class ThreadActions {
+    /**
+     * Ensures collapse buttons stay visible when a toolbar is injected.
+     */
     updateCollapseVisibility(el: HTMLElement) {
         const btn = this.getCollapseButton(el);
         if (!btn) return;
         btn.style.display = '';
     }
 
+    /**
+     * Updates collapse button state/labels to match message classes.
+     */
     syncCollapseButton(el: HTMLElement) {
         const btn = this.getCollapseButton(el);
         if (!btn) return;
@@ -3192,7 +3548,13 @@ class ThreadActions {
 
 const threadActions = new ThreadActions();
 
+/**
+ * Handles assembling Markdown exports for focused or full threads.
+ */
 class ExportController {
+    /**
+     * Copies Markdown for either the whole thread or focused messages only.
+     */
     copyThread(container: HTMLElement, focusOnly: boolean) {
         try {
             const md = this.buildMarkdown(container, focusOnly);
@@ -3263,6 +3625,9 @@ const exportController = new ExportController();
 /**
  * Entry point: finds the thread, injects UI, and watches for updates.
  */
+/**
+ * Coordinates thread discovery, toolbar injection, and mutation observation.
+ */
 class BootstrapOrchestrator {
     private refreshRunning = false;
     private refreshQueued = false;
@@ -3270,6 +3635,9 @@ class BootstrapOrchestrator {
 
     constructor(private readonly toolbar: ToolbarController, private readonly storage: StorageService) { }
 
+    /**
+     * Bootstraps the UI when a transcript is detected.
+     */
     async run() {
         // Wait a moment for the app shell to mount
         await Utils.sleep(600);
@@ -3353,6 +3721,9 @@ class BootstrapOrchestrator {
         });
     }
 
+    /**
+     * Resolves MessageAdapters for the container via thread adapters or defaults.
+     */
     private resolveMessages(container: HTMLElement): MessageAdapter[] {
         const threadAdapter = this.threadAdapter;
         return (threadAdapter
@@ -3360,6 +3731,9 @@ class BootstrapOrchestrator {
             : ThreadDom.defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
     }
 
+    /**
+     * Builds a lookup from MessageAdapter to pair index.
+     */
     private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
         const pairMap = new Map<MessageAdapter, number>();
         pairAdapters.forEach((pair, idx) => {
@@ -3368,10 +3742,16 @@ class BootstrapOrchestrator {
         return pairMap;
     }
 
+    /**
+     * Returns true when the container currently contains messages.
+     */
     private hasMessages(container: HTMLElement) {
         return threadDom.enumerateMessages(container).length > 0;
     }
 
+    /**
+     * Removes all injected UI and listeners.
+     */
     private teardownUI() {
         editorController.teardown();
         document.querySelectorAll('.ext-tag-editor').forEach(editor => editor.remove());
