@@ -1450,7 +1450,7 @@ class OverviewRulerController {
         };
     }
 
-    private measureScrollSpaceCenter(rect: DOMRect | null): number | null {
+    measureScrollSpaceCenter(rect: DOMRect | null): number | null {
         if (!rect) return null;
         const scrollOffset = this.getScrollOffset();
         const originOffset = this.getViewportOriginOffset();
@@ -1460,11 +1460,6 @@ class OverviewRulerController {
 
     private attachScrollContainer(container: HTMLElement) {
         const candidate = this.findScrollContainer(container);
-        console.debug('[overview] attachScrollContainer', {
-            container,
-            candidate,
-            containerPath: this.debugContainerPath(container),
-        });
         const target: EventTarget = candidate ?? window;
         if (this.scrollEventTarget !== target) {
             if (this.scrollEventTarget) {
@@ -1474,17 +1469,6 @@ class OverviewRulerController {
             this.scrollEventTarget = target;
         }
         this.scrollContainer = candidate;
-    }
-
-    private debugContainerPath(container: HTMLElement) {
-        const nodes: string[] = [];
-        let current: HTMLElement | null = container;
-        while (current) {
-            const descriptor = `${current.tagName.toLowerCase()}#${current.id || ''}.${current.className || ''}`.replace(/\s+/g, '.');
-            nodes.push(descriptor);
-            current = current.parentElement;
-        }
-        return nodes;
     }
 
     private findScrollContainer(container: HTMLElement): HTMLElement | null {
@@ -1545,11 +1529,6 @@ class OverviewRulerController {
     }
 
     private scrollContainerTo(top: number, behavior: ScrollBehavior) {
-        console.debug('[overview] scrollContainerTo', {
-            targetTop: top,
-            behavior,
-            hasScrollContainer: !!this.scrollContainer,
-        });
         if (this.scrollContainer) {
             this.scrollContainer.scrollTo({ top, behavior });
         } else {
@@ -1559,10 +1538,6 @@ class OverviewRulerController {
     }
 
     private scrollContainerBy(delta: number) {
-        console.debug('[overview] scrollContainerBy', {
-            delta,
-            hasScrollContainer: !!this.scrollContainer,
-        });
         if (this.scrollContainer) {
             this.scrollContainer.scrollBy({ top: delta, behavior: 'auto' });
         } else {
@@ -1585,7 +1560,6 @@ class OverviewRulerController {
             this.suppressNextClick = false;
             return;
         }
-        console.debug('[overview] click', { y: evt.clientY });
         const ratio = this.computeTrackRatio(evt);
         if (ratio === null) return;
         this.scrollToRatio(ratio);
@@ -1596,7 +1570,6 @@ class OverviewRulerController {
         if (!this.container) return;
         evt.preventDefault();
         evt.stopPropagation();
-        console.debug('[overview] drag-start', { y: evt.clientY });
         this.trackDragActive = true;
         this.suppressNextClick = false;
         document.addEventListener('mousemove', this.handleTrackMouseMove, true);
@@ -1605,7 +1578,6 @@ class OverviewRulerController {
 
     private onTrackMouseMove(evt: MouseEvent) {
         if (!this.trackDragActive) return;
-        console.debug('[overview] drag-move', { y: evt.clientY });
         const ratio = this.computeTrackRatio(evt);
         if (ratio === null) return;
         this.suppressNextClick = true;
@@ -1615,7 +1587,6 @@ class OverviewRulerController {
     private endTrackDrag(force = false) {
         if (!this.trackDragActive && !force) return;
         if (this.trackDragActive) {
-            console.debug('[overview] drag-end');
         }
         this.trackDragActive = false;
         document.removeEventListener('mousemove', this.handleTrackMouseMove, true);
@@ -1632,7 +1603,6 @@ class OverviewRulerController {
                 ? 16
                 : 1;
         const delta = evt.deltaY * multiplier;
-        console.debug('[overview] wheel', { delta });
         this.scrollContainerBy(delta);
     }
 
@@ -1651,7 +1621,6 @@ class OverviewRulerController {
         const maxTop = Math.max(scrollRange.top, scrollRange.bottom - viewport);
         const span = Math.max(0, maxTop - minTop);
         const target = minTop + span * ratio;
-        console.debug('[overview] scrollToRatio', { ratio, target, minTop, maxTop });
         this.scrollContainerTo(target, behavior);
     }
 
@@ -2106,6 +2075,7 @@ class HighlightController {
         for (const adapter of adapters) {
             const el = adapter?.element;
             if (!el || !document.contains(el)) continue;
+            if (el.classList.contains('ext-collapsed')) continue;
             const key = this.getMessageKey(adapter, threadKey);
             const ids = this.highlightIdsByMessage.get(key);
             if (!ids?.size) continue;
@@ -2115,7 +2085,7 @@ class HighlightController {
                 if (!range) continue;
                 const rect = range.getBoundingClientRect();
                 if (!rect) continue;
-                const docCenter = rect.top + window.scrollY + (rect.height || 0) / 2;
+                const docCenter = overviewRulerController.measureScrollSpaceCenter(rect);
                 if (!Number.isFinite(docCenter)) continue;
                 markers.push({
                     docCenter,
@@ -3157,6 +3127,9 @@ class ThreadActions {
         el.classList.toggle('ext-collapsed', collapsed);
         this.syncCollapseButton(el);
         this.toggleMessageAttachments(el, collapsed);
+        if (configService.isOverviewEnabled()) {
+            overviewRulerController.refreshMarkers();
+        }
     }
     
     /**
