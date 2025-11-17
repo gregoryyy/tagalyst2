@@ -28,10 +28,14 @@
                 "content/content/controllers/top-panel.js",
                 "content/content/controllers/overview-ruler.js",
                 "content/content/controllers/editor.js",
+                "content/content/controllers/highlight.js",
+                "content/content/controllers/thread-actions.js",
+                "content/content/controllers/toolbar.js",
+                "content/content/controllers/export.js",
                 "content/content/dom/message-adapters.js",
                 "content/content/dom/thread-dom.js",
                 "content/content/dom/chatgpt-adapter.js",
-                "content/markdown.js",
+                "content/content/markdown.js",
                 "content/content.js"
             ],
             "css": [
