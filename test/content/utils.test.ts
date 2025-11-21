@@ -6,7 +6,7 @@ import {
     markExtNode,
     isExtensionNode,
     mutationTouchesExternal,
-} from '../../src/content/utils.export';
+} from '../test-exports';
 
 describe('Utils', () => {
     it('hashString is deterministic and differs for different input', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from '@jest/globals';
-import { TopPanelController } from '../../src/content/controllers/top-panel.export';
+import { TopPanelController } from '../test-exports';
 
 const makeFocusService = () => {
     const selected = new Set<string>();

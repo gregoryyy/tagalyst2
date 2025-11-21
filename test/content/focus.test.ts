@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from '@jest/globals';
-import { FocusService, FOCUS_MODES } from '../../src/content/state/focus.export';
+import { FocusService, FOCUS_MODES } from '../test-exports';
 
 class FakeConfigService {
     constructor(

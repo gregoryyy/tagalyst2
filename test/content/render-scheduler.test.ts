@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
-import { RenderScheduler } from '../../src/content/services/render-scheduler.export';
+import { RenderScheduler } from '../test-exports';
 
 describe('RenderScheduler', () => {
     let scheduler: RenderScheduler;

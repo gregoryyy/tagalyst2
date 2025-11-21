@@ -3,6 +3,9 @@ module.exports = {
     preset: 'ts-jest',
     testEnvironment: 'jsdom',
     roots: ['<rootDir>/src', '<rootDir>/test'],
+    transform: {
+        '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig/base.json' }],
+    },
     moduleNameMapper: {
         '^chrome$': '<rootDir>/test/mocks/chrome.ts',
     },

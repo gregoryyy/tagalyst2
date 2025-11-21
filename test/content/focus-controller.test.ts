@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
-import { FocusController, FOCUS_MODES } from '../../src/content/state/focus.export';
+import { FocusController, FOCUS_MODES } from '../test-exports';
 
 class StubFocus {
     mode = FOCUS_MODES.STARS;
