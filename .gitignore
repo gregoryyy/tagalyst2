@@ -5,6 +5,9 @@ node_modules/
 package-lock.json
 *.tsbuildinfo
 .tsbuild/
+# test outputs
+coverage/
+.jest/
 # remove js
 options/options.js
 content/*.js
