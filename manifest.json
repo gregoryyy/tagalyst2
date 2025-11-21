@@ -18,6 +18,7 @@
                 "https://chatgpt.com/*"
             ],
             "js": [
+                "content/shared/config.js",
                 "content/content/constants.js",
                 "content/content/utils.js",
                 "content/content/services/storage.js",

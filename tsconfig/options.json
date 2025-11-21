@@ -10,6 +10,7 @@
   },
   "include": [
     "../src/options.ts",
+    "../src/shared/**/*.ts",
     "../src/types/**/*.d.ts"
   ]
 }

@@ -1,23 +1,13 @@
-const OPTIONS_CONFIG_STORAGE_KEY = '__tagalyst_config';
-
-interface TagalystConfig {
-    searchEnabled: boolean;
-    tagsEnabled: boolean;
-}
-
-const optionsDefaultConfig: TagalystConfig = {
-    searchEnabled: true,
-    tagsEnabled: true,
-};
+/// <reference path="./shared/config.ts" />
 
 /**
  * Reads the persisted feature config, merging in defaults for missing fields.
  */
 function getConfig(): Promise<TagalystConfig> {
     return new Promise(resolve => {
-        chrome.storage.local.get([OPTIONS_CONFIG_STORAGE_KEY], (data) => {
-            const value = data?.[OPTIONS_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
-            resolve({ ...optionsDefaultConfig, ...(value || {}) });
+        chrome.storage.local.get([TAGALYST_CONFIG_STORAGE_KEY], (data) => {
+            const value = data?.[TAGALYST_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
+            resolve({ ...TAGALYST_DEFAULT_CONFIG, ...(value || {}) });
         });
     });
 }
@@ -27,7 +17,7 @@ function getConfig(): Promise<TagalystConfig> {
  */
 function saveConfig(partial: Partial<TagalystConfig>): Promise<void> {
     return new Promise(resolve => {
-        chrome.storage.local.set({ [OPTIONS_CONFIG_STORAGE_KEY]: partial }, () => resolve());
+        chrome.storage.local.set({ [TAGALYST_CONFIG_STORAGE_KEY]: partial }, () => resolve());
     });
 }
 
@@ -64,7 +54,11 @@ async function updateStorageDisplay(el: HTMLElement | null): Promise<void> {
  */
 function init(): void {
     const searchEnable = document.getElementById('search-enable') as HTMLInputElement;
+    const searchExpand = document.getElementById('search-expand') as HTMLInputElement;
     const tagsEnable = document.getElementById('tags-enable') as HTMLInputElement;
+    const tagsExpand = document.getElementById('tags-expand') as HTMLInputElement;
+    const overviewEnable = document.getElementById('overview-enable') as HTMLInputElement;
+    const overviewExpand = document.getElementById('overview-expand') as HTMLInputElement;
     const status = document.getElementById('status') as HTMLElement;
     const storageSizeEl = document.getElementById('storage-size') as HTMLElement;
     const viewBtn = document.getElementById('view-storage') as HTMLButtonElement;
@@ -106,6 +100,10 @@ function init(): void {
     getConfig().then(cfg => {
         searchEnable.checked = !!cfg.searchEnabled;
         tagsEnable.checked = !!cfg.tagsEnabled;
+        if (searchExpand) searchExpand.checked = !!cfg.searchExpands;
+        if (tagsExpand) tagsExpand.checked = !!cfg.tagsExpands;
+        if (overviewEnable) overviewEnable.checked = !!cfg.overviewEnabled;
+        if (overviewExpand) overviewExpand.checked = !!cfg.overviewExpands;
     });
 
     updateStorageDisplay(storageSizeEl);
@@ -114,12 +112,18 @@ function init(): void {
         const next = {
             searchEnabled: searchEnable.checked,
             tagsEnabled: tagsEnable.checked,
+            searchExpands: !!searchExpand?.checked,
+            tagsExpands: !!tagsExpand?.checked,
+            overviewEnabled: !!overviewEnable?.checked,
+            overviewExpands: !!overviewExpand?.checked,
         };
         await saveConfig(next);
         showStatus('Saved');
     };
 
-    [searchEnable, tagsEnable].forEach(el => el.addEventListener('change', onChange));
+    [searchEnable, tagsEnable, searchExpand, tagsExpand, overviewEnable, overviewExpand]
+        .filter(Boolean)
+        .forEach(el => el?.addEventListener('change', onChange));
 
     viewBtn.addEventListener('click', async () => {
         const data = await new Promise(resolve => chrome.storage.local.get(null, resolve));
@@ -184,6 +188,10 @@ function init(): void {
             const cfg = await getConfig();
             searchEnable.checked = !!cfg.searchEnabled;
             tagsEnable.checked = !!cfg.tagsEnabled;
+            if (searchExpand) searchExpand.checked = !!cfg.searchExpands;
+            if (tagsExpand) tagsExpand.checked = !!cfg.tagsExpands;
+            if (overviewEnable) overviewEnable.checked = !!cfg.overviewEnabled;
+            if (overviewExpand) overviewExpand.checked = !!cfg.overviewExpands;
             await updateStorageDisplay(storageSizeEl);
             showStatus('Imported');
         } catch (err) {
@@ -203,9 +211,13 @@ function init(): void {
             return;
         }
         await new Promise<void>(resolve => chrome.storage.local.clear(() => resolve()));
-        await saveConfig({ ...optionsDefaultConfig });
-        searchEnable.checked = optionsDefaultConfig.searchEnabled;
-        tagsEnable.checked = optionsDefaultConfig.tagsEnabled;
+        await saveConfig({ ...TAGALYST_DEFAULT_CONFIG });
+        searchEnable.checked = TAGALYST_DEFAULT_CONFIG.searchEnabled;
+        tagsEnable.checked = TAGALYST_DEFAULT_CONFIG.tagsEnabled;
+        if (searchExpand) searchExpand.checked = TAGALYST_DEFAULT_CONFIG.searchExpands;
+        if (tagsExpand) tagsExpand.checked = TAGALYST_DEFAULT_CONFIG.tagsExpands;
+        if (overviewEnable) overviewEnable.checked = TAGALYST_DEFAULT_CONFIG.overviewEnabled;
+        if (overviewExpand) overviewExpand.checked = TAGALYST_DEFAULT_CONFIG.overviewExpands;
         await updateStorageDisplay(storageSizeEl);
         showStatus('Storage cleared');
         resetButtonState();
