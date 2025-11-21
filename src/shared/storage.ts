@@ -1,15 +1,15 @@
 /**
  * Shared storage helpers wrapping chrome.storage.local for Tagalyst.
  */
-export type TagalystStorageRecord = Record<string, any>;
-export interface TagalystStorageApi {
+type TagalystStorageRecord = Record<string, any>;
+interface TagalystStorageApi {
     read(keys?: string[]): Promise<TagalystStorageRecord>;
     write(record: TagalystStorageRecord): Promise<void>;
     clear(): Promise<void>;
     readAll(): Promise<TagalystStorageRecord>;
 }
 
-export const tagalystStorage: TagalystStorageApi = {
+const tagalystStorage: TagalystStorageApi = {
     async read(keys?: string[]): Promise<TagalystStorageRecord> {
         if (Array.isArray(keys) && !keys.length) return {};
         return new Promise(resolve => chrome.storage.local.get(keys || null, resolve));
@@ -30,7 +30,3 @@ export const tagalystStorage: TagalystStorageApi = {
 };
 
 (globalThis as any).tagalystStorage = tagalystStorage;
-
-declare global {
-    const tagalystStorage: TagalystStorageApi;
-}

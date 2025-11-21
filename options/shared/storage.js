@@ -1,4 +1,4 @@
-export const tagalystStorage = {
+const tagalystStorage = {
     async read(keys) {
         if (Array.isArray(keys) && !keys.length)
             return {};

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
-import { TAGALYST_CONFIG_STORAGE_KEY, TAGALYST_DEFAULT_CONFIG } from '../../src/shared/config';
+import { TAGALYST_CONFIG_STORAGE_KEY, TAGALYST_DEFAULT_CONFIG } from '../test-exports';
 import '../../src/shared/storage';
 import '../../src/options';
 import chromeMock from '../mocks/chrome';

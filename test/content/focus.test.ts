@@ -14,7 +14,7 @@ class FakeConfigService {
 
 describe('FocusService', () => {
     let config: FakeConfigService;
-    let focus: FocusService;
+    let focus: any;
 
     beforeEach(() => {
         config = new FakeConfigService();

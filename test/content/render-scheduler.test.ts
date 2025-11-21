@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, jest } from '@jest/globals';
 import { RenderScheduler } from '../test-exports';
 
 describe('RenderScheduler', () => {
-    let scheduler: RenderScheduler;
+    let scheduler: any;
     let rafSpy: ReturnType<typeof jest.spyOn>;
     let cancelSpy: ReturnType<typeof jest.spyOn>;
     let rafHandlers: Array<FrameRequestCallback>;

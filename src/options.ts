@@ -1,5 +1,5 @@
-import { TAGALYST_CONFIG_STORAGE_KEY, TAGALYST_DEFAULT_CONFIG, TagalystConfig } from './shared/config';
-import { tagalystStorage } from './shared/storage';
+/// <reference path="./shared/config.ts" />
+/// <reference path="./shared/storage.ts" />
 
 /**
  * Reads the persisted feature config, merging in defaults for missing fields.

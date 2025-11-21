@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from '@jest/globals';
-import { tagalystStorage } from '../../src/shared/storage';
+import { tagalystStorage } from '../test-exports';
 import chromeMock from '../mocks/chrome';
 
 // Ensure the global chrome uses the same mock instance

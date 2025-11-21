@@ -1,10 +1,10 @@
 /**
  * Shared config defaults and storage key for Tagalyst.
- * Kept global (no imports) so both content and options scripts can consume the same values.
+ * Script-style globals so content/options can consume them without modules.
  */
-export const TAGALYST_CONFIG_STORAGE_KEY = '__tagalyst_config';
+const TAGALYST_CONFIG_STORAGE_KEY = '__tagalyst_config';
 
-export const TAGALYST_DEFAULT_CONFIG = {
+const TAGALYST_DEFAULT_CONFIG = {
     searchEnabled: true,
     tagsEnabled: true,
     overviewEnabled: true,
@@ -13,14 +13,7 @@ export const TAGALYST_DEFAULT_CONFIG = {
     overviewExpands: true,
 };
 
-type TagalystConfigShape = typeof TAGALYST_DEFAULT_CONFIG;
-export type TagalystConfig = TagalystConfigShape;
+type TagalystConfig = typeof TAGALYST_DEFAULT_CONFIG;
 
 (globalThis as any).TAGALYST_CONFIG_STORAGE_KEY = TAGALYST_CONFIG_STORAGE_KEY;
 (globalThis as any).TAGALYST_DEFAULT_CONFIG = TAGALYST_DEFAULT_CONFIG;
-
-declare global {
-    const TAGALYST_CONFIG_STORAGE_KEY: string;
-    const TAGALYST_DEFAULT_CONFIG: TagalystConfigShape;
-    type TagalystConfig = TagalystConfigShape;
-}

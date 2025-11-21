@@ -1,9 +1,11 @@
 // Side-effect imports to register globals.
-import '../src/content/constants';
-import '../src/content/utils';
-import '../src/content/services/render-scheduler';
-import '../src/content/state/focus';
-import '../src/content/controllers/top-panel';
+require('../src/shared/config');
+require('../src/shared/storage');
+require('../src/content/constants');
+require('../src/content/utils');
+require('../src/content/services/render-scheduler');
+require('../src/content/state/focus');
+require('../src/content/controllers/top-panel');
 
 // Extract from globals set by the modules.
 const globals = globalThis as any;
@@ -16,6 +18,9 @@ export const FocusController = globals.FocusController;
 export const FOCUS_MODES = globals.FOCUS_MODES;
 export const focusMarkerColors = globals.focusMarkerColors;
 export const TopPanelController = globals.TopPanelController;
+export const TAGALYST_CONFIG_STORAGE_KEY = globals.TAGALYST_CONFIG_STORAGE_KEY;
+export const TAGALYST_DEFAULT_CONFIG = globals.TAGALYST_DEFAULT_CONFIG;
+export const tagalystStorage = globals.tagalystStorage;
 export const {
     sleep,
     hashString,
