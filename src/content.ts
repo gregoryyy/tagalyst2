@@ -259,6 +259,8 @@ class BootstrapOrchestrator {
 /**
  * Adapts DOM discovery/pairing to either the native adapter or fallbacks.
  */
+const isConversationPage = () => /\/c\//.test(location.pathname);
+
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 const highlightController = new HighlightController(storageService, overviewRulerController);
 const threadActions = new ThreadActions(threadDom, messageMetaRegistry);
@@ -286,6 +288,10 @@ const keyboardController = new KeyboardController({
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {
+    if (!isConversationPage()) {
+        bootstrapOrchestrator['teardownUI']?.();
+        return;
+    }
     await bootstrapOrchestrator.run();
 }
 
@@ -294,9 +300,17 @@ let lastHref = location.href;
 new MutationObserver(() => {
     if (location.href !== lastHref) {
         lastHref = location.href;
-        bootstrap();
+       bootstrap();
     }
 }).observe(document, { subtree: true, childList: true });
+
+// Also poll URL changes in case SPA navigation doesn't trigger mutations
+setInterval(() => {
+    if (location.href !== lastHref) {
+        lastHref = location.href;
+        bootstrap();
+    }
+}, 800);
 
 // Surface a minimal pairing API for scripts / devtools.
 window.__tagalyst = Object.assign(window.__tagalyst || {}, {
