@@ -249,3 +249,6 @@ class TopPanelController {
         this.focusController.syncMode();
     }
 }
+
+// Expose for testing
+(globalThis as any).TopPanelController = TopPanelController;

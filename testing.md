@@ -27,9 +27,16 @@
 11. Options: instantiate `OptionsController` against a minimal DOM fragment; assert toggles reflect config, status messaging, and that import/export/clear call the storage mock as expected (no real file APIs).
 12. Content (targeted): small jsdom tests for toolbar/top-panel highlighting focus UI updates where feasible; mock MutationObserver and adapters to keep tests fast.
 
+## Scalability tests (jsdom)
+13. Simulate large ChatGPT pages as a load test:
+- Generate a large thread fixture (50–100 fake messages with `data-message-id` and text).
+- Instantiate controllers/services with mocks (StorageService, adapters, MutationObserver) and assert they run without exceptions on the large DOM.
+- Check `FocusService/Controller` and `OverviewRulerController` behavior on big sets of messages incl. stars/tags/search subsets, `getMatches` sizes.
+- Mock `CSS.highlights` and highlight meta to ensure overview/highlight marker refreshes don’t throw under volume.
+
 ## Integration Lite
-13. Optional follow-up: a tiny Playwright/Puppeteer smoke that loads a sample HTML thread and asserts injected UI appears; defer until unit/jsdom coverage is stable.
+14. Optional follow-up: a tiny Playwright/Puppeteer smoke that loads a sample HTML thread and asserts injected UI appears; defer until unit/jsdom coverage is stable.
 
 ## Workflow
-14. Run `npm test` locally; `npm run test:watch` during development.
-15. Keep tests out of the build by scoping them via Jest config (no impact on `tsc -b`).
+Run `npm test` locally; `npm run test:watch` during development.
+Keep tests out of the build by scoping them via Jest config (no impact on `tsc -b`).
