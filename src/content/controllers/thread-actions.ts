@@ -1,8 +1,9 @@
+/// <reference path="../state/message-meta.ts" />
 /**
  * Provides DOM mutations for collapsing/expanding message rows.
  */
 class ThreadActions {
-    constructor(private readonly threadDom: ThreadDom) { }
+    constructor(private readonly threadDom: ThreadDom, private readonly registry: MessageMetaRegistry) { }
     /**
      * Ensures collapse buttons stay visible when a toolbar is injected.
      */
@@ -26,16 +27,30 @@ class ThreadActions {
     }
     
     /**
-     * Toggles the collapsed state for one message block.
+     * Toggles the collapsed state for one message block (and its pair, if any).
      */
     collapse(el: HTMLElement, yes: boolean) {
         const collapsed = !!yes;
-        el.classList.toggle('ext-collapsed', collapsed);
-        this.syncCollapseButton(el);
-        this.toggleMessageAttachments(el, collapsed);
+        this.applyCollapse(el, collapsed);
+        const meta = this.registry.get(el);
+        const pairIdx = meta?.pairIndex;
+        if (typeof pairIdx === 'number') {
+            this.registry.forEach((otherMeta, otherEl) => {
+                if (otherEl === el) return;
+                if (otherMeta?.pairIndex === pairIdx) {
+                    this.applyCollapse(otherEl, collapsed);
+                }
+            });
+        }
         if (configService.isOverviewEnabled()) {
             overviewRulerController.refreshMarkers();
         }
+    }
+
+    private applyCollapse(el: HTMLElement, collapsed: boolean) {
+        el.classList.toggle('ext-collapsed', collapsed);
+        this.syncCollapseButton(el);
+        this.toggleMessageAttachments(el, collapsed);
     }
     
     /**

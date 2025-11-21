@@ -6,6 +6,7 @@ require('../src/content/utils');
 require('../src/content/services/render-scheduler');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
+require('../src/content/controllers/keyboard');
 
 // Extract from globals set by the modules.
 const globals = globalThis as any;

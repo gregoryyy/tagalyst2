@@ -27,6 +27,7 @@
                 "content/content/services/config.js",
                 "content/content/state/message-meta.js",
                 "content/content/state/focus.js",
+                "content/content/controllers/keyboard.js",
                 "content/content/controllers/top-panel.js",
                 "content/content/controllers/overview-ruler.js",
                 "content/content/controllers/editor.js",
@@ -55,4 +56,15 @@
         "default_title": "ChatGPT DOM Tools"
     },
     "options_page": "options/options.html"
+    ,"web_accessible_resources": [
+        {
+            "resources": [
+                "content/keymap.yaml"
+            ],
+            "matches": [
+                "https://chat.openai.com/*",
+                "https://chatgpt.com/*"
+            ]
+        }
+    ]
 }
