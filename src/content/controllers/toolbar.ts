@@ -1,8 +1,27 @@
 /**
  * Composes toolbar rows for each message and manages the global control panel.
  */
+type ToolbarDeps = {
+    focusService: FocusService;
+    focusController: FocusController;
+    storageService: StorageService;
+    editorController: EditorController;
+    threadDom: ThreadDom;
+    threadActions: ThreadActions;
+    highlightController: HighlightController;
+    overviewRulerController: OverviewRulerController;
+};
+
 class ToolbarController {
-    constructor(private readonly focus: FocusService, private readonly storage: StorageService) { }
+    constructor(private readonly deps: ToolbarDeps) { }
+    private get focus() { return this.deps.focusService; }
+    private get storage() { return this.deps.storageService; }
+    private get editor() { return this.deps.editorController; }
+    private get threadDom() { return this.deps.threadDom; }
+    private get threadActions() { return this.deps.threadActions; }
+    private get highlighter() { return this.deps.highlightController; }
+    private get overview() { return this.deps.overviewRulerController; }
+
 
     /**
      * Creates the page-level navigation/collapse/export controls.
@@ -64,17 +83,17 @@ class ToolbarController {
         if (jumpFirstBtn) jumpFirstBtn.onclick = () => this.scrollToNode(container, 0, 'start');
         if (jumpLastBtn) {
             jumpLastBtn.onclick = () => {
-                const nodes = threadDom.getNavigationNodes(container);
+                const nodes = this.threadDom.getNavigationNodes(container);
                 if (!nodes.length) return;
                 this.scrollToNode(container, nodes.length - 1, 'end', nodes);
             };
         }
         if (jumpStarPrevBtn) jumpStarPrevBtn.onclick = () => { this.scrollFocus(-1); };
         if (jumpStarNextBtn) jumpStarNextBtn.onclick = () => { this.scrollFocus(1); };
-        if (collapseAllBtn) collapseAllBtn.onclick = () => threadActions.toggleAll(container, true);
-        if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => threadActions.collapseByFocus(container, 'out', true);
-        if (expandAllBtn) expandAllBtn.onclick = () => threadActions.toggleAll(container, false);
-        if (expandStarredBtn) expandStarredBtn.onclick = () => threadActions.collapseByFocus(container, 'in', false);
+        if (collapseAllBtn) collapseAllBtn.onclick = () => this.threadActions.toggleAll(container, true);
+        if (collapseUnstarredBtn) collapseUnstarredBtn.onclick = () => this.threadActions.collapseByFocus(container, 'out', true);
+        if (expandAllBtn) expandAllBtn.onclick = () => this.threadActions.toggleAll(container, false);
+        if (expandStarredBtn) expandStarredBtn.onclick = () => this.threadActions.collapseByFocus(container, 'in', false);
 
         if (exportAllBtn) exportAllBtn.onclick = () => exportController.copyThread(container, false);
         if (exportStarredBtn) exportStarredBtn.onclick = () => exportController.copyThread(container, true);
@@ -91,7 +110,7 @@ class ToolbarController {
     }
 
     private scrollToNode(container: HTMLElement, idx: number, block: ScrollLogicalPosition = 'start', list?: HTMLElement[]) {
-        const nodes = list || threadDom.getNavigationNodes(container);
+        const nodes = list || this.threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
         const clamped = Math.max(0, Math.min(idx, nodes.length - 1));
         const target = nodes[clamped];
@@ -114,9 +133,9 @@ class ToolbarController {
     }
 
     private scrollAdjacentMessage(delta: number) {
-        const container = threadDom.findTranscriptRoot();
+        const container = this.threadDom.findTranscriptRoot();
         if (!container) return;
-        const nodes = threadDom.getNavigationNodes(container);
+        const nodes = this.threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
         const currentIdx = this.findClosestMessageIndex(nodes);
         const step = delta >= 0 ? 1 : -1;
@@ -160,7 +179,7 @@ class ToolbarController {
                 toolbar.closest('.ext-toolbar-row')?.remove();
                 toolbar = null;
             } else {
-                threadActions.updateCollapseVisibility(el);
+                this.threadActions.updateCollapseVisibility(el);
                 return;
             }
         }
@@ -186,7 +205,7 @@ class ToolbarController {
         const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
 
         if (collapseBtn) {
-            collapseBtn.onclick = () => threadActions.collapse(el, !el.classList.contains('ext-collapsed'));
+            collapseBtn.onclick = () => this.threadActions.collapse(el, !el.classList.contains('ext-collapsed'));
         }
         if (focusBtn) {
             focusBtn.onclick = async () => {
@@ -197,11 +216,11 @@ class ToolbarController {
                 await this.storage.writeMessage(threadKey, adapter, cur);
                 this.updateBadges(el, threadKey, cur, adapter);
                 focusController.updateControlsUI();
-                overviewRulerController.refreshMarkers();
+                this.overview.refreshMarkers();
             };
         }
-        if (tagBtn) tagBtn.onclick = () => editorController.openTagEditor(el, threadKey);
-        if (noteBtn) noteBtn.onclick = () => editorController.openNoteEditor(el, threadKey);
+        if (tagBtn) tagBtn.onclick = () => this.editor.openTagEditor(el, threadKey);
+        if (noteBtn) noteBtn.onclick = () => this.editor.openNoteEditor(el, threadKey);
 
         wrap.dataset.threadKey = threadKey;
         el.prepend(row);
@@ -209,9 +228,8 @@ class ToolbarController {
         if (adapter) {
             this.updateMessageLength(adapter);
         }
-        this.ensureUserToolbarButton(el);
-        threadActions.updateCollapseVisibility(el);
-        threadActions.syncCollapseButton(el);
+        this.threadActions.updateCollapseVisibility(el);
+        this.threadActions.syncCollapseButton(el);
     }
 
     /**
@@ -219,7 +237,6 @@ class ToolbarController {
      */
     updatePairNumber(adapter: MessageAdapter, pairIndex: number | null) {
         const el = adapter.element;
-        this.ensureUserToolbarButton(el);
         if (adapter.role !== 'user') {
             const wrap = el.querySelector<HTMLElement>('.ext-pair-number-wrap');
             if (wrap) wrap.remove();
@@ -310,18 +327,8 @@ class ToolbarController {
             noteChip.title = note;
             badges.appendChild(noteChip);
         }
-        highlightController.applyHighlights(el, cur.highlights, adapterRef, threadKey);
+        this.highlighter.applyHighlights(el, cur.highlights, adapterRef, threadKey);
         focusController.updateMessageButton(el, meta);
-    }
-
-    private handleUserToolbarButtonClick(messageEl: HTMLElement) {
-        const messageKey = messageMetaRegistry.resolveAdapter(messageEl).key;
-        console.info('[Tagalyst] User toolbar button clicked', { messageKey });
-    }
-
-    private ensureUserToolbarButton(_el: HTMLElement): HTMLButtonElement | null {
-        // Placeholder for future per-user actions. Intentionally disabled to avoid extra UI clutter.
-        return null;
     }
 } // ToolbarController
 

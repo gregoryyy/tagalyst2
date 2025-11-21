@@ -2,6 +2,7 @@
  * Handles CSS highlighter interactions, selection menus, and hover annotations.
  */
 class HighlightController {
+    constructor(private readonly storage: StorageService, private readonly overviewRuler: OverviewRulerController) { }
     private selectionMenu: HTMLElement | null = null;
     private selectionButton: HTMLButtonElement | null = null;
     private annotateButton: HTMLButtonElement | null = null;
@@ -26,8 +27,7 @@ class HighlightController {
     private readonly onMouseMove = (evt: MouseEvent) => this.handleMouseMove(evt);
     private readonly cssHighlightSupported = typeof CSS !== 'undefined' && 'highlights' in CSS && typeof (window as any).Highlight !== 'undefined';
 
-    constructor(private readonly storage: StorageService) { }
-
+    
     /**
      * Lazily wires document event listeners for highlight selection.
      */
@@ -57,7 +57,7 @@ class HighlightController {
         this.highlightMeta.clear();
         this.syncHighlightStyle();
         this.hideHoverTooltip();
-        overviewRulerController.refreshMarkers();
+        this.overviewRuler.refreshMarkers();
     }
 
     /**
@@ -90,7 +90,7 @@ class HighlightController {
             this.highlightIdsByMessage.set(messageKey, ids);
         }
         this.syncHighlightStyle();
-        overviewRulerController.refreshMarkers();
+        this.overviewRuler.refreshMarkers();
     }
 
     private clearMessageHighlights(messageKey: string) {
@@ -108,7 +108,7 @@ class HighlightController {
             this.highlightMeta.delete(id);
         }
         this.syncHighlightStyle();
-        overviewRulerController.refreshMarkers();
+        this.overviewRuler.refreshMarkers();
     }
 
     /**
@@ -130,7 +130,7 @@ class HighlightController {
                 if (!range) continue;
                 const rect = range.getBoundingClientRect();
                 if (!rect) continue;
-                const docCenter = overviewRulerController.measureScrollSpaceCenter(rect);
+                const docCenter = this.overviewRuler.measureScrollSpaceCenter(rect);
                 if (typeof docCenter !== 'number' || !Number.isFinite(docCenter)) continue;
                 markers.push({
                     docCenter,

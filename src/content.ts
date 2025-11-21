@@ -106,9 +106,6 @@ type OverviewEntry = {
  */
 const editorController = new EditorController(storageService);
 
-const highlightController = new HighlightController(storageService);
-highlightController.init();
-const threadActions = new ThreadActions();
 
 const exportController = new ExportController();
 
@@ -259,7 +256,19 @@ class BootstrapOrchestrator {
  * Adapts DOM discovery/pairing to either the native adapter or fallbacks.
  */
 const threadDom = new ThreadDom(() => activeThreadAdapter);
-const toolbarController = new ToolbarController(focusService, storageService);
+const highlightController = new HighlightController(storageService, overviewRulerController);
+const threadActions = new ThreadActions(threadDom);
+
+const toolbarController = new ToolbarController({
+    focusService,
+    focusController,
+    storageService,
+    editorController,
+    threadDom,
+    threadActions,
+    highlightController,
+    overviewRulerController,
+});
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {

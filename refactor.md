@@ -94,3 +94,24 @@ Split one controller at a time, running `npm run build` after each move. Suggest
 6. **ThreadActions** + **ExportController** → `controllers/thread-actions.ts` / `controllers/export.ts`.
 
 Each extraction removes the class from `content.ts`, moves it into the controller file with constructor-based dependencies, adds its compiled JS to the manifest, and verifies the build. After all six, `content.ts` just wires the controllers together.
+
+
+## Codebase overview
+
+- Purpose: MV3 overlay for ChatGPT threads: right-side toolbars, top search/tag panels, bottom nav stack, Markdown export, text highlights/annotations, and an overview ruler.
+- Build/outputs: TypeScript in `src/` emits plain JS/CSS to `content/` via `tsconfig/content.json`; `manifest.json` loads the compiled scripts in a fixed order; no bundler.
+- Entrypoints/orchestration: `src/content.ts` constructs services/controllers, runs `BootstrapOrchestrator` (storage batch read, UI injection, focus/ruler sync, SPA reboots), and exposes `window.__tagalyst`.
+- Services/state: storage/config/render-scheduler; message meta registry; focus service/controller modeling stars/tags/search modes.
+- DOM layer: `ThreadDom`, `ChatGptThreadAdapter`, and message/pair adapters abstract ChatGPT discovery/pairing; fallback heuristics live in `ThreadDom`.
+- UI controllers: toolbar, thread-actions (collapse/expand), export (Markdown), top-panel (Search/Tags), highlight (CSS Highlight API + hover annotations), overview-ruler, editor (tags/notes); all use constructor-injected deps.
+- Options page: `src/options.ts` → `options/` toggles search/tags and handles storage view/import/export/delete with size display.
+- Docs/testing: `README.md` (UX + dev loop), `ARCH.md`/`refactor.md` (module plan), `TODO.md` (bugs/roadmap); tests mentioned (Jest) but none present.
+
+
+## Codebase review
+
+- Strengths: clear MV3 extension shape; services/controllers separated; manifest includes compiled outputs; storage/config abstractions keep chrome APIs isolated; overview ruler and highlight features already modular.
+- Risk spots: `src/content.ts` still hosts orchestration and globals; triple-slash refs everywhere complicate imports; no automated tests despite Jest mention; build order in `manifest.json` must stay aligned with split modules; network sandbox errors (`/bin/ps` not permitted) show up in shellenv but harmless.
+- Refactor focus: finish moving classes into modules (bootstrap/index + overlays wiring), drop globals in favor of dependency injection, prune triple-slash references, and wire a minimal Jest target for utilities/focus logic.
+- Validation: rely on `npm run build` and a manual Chrome smoke pass until tests exist; ensure Options affects content-config flow after wiring.
+

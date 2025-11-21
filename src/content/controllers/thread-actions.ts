@@ -2,6 +2,7 @@
  * Provides DOM mutations for collapsing/expanding message rows.
  */
 class ThreadActions {
+    constructor(private readonly threadDom: ThreadDom) { }
     /**
      * Ensures collapse buttons stay visible when a toolbar is injected.
      */
@@ -41,7 +42,7 @@ class ThreadActions {
      * Applies collapse/expand state to every discovered message.
      */
     toggleAll(container: HTMLElement, yes: boolean) {
-        const msgs = threadDom.enumerateMessages(container);
+        const msgs = this.threadDom.enumerateMessages(container);
         for (const m of msgs) this.collapse(m, !!yes);
     }
     
@@ -52,7 +53,7 @@ class ThreadActions {
         const matches = focusController.getMatches();
         if (!matches.length) return;
         const matchSet = new Set(matches.map(adapter => adapter.element));
-        for (const el of threadDom.enumerateMessages(container)) {
+        for (const el of this.threadDom.enumerateMessages(container)) {
             const isMatch = matchSet.has(el);
             if (target === 'in' ? isMatch : !isMatch) {
                 this.collapse(el, collapseState);

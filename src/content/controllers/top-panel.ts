@@ -248,12 +248,4 @@ class TopPanelController {
         }
         this.focusController.syncMode();
     }
-
-    private shouldShowTags() {
-        return this.configService.areTagsEnabled();
-    }
-
-    private shouldShowSearch() {
-        return this.configService.isSearchEnabled();
-    }
 }
