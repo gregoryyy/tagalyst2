@@ -1,5 +1,5 @@
-/// <reference path="./shared/config.ts" />
-/// <reference path="./shared/storage.ts" />
+import { TAGALYST_CONFIG_STORAGE_KEY, TAGALYST_DEFAULT_CONFIG, TagalystConfig } from './shared/config';
+import { tagalystStorage } from './shared/storage';
 
 /**
  * Reads the persisted feature config, merging in defaults for missing fields.
@@ -169,9 +169,10 @@ class OptionsController {
         this.exportBtn.addEventListener('click', async () => {
             const data = await tagalystStorage.readAll();
             const serialized = JSON.stringify(data, null, 2);
-            if (window.showSaveFilePicker) {
+            const savePicker = (window as any).showSaveFilePicker;
+            if (savePicker) {
                 try {
-                    const handle = await window.showSaveFilePicker({
+                    const handle = await savePicker({
                         suggestedName: `tagalyst-storage-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
                         types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
                     });
@@ -258,6 +259,8 @@ class OptionsController {
         this.clearStorageBtn.textContent = this.deleteLabels.baseLabel || this.clearStorageBtn.dataset.baseLabel || 'Delete';
     }
 }
+
+(globalThis as any).OptionsController = OptionsController;
 
 document.addEventListener('DOMContentLoaded', () => {
     const controller = new OptionsController();

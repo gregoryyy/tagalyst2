@@ -1,9 +1,9 @@
 /**
  * Shared storage helpers wrapping chrome.storage.local for Tagalyst.
  */
-type TagalystStorageRecord = Record<string, any>;
+export type TagalystStorageRecord = Record<string, any>;
 
-const tagalystStorage = {
+export const tagalystStorage = {
     async read(keys?: string[]): Promise<TagalystStorageRecord> {
         if (Array.isArray(keys) && !keys.length) return {};
         return new Promise(resolve => chrome.storage.local.get(keys || null, resolve));

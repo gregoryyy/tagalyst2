@@ -425,3 +425,15 @@ class FocusController {
         return found;
     }
 } // FocusController
+
+// Expose for testing/exports.
+(globalThis as any).FocusService = FocusService;
+(globalThis as any).FocusController = FocusController;
+(globalThis as any).FOCUS_MODES = FOCUS_MODES;
+(globalThis as any).focusMarkerColors = focusMarkerColors;
+/// <reference path="../services/config.ts" />
+/// <reference path="./message-meta.ts" />
+/// <reference path="../dom/message-adapters.ts" />
+/// <reference path="../../types/domain.d.ts" />
+/// <reference path="../../types/globals.d.ts" />
+/// <reference path="../utils.ts" />

@@ -7,6 +7,11 @@ module.exports = {
         '^chrome$': '<rootDir>/test/mocks/chrome.ts',
     },
     setupFilesAfterEnv: ['<rootDir>/test/setupJest.ts'],
-    testPathIgnorePatterns: ['/node_modules/', '/dist/', '/content/', '/options/'],
+    testPathIgnorePatterns: [
+        '/node_modules/',
+        '<rootDir>/dist/',
+        '<rootDir>/content/',
+        '<rootDir>/options/',
+    ],
     moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 };

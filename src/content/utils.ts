@@ -1,3 +1,4 @@
+/// <reference path="./constants.ts" />
 /**
  * Grab bag of DOM-safe utilities used throughout the content script.
  */
@@ -149,3 +150,6 @@ namespace Utils {
         return false;
     }
 } // Utils
+
+// Explicitly expose the namespace on globalThis for test side-effects and runtime access.
+(globalThis as any).Utils = Utils;
