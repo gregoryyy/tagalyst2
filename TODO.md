@@ -2,9 +2,15 @@
 
 Bugs:
 
-Refactor to ts:
+Refactor to ts: DONE
 - like for like DONE
 - iterative changes see ARCH.md DONE
+
+Refactor to split modules:
+- document content.ts
+- create a refactor map: refactor.md
+  - split files
+  - 
 
 Behavioral Bugs:
 - navigation and layout:
@@ -57,9 +63,9 @@ Features:
   - links to graphics
   - mathematical content, i.e., KaTeX DONE
   - canvas and listings DONE
-- Text range markup within responses ONGOING --> feature/text_highlight
-  - annotate markup
-  - show highlights in overview ruler --> after merge feature/text_highlight, feature/overview_ruler
+- Text range markup within responses DONE --> feature/text_highlight
+  - annotate markup DONE
+  - show highlights in overview ruler --> after merge feature/text_highlight, feature/overview_ruler DONE
 - Cross-chat operations:
   - search including tags and annotations --> search results on dedicated dialog
   - create document from tags and annotations
@@ -68,9 +74,13 @@ Features:
   - Assemble across threads: export session
 - Optional Shadow DOM for toolbar isolation
 
-Moonshot:
+Moonshots:
 - text-based interface that allows text-based interaction with the texts
   - using WebLLM with finetuning
   - command API to internal extension functions
 - user agent
   - use case: create glossary of what has been discussed
+- generalize for arbitrary web pages:
+  - meta-layer over browsing data
+    - similar to Hypothesis but sleeker
+    - less about sharing than organizing

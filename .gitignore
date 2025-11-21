@@ -7,6 +7,6 @@ package-lock.json
 .tsbuild/
 # remove js
 options/options.js
-content/content.js
-content/markdown.js
+content/*.js
+content/**/*.js
 dist/

@@ -12,6 +12,7 @@
     "checkJs": false,
     "strict": false,
     "noEmitOnError": true,
+    "removeComments": true,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "skipLibCheck": true
