@@ -37,6 +37,13 @@
 ## Integration Lite
 14. Optional follow-up: a tiny Playwright/Puppeteer smoke that loads a sample HTML thread and asserts injected UI appears; defer until unit/jsdom coverage is stable.
 
+## E2E smoke (optional)
+- `npm run test:e2e` executes `test/e2e/puppeteer-smoke.test.ts`.
+- The test skips automatically unless Puppeteer is available:
+  - Install full Puppeteer (`npm i -D puppeteer`) **or**
+  - Keep `puppeteer-core` and set `PUPPETEER_EXECUTABLE_PATH` to a Chrome/Chromium binary path.
+- It loads an Options HTML fixture into a headless browser and asserts key UI elements render.
+
 ## Workflow
 Run `npm test` locally; `npm run test:watch` during development.
 Keep tests out of the build by scoping them via Jest config (no impact on `tsc -b`).

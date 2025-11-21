@@ -65,7 +65,7 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - The script is defensive (MutationObserver + heuristics). DOM changes on the site can still break selectors; update `isMessageNode` heuristics if needed.
 - This extension never calls private ChatGPT APIs and avoids reparenting nodes, minimizing breakage.
 - When switching chats the extension tears down and rebuilds its UI automatically, so you can move between projects without stale controls.
-- Unit tests (Jest) currently cover the non-visual utility helpers. Run them via `npm test`.
+- Unit tests (Jest) cover utilities/controllers; run them via `npm test`. A lightweight E2E smoke exists at `npm run test:e2e` (skips unless Puppeteer/Chrome is available—use `puppeteer-core` plus `PUPPETEER_EXECUTABLE_PATH` or install full Puppeteer).
 
 ## Development
 - Install dependencies: `npm install`
