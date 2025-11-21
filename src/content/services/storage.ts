@@ -1,3 +1,5 @@
+/// <reference path="../../shared/storage.ts" />
+
 type MessageValue = Record<string, any>;
 
 /**
@@ -9,15 +11,14 @@ class StorageService {
      */
     async read(keys: string[]): Promise<Record<string, MessageValue>> {
         if (!Array.isArray(keys) || !keys.length) return {};
-        return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+        return tagalystStorage.read(keys);
     }
 
     /**
      * Writes the provided record to chrome.storage.
      */
     async write(record: Record<string, MessageValue>): Promise<void> {
-        if (!record || !Object.keys(record).length) return;
-        await new Promise<void>(resolve => chrome.storage.local.set(record, () => resolve()));
+        await tagalystStorage.write(record);
     }
 
     /**

@@ -1,14 +1,13 @@
 /// <reference path="./shared/config.ts" />
+/// <reference path="./shared/storage.ts" />
 
 /**
  * Reads the persisted feature config, merging in defaults for missing fields.
  */
 function getConfig(): Promise<TagalystConfig> {
-    return new Promise(resolve => {
-        chrome.storage.local.get([TAGALYST_CONFIG_STORAGE_KEY], (data) => {
-            const value = data?.[TAGALYST_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
-            resolve({ ...TAGALYST_DEFAULT_CONFIG, ...(value || {}) });
-        });
+    return tagalystStorage.read([TAGALYST_CONFIG_STORAGE_KEY]).then(data => {
+        const value = data?.[TAGALYST_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
+        return { ...TAGALYST_DEFAULT_CONFIG, ...(value || {}) };
     });
 }
 
@@ -16,26 +15,22 @@ function getConfig(): Promise<TagalystConfig> {
  * Persists config overrides for the Search/Tag panels.
  */
 function saveConfig(partial: Partial<TagalystConfig>): Promise<void> {
-    return new Promise(resolve => {
-        chrome.storage.local.set({ [TAGALYST_CONFIG_STORAGE_KEY]: partial }, () => resolve());
-    });
+    return tagalystStorage.write({ [TAGALYST_CONFIG_STORAGE_KEY]: partial });
 }
 
 /**
  * Calculates an approximate storage footprint for all extension keys.
  */
 function getStorageUsage(): Promise<number> {
-    return new Promise(resolve => {
-        chrome.storage.local.get(null, (data) => {
-            let bytes = 0;
-            for (const key in data) {
-                if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
-                const val = data[key];
-                const serialized = typeof val === 'string' ? val : JSON.stringify(val);
-                bytes += key.length + (serialized ? serialized.length : 0);
-            }
-            resolve(bytes);
-        });
+    return tagalystStorage.readAll().then(data => {
+        let bytes = 0;
+        for (const key in data) {
+            if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+            const val = data[key];
+            const serialized = typeof val === 'string' ? val : JSON.stringify(val);
+            bytes += key.length + (serialized ? serialized.length : 0);
+        }
+        return bytes;
     });
 }
 
@@ -126,7 +121,7 @@ function init(): void {
         .forEach(el => el?.addEventListener('change', onChange));
 
     viewBtn.addEventListener('click', async () => {
-        const data = await new Promise(resolve => chrome.storage.local.get(null, resolve));
+        const data = await tagalystStorage.readAll();
         const serialized = JSON.stringify(data, null, 2);
         const newWin = window.open('', 'tagalystStorageView');
         if (!newWin) {
@@ -138,7 +133,7 @@ function init(): void {
     });
 
     exportBtn.addEventListener('click', async () => {
-        const data = await new Promise(resolve => chrome.storage.local.get(null, resolve));
+        const data = await tagalystStorage.readAll();
         const serialized = JSON.stringify(data, null, 2);
         if (window.showSaveFilePicker) {
             try {
@@ -183,8 +178,8 @@ function init(): void {
         try {
             const text = await file.text();
             const data = JSON.parse(text);
-            await new Promise<void>(resolve => chrome.storage.local.clear(() => resolve()));
-            await new Promise<void>(resolve => chrome.storage.local.set(data, () => resolve()));
+            await tagalystStorage.clear();
+            await tagalystStorage.write(data);
             const cfg = await getConfig();
             searchEnable.checked = !!cfg.searchEnabled;
             tagsEnable.checked = !!cfg.tagsEnabled;
@@ -210,7 +205,7 @@ function init(): void {
             }, 2500);
             return;
         }
-        await new Promise<void>(resolve => chrome.storage.local.clear(() => resolve()));
+        await tagalystStorage.clear();
         await saveConfig({ ...TAGALYST_DEFAULT_CONFIG });
         searchEnable.checked = TAGALYST_DEFAULT_CONFIG.searchEnabled;
         tagsEnable.checked = TAGALYST_DEFAULT_CONFIG.tagsEnabled;
