@@ -1,0 +1,61 @@
+# Keyboard shortcuts for Tagalyst (content script)
+- function: prevMessage
+  description: scroll to previous message
+  key: ArrowUp
+- function: nextMessage
+  description: scroll to next message
+  key: ArrowDown
+- function: prevMarked
+  description: scroll to previous marked message (focus subset)
+  key: ArrowUp
+  modifiers: Ctrl, Alt
+- function: nextMarked
+  description: scroll to next marked message (focus subset)
+  key: ArrowDown
+  modifiers: Ctrl, Alt
+- function: firstMessage
+  description: jump to first message
+  key: ArrowUp
+  modifiers: Ctrl, Alt, Meta
+- function: lastMessage
+  description: jump to last message
+  key: ArrowDown
+  modifiers: Ctrl, Alt, Meta
+- function: expandCurrent
+  description: expand current message
+  key: ArrowLeft
+- function: collapseCurrent
+  description: collapse current message
+  key: ArrowRight
+- function: expandUnmarked
+  description: expand all except marked
+  key: ArrowLeft
+  modifiers: Ctrl, Alt
+- function: collapseUnmarked
+  description: collapse all except marked
+  key: ArrowRight
+  modifiers: Ctrl, Alt
+- function: expandAll
+  description: expand all messages
+  key: ArrowLeft
+  modifiers: Ctrl, Alt, Meta
+- function: collapseAll
+  description: collapse all messages
+  key: ArrowRight
+  modifiers: Ctrl, Alt, Meta
+- function: copyMarked
+  description: copy Markdown for marked/focus messages
+  key: c
+  modifiers: Ctrl, Alt
+- function: copyAll
+  description: copy Markdown for all messages
+  key: c
+  modifiers: Ctrl, Alt, Meta
+- function: focusSearch
+  description: focus search input
+  key: s
+  modifiers: Ctrl, Alt
+- function: toggleStar
+  description: toggle star on current message
+  key: "*"
+  modifiers: Ctrl, Alt

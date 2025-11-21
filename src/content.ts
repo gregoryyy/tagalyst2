@@ -6,6 +6,7 @@
 /// <reference path="./content/dom/message-adapters.ts" />
 /// <reference path="./content/dom/thread-dom.ts" />
 /// <reference path="./content/dom/chatgpt-adapter.ts" />
+/// <reference path="./content/controllers/keyboard.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -132,6 +133,7 @@ class BootstrapOrchestrator {
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
+        keyboardController.attach(container);
         if (configService.isOverviewEnabled() && this.hasMessages(container)) {
             overviewRulerController.ensure(container);
             overviewRulerController.setExpandable(configService.doesOverviewExpand());
@@ -245,6 +247,7 @@ class BootstrapOrchestrator {
         const panel = topPanelController.getElement();
         if (panel) panel.remove();
         topPanelController.reset();
+        keyboardController.detach();
         overviewRulerController.reset();
         focusController.reset();
         this.threadAdapter?.disconnect();
@@ -257,7 +260,7 @@ class BootstrapOrchestrator {
  */
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 const highlightController = new HighlightController(storageService, overviewRulerController);
-const threadActions = new ThreadActions(threadDom);
+const threadActions = new ThreadActions(threadDom, messageMetaRegistry);
 
 const toolbarController = new ToolbarController({
     focusService,
@@ -268,6 +271,16 @@ const toolbarController = new ToolbarController({
     threadActions,
     highlightController,
     overviewRulerController,
+});
+const keyboardController = new KeyboardController({
+    threadDom,
+    focusService,
+    focusController,
+    threadActions,
+    exportController,
+    storageService,
+    messageMetaRegistry,
+    topPanelController,
 });
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
