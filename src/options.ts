@@ -5,9 +5,14 @@
  * Reads the persisted feature config, merging in defaults for missing fields.
  */
 function getConfig(): Promise<TagalystConfig> {
-    return tagalystStorage.read([TAGALYST_CONFIG_STORAGE_KEY]).then(data => {
-        const value = data?.[TAGALYST_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
-        return { ...TAGALYST_DEFAULT_CONFIG, ...(value || {}) };
+    return tagalystStorage.read([TAGALYST_CONFIG_STORAGE_KEY]).then(async data => {
+        const stored = data?.[TAGALYST_CONFIG_STORAGE_KEY] as Partial<TagalystConfig> | undefined;
+        const merged = { ...TAGALYST_DEFAULT_CONFIG, ...(stored || {}) };
+        const changed = !stored || Object.keys(TAGALYST_DEFAULT_CONFIG).some(key => (stored as any)[key] !== (merged as any)[key]);
+        if (changed) {
+            await tagalystStorage.write({ [TAGALYST_CONFIG_STORAGE_KEY]: merged });
+        }
+        return merged;
     });
 }
 
@@ -35,6 +40,49 @@ function getStorageUsage(): Promise<number> {
 }
 
 /**
+ * Updates a status element with a transient message.
+ */
+function setStatus(el: HTMLElement | null, msg: string, timeoutMs = 1800) {
+    if (!el) return;
+    el.textContent = msg;
+    setTimeout(() => { el.textContent = ''; }, timeoutMs);
+}
+
+/**
+ * Renders the formatted storage usage value within the supplied element.
+ */
+async function renderStorageUsage(el: HTMLElement | null): Promise<void> {
+    if (!el) return;
+    const bytes = await getStorageUsage();
+    el.textContent = `${bytes.toLocaleString()} bytes`;
+}
+
+/**
+ * Normalizes button widths based on delete confirmation label sizing.
+ */
+function normalizeButtonWidths(buttons: HTMLButtonElement[], deleteBtn: HTMLButtonElement, confirmLabel = 'Delete Ok?', baseLabel = 'Delete') {
+    const tempSpan = document.createElement('span');
+    tempSpan.textContent = confirmLabel;
+    tempSpan.style.visibility = 'hidden';
+    tempSpan.style.position = 'absolute';
+    tempSpan.style.whiteSpace = 'nowrap';
+    const btnStyles = window.getComputedStyle(deleteBtn);
+    tempSpan.style.font = btnStyles.font;
+    document.body.appendChild(tempSpan);
+    const confirmWidth = tempSpan.getBoundingClientRect().width;
+    tempSpan.remove();
+    const baseWidth = deleteBtn.offsetWidth || confirmWidth;
+    const targetWidth = Math.ceil(Math.max(confirmWidth, baseWidth) + 32);
+    buttons.forEach(btn => {
+        btn.style.width = `${targetWidth}px`;
+        btn.style.minWidth = `${targetWidth}px`;
+    });
+    deleteBtn.dataset.baseLabel = baseLabel;
+    deleteBtn.dataset.confirmLabel = confirmLabel;
+    return { baseLabel, confirmLabel };
+}
+
+/**
  * Options page controller that owns UI bindings and interactions.
  */
 class OptionsController {
@@ -52,12 +100,13 @@ class OptionsController {
     private importInput!: HTMLInputElement;
     private clearStorageBtn!: HTMLButtonElement;
     private confirmDelete = false;
+    private deleteLabels = { baseLabel: 'Delete', confirmLabel: 'Delete Ok?' };
 
     async init(): Promise<void> {
         this.cacheDom();
-        this.syncButtonWidths();
+        this.deleteLabels = normalizeButtonWidths([this.viewBtn, this.importBtn, this.exportBtn, this.clearStorageBtn], this.clearStorageBtn);
         await this.loadConfig();
-        await this.updateStorageDisplay();
+        await renderStorageUsage(this.storageSizeEl);
         this.bindEvents();
     }
 
@@ -77,29 +126,6 @@ class OptionsController {
         this.clearStorageBtn = document.getElementById('clear-storage') as HTMLButtonElement;
     }
 
-    private syncButtonWidths() {
-        const confirmLabel = 'Delete Ok?';
-        const baseLabel = 'Delete';
-        const tempSpan = document.createElement('span');
-        tempSpan.textContent = confirmLabel;
-        tempSpan.style.visibility = 'hidden';
-        tempSpan.style.position = 'absolute';
-        tempSpan.style.whiteSpace = 'nowrap';
-        const btnStyles = window.getComputedStyle(this.clearStorageBtn);
-        tempSpan.style.font = btnStyles.font;
-        document.body.appendChild(tempSpan);
-        const confirmWidth = tempSpan.getBoundingClientRect().width;
-        tempSpan.remove();
-        const baseWidth = this.clearStorageBtn.offsetWidth || confirmWidth;
-        const targetWidth = Math.ceil(Math.max(confirmWidth, baseWidth) + 32);
-        [this.viewBtn, this.importBtn, this.exportBtn, this.clearStorageBtn].forEach(btn => {
-            btn.style.width = `${targetWidth}px`;
-            btn.style.minWidth = `${targetWidth}px`;
-        });
-        this.clearStorageBtn.dataset.baseLabel = baseLabel;
-        this.clearStorageBtn.dataset.confirmLabel = confirmLabel;
-    }
-
     private async loadConfig() {
         const cfg = await getConfig();
         this.setToggleState(cfg);
@@ -116,7 +142,7 @@ class OptionsController {
                 overviewExpands: !!this.overviewExpand?.checked,
             };
             await saveConfig(next);
-            this.showStatus('Saved');
+            setStatus(this.statusEl, 'Saved');
         };
 
         [
@@ -133,7 +159,7 @@ class OptionsController {
             const serialized = JSON.stringify(data, null, 2);
             const newWin = window.open('', 'tagalystStorageView');
             if (!newWin) {
-                this.showStatus('Popup blocked');
+                setStatus(this.statusEl, 'Popup blocked');
                 return;
             }
             newWin.document.write(`<pre style="font-family:monospace; white-space:pre; margin:0; padding:16px;">${serialized.replace(/</g, '&lt;')}</pre>`);
@@ -152,12 +178,12 @@ class OptionsController {
                     const writable = await handle.createWritable();
                     await writable.write(serialized);
                     await writable.close();
-                    this.showStatus('Exported');
+                    setStatus(this.statusEl, 'Exported');
                     return;
                 } catch (err) {
                     if ((err as any).name === 'AbortError') return;
                     console.error('Export failed', err);
-                    this.showStatus('Export failed');
+                    setStatus(this.statusEl, 'Export failed');
                     return;
                 }
             }
@@ -170,7 +196,7 @@ class OptionsController {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            this.showStatus('Exported');
+            setStatus(this.statusEl, 'Exported');
         });
 
         this.importBtn.addEventListener('click', () => {
@@ -190,11 +216,11 @@ class OptionsController {
                 await tagalystStorage.write(data);
                 const cfg = await getConfig();
                 this.setToggleState(cfg);
-                await this.updateStorageDisplay();
-                this.showStatus('Imported');
+                await renderStorageUsage(this.storageSizeEl);
+                setStatus(this.statusEl, 'Imported');
             } catch (err) {
                 console.error('Import failed', err);
-                this.showStatus('Import failed');
+                setStatus(this.statusEl, 'Import failed');
             }
         });
 
@@ -202,7 +228,7 @@ class OptionsController {
             if (!this.confirmDelete) {
                 this.confirmDelete = true;
                 this.clearStorageBtn.classList.add('danger');
-                this.clearStorageBtn.textContent = this.clearStorageBtn.dataset.confirmLabel || 'Delete Ok?';
+                this.clearStorageBtn.textContent = this.deleteLabels.confirmLabel || this.clearStorageBtn.dataset.confirmLabel || 'Delete Ok?';
                 setTimeout(() => {
                     if (this.confirmDelete) this.resetDeleteButton();
                 }, 2500);
@@ -211,8 +237,8 @@ class OptionsController {
             await tagalystStorage.clear();
             await saveConfig({ ...TAGALYST_DEFAULT_CONFIG });
             this.setToggleState(TAGALYST_DEFAULT_CONFIG);
-            await this.updateStorageDisplay();
-            this.showStatus('Storage cleared');
+            await renderStorageUsage(this.storageSizeEl);
+            setStatus(this.statusEl, 'Storage cleared');
             this.resetDeleteButton();
         });
     }
@@ -229,19 +255,7 @@ class OptionsController {
     private resetDeleteButton() {
         this.confirmDelete = false;
         this.clearStorageBtn.classList.remove('danger');
-        this.clearStorageBtn.textContent = this.clearStorageBtn.dataset.baseLabel || 'Delete';
-    }
-
-    private async updateStorageDisplay(): Promise<void> {
-        if (!this.storageSizeEl) return;
-        const bytes = await getStorageUsage();
-        this.storageSizeEl.textContent = `${bytes.toLocaleString()} bytes`;
-    }
-
-    private showStatus(msg: string) {
-        if (!this.statusEl) return;
-        this.statusEl.textContent = msg;
-        setTimeout(() => { this.statusEl.textContent = ''; }, 1800);
+        this.clearStorageBtn.textContent = this.deleteLabels.baseLabel || this.clearStorageBtn.dataset.baseLabel || 'Delete';
     }
 }
 
