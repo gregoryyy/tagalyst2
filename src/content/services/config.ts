@@ -1,3 +1,5 @@
+/// <reference path="../../shared/config.ts" />
+
 /**
  * Loads, persists, and broadcasts user configuration state for the content script.
  */
@@ -102,13 +104,6 @@ class ConfigService {
     }
 } // ConfigService
 
-const CONTENT_CONFIG_STORAGE_KEY = '__tagalyst_config';
-const contentDefaultConfig = {
-    searchEnabled: true,
-    tagsEnabled: true,
-    overviewEnabled: true,
-    searchExpands: true,
-    tagsExpands: true,
-    overviewExpands: true,
-};
-let config = { ...contentDefaultConfig };
+const CONTENT_CONFIG_STORAGE_KEY = TAGALYST_CONFIG_STORAGE_KEY;
+const contentDefaultConfig = TAGALYST_DEFAULT_CONFIG;
+let config: TagalystConfig = { ...contentDefaultConfig };

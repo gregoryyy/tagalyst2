@@ -115,3 +115,10 @@ Each extraction removes the class from `content.ts`, moves it into the controlle
 - Refactor focus: finish moving classes into modules (bootstrap/index + overlays wiring), drop globals in favor of dependency injection, prune triple-slash references, and wire a minimal Jest target for utilities/focus logic.
 - Validation: rely on `npm run build` and a manual Chrome smoke pass until tests exist; ensure Options affects content-config flow after wiring.
 
+### Options.ts refactor steps
+
+1. Extract shared config/storage: centralize defaults/keys and a small `chrome.storage` wrapper so options/content share the same contract.
+2. Controller + bootstrap split: move DOM wiring/event handlers into an `OptionsController`; leave a thin entrypoint that just instantiates and calls `init`.
+3. Keep styles external: load `options.css` (already split) to keep HTML lean; ensure build emits the CSS/JS to `options/`.
+4. Factor helpers: pull status messaging, storage usage calc, and button width sizing into tiny utilities to simplify the controller.
+5. Wire import/export/clear via the shared storage helper and merge defaults on load so feature toggles stay aligned with content expectations.
