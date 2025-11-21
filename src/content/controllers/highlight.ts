@@ -482,27 +482,35 @@ class HighlightController {
         const highlights = this.normalizeHighlights(value.highlights);
         const target = highlights.find(entry => entry.id === this.selectionTargetEntry?.id);
         if (!target) return;
-        const next = window.prompt('Annotation for this highlight:', target.annotation || '');
-        if (next === null) return;
-        const trimmed = next.trim();
-        if (trimmed) {
-            target.annotation = trimmed;
-        } else {
-            delete target.annotation;
-        }
-        value.highlights = highlights;
-        await this.storage.writeMessage(threadKey, adapter, value);
-        this.applyHighlights(message, highlights, adapter, threadKey);
-        this.selectionTargetEntry = target;
-        if (this.annotationPreview) {
-            if (trimmed) {
-                this.annotationPreview.textContent = trimmed;
-                this.annotationPreview.style.display = '';
-            } else {
-                this.annotationPreview.textContent = '';
-                this.annotationPreview.style.display = 'none';
-            }
-        }
+        const anchor = (this.selectionMenu || message) as HTMLElement;
+        new EditorController(this.storage).openTextEditor({
+            anchor,
+            value: target.annotation || '',
+            placeholder: 'Add details…',
+            title: 'Annotation',
+            saveOnEnter: true,
+            onSave: async (next) => {
+                const trimmed = (next || '').trim();
+                if (trimmed) {
+                    target.annotation = trimmed;
+                } else {
+                    delete target.annotation;
+                }
+                value.highlights = highlights;
+                await this.storage.writeMessage(threadKey, adapter, value);
+                this.applyHighlights(message, highlights, adapter, threadKey);
+                this.selectionTargetEntry = target;
+                if (this.annotationPreview) {
+                    if (trimmed) {
+                        this.annotationPreview.textContent = trimmed;
+                        this.annotationPreview.style.display = '';
+                    } else {
+                        this.annotationPreview.textContent = '';
+                        this.annotationPreview.style.display = 'none';
+                    }
+                }
+            },
+        });
     }
 
 

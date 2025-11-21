@@ -99,7 +99,7 @@ class EditorController {
             if (evt.key === 'Escape') {
                 evt.preventDefault();
                 cancel();
-            } else if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
+            } else if (evt.key === 'Enter' && !evt.shiftKey) {
                 evt.preventDefault();
                 save();
             }
@@ -117,6 +117,79 @@ class EditorController {
     }
 
     /**
+     * Generic floating text editor used for notes/annotations.
+     */
+    openTextEditor(opts: {
+        anchor: HTMLElement;
+        value: string;
+        placeholder?: string;
+        title?: string;
+        saveOnEnter?: boolean;
+        saveOnCtrlEnter?: boolean;
+        onSave: (value: string) => Promise<void> | void;
+        onCancel?: () => void;
+        onCleanup?: () => void;
+    }) {
+        const editor = document.createElement('div');
+        editor.className = 'ext-note-editor';
+        Utils.markExtNode(editor);
+        editor.innerHTML = `
+            <label class="ext-note-label">
+                ${opts.title || 'Annotation'}
+                <textarea class="ext-note-input" rows="3" placeholder="${opts.placeholder || 'Add details…'}"></textarea>
+            </label>
+            <div class="ext-note-actions">
+                <button type="button" class="ext-note-save">Save</button>
+                <button type="button" class="ext-note-cancel">Cancel</button>
+            </div>
+        `;
+        const input = editor.querySelector<HTMLTextAreaElement>('.ext-note-input');
+        if (!input) return () => { editor.remove(); };
+        input.value = opts.value || '';
+        const detachFloating = Utils.mountFloatingEditor(editor, opts.anchor);
+        const cleanup = () => {
+            detachFloating();
+            editor.remove();
+            opts.onCleanup?.();
+        };
+        const save = async () => {
+            await opts.onSave(input.value || '');
+            cleanup();
+        };
+        const cancel = () => {
+            opts.onCancel?.();
+            cleanup();
+        };
+        const saveBtn = editor.querySelector<HTMLButtonElement>('.ext-note-save');
+        const cancelBtn = editor.querySelector<HTMLButtonElement>('.ext-note-cancel');
+        if (saveBtn) saveBtn.onclick = save;
+        if (cancelBtn) cancelBtn.onclick = cancel;
+        editor.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Escape') {
+                evt.preventDefault();
+                cancel();
+            } else if (opts.saveOnEnter && evt.key === 'Enter' && !evt.shiftKey && !evt.metaKey && !evt.ctrlKey && !evt.altKey) {
+                evt.preventDefault();
+                save();
+            } else if (opts.saveOnCtrlEnter && (evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
+                evt.preventDefault();
+                save();
+            }
+        });
+        editor.addEventListener('mousedown', evt => evt.stopPropagation());
+        const outside = (evt: MouseEvent) => {
+            if (!editor.contains(evt.target as Node)) {
+                cancel();
+                document.removeEventListener('mousedown', outside, true);
+            }
+        };
+        document.addEventListener('mousedown', outside, true);
+        input.focus();
+        input.select();
+        return cleanup;
+    }
+
+    /**
      * Opens the floating note editor for the specified message.
      */
     async openNoteEditor(messageEl: HTMLElement, threadKey: string) {
@@ -129,74 +202,31 @@ class EditorController {
         const adapter = messageMetaRegistry.resolveAdapter(messageEl);
         const cur = await this.storage.readMessage(threadKey, adapter);
         const existing = typeof cur.note === 'string' ? cur.note : '';
-
-        const editor = document.createElement('div');
-        editor.className = 'ext-note-editor';
-        Utils.markExtNode(editor);
-        editor.innerHTML = `
-            <label class="ext-note-label">
-                Annotation
-                <textarea class="ext-note-input" rows="3" placeholder="Add details…"></textarea>
-            </label>
-            <div class="ext-note-actions">
-                <button type="button" class="ext-note-save">Save</button>
-                <button type="button" class="ext-note-cancel">Cancel</button>
-            </div>
-        `;
-
-        const input = editor.querySelector<HTMLTextAreaElement>('.ext-note-input');
-        if (!input) return;
-        input.value = existing;
-
         const toolbar = messageEl.querySelector<HTMLElement>('.ext-toolbar');
-        const detachFloating = Utils.mountFloatingEditor(editor, (toolbar || messageEl) as HTMLElement);
-        messageEl.classList.add('ext-note-editing');
-        input.focus();
-        input.select();
+        const anchor = (toolbar || messageEl) as HTMLElement;
 
-        const cleanup = () => {
-            detachFloating();
-            editor.remove();
-            messageEl.classList.remove('ext-note-editing');
-            if (this.activeNoteEditor?.message === messageEl) this.activeNoteEditor = null;
-        };
-
-        const save = async () => {
-            const value = input.value.trim();
-            if (value) {
-                cur.note = value;
-            } else {
-                delete cur.note;
-            }
-            await this.storage.writeMessage(threadKey, adapter, cur);
-            toolbarController.updateBadges(messageEl, threadKey, cur, adapter);
-            cleanup();
-        };
-
-        const cancel = () => cleanup();
-
-        const saveBtn = editor.querySelector<HTMLButtonElement>('.ext-note-save');
-        const cancelBtn = editor.querySelector<HTMLButtonElement>('.ext-note-cancel');
-        if (saveBtn) saveBtn.onclick = save;
-        if (cancelBtn) cancelBtn.onclick = cancel;
-        editor.addEventListener('keydown', (evt) => {
-            if (evt.key === 'Escape') {
-                evt.preventDefault();
-                cancel();
-            } else if ((evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
-                evt.preventDefault();
-                save();
-            }
+        const cleanup = this.openTextEditor({
+            anchor,
+            value: existing,
+            placeholder: 'Add details…',
+            title: 'Annotation',
+            saveOnCtrlEnter: true,
+            onSave: async (value: string) => {
+                const trimmed = value.trim();
+                if (trimmed) {
+                    cur.note = trimmed;
+                } else {
+                    delete cur.note;
+                }
+                await this.storage.writeMessage(threadKey, adapter, cur);
+                toolbarController.updateBadges(messageEl, threadKey, cur, adapter);
+            },
+            onCleanup: () => {
+                messageEl.classList.remove('ext-note-editing');
+                if (this.activeNoteEditor?.message === messageEl) this.activeNoteEditor = null;
+            },
         });
-        editor.addEventListener('mousedown', evt => evt.stopPropagation());
-        const outsideNote = (evt: MouseEvent) => {
-            if (!editor.contains(evt.target as Node)) {
-                cancel();
-                document.removeEventListener('mousedown', outsideNote, true);
-            }
-        };
-        document.addEventListener('mousedown', outsideNote, true);
-
+        messageEl.classList.add('ext-note-editing');
         this.activeNoteEditor = { message: messageEl, cleanup };
     }
 } // EditorController

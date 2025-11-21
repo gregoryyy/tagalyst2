@@ -133,6 +133,7 @@ class BootstrapOrchestrator {
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
+        highlightController.init();
         keyboardController.attach(container);
         if (configService.isOverviewEnabled() && this.hasMessages(container)) {
             overviewRulerController.ensure(container);
