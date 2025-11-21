@@ -13,7 +13,14 @@ export const TAGALYST_DEFAULT_CONFIG = {
     overviewExpands: true,
 };
 
-export type TagalystConfig = typeof TAGALYST_DEFAULT_CONFIG;
+type TagalystConfigShape = typeof TAGALYST_DEFAULT_CONFIG;
+export type TagalystConfig = TagalystConfigShape;
 
 (globalThis as any).TAGALYST_CONFIG_STORAGE_KEY = TAGALYST_CONFIG_STORAGE_KEY;
 (globalThis as any).TAGALYST_DEFAULT_CONFIG = TAGALYST_DEFAULT_CONFIG;
+
+declare global {
+    const TAGALYST_CONFIG_STORAGE_KEY: string;
+    const TAGALYST_DEFAULT_CONFIG: TagalystConfigShape;
+    type TagalystConfig = TagalystConfigShape;
+}

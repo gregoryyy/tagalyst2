@@ -1,5 +1,5 @@
-const TAGALYST_CONFIG_STORAGE_KEY = '__tagalyst_config';
-const TAGALYST_DEFAULT_CONFIG = {
+export const TAGALYST_CONFIG_STORAGE_KEY = '__tagalyst_config';
+export const TAGALYST_DEFAULT_CONFIG = {
     searchEnabled: true,
     tagsEnabled: true,
     overviewEnabled: true,
@@ -7,3 +7,5 @@ const TAGALYST_DEFAULT_CONFIG = {
     tagsExpands: true,
     overviewExpands: true,
 };
+globalThis.TAGALYST_CONFIG_STORAGE_KEY = TAGALYST_CONFIG_STORAGE_KEY;
+globalThis.TAGALYST_DEFAULT_CONFIG = TAGALYST_DEFAULT_CONFIG;
