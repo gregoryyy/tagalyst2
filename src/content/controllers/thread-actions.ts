@@ -27,20 +27,22 @@ class ThreadActions {
     }
     
     /**
-     * Toggles the collapsed state for one message block (and its pair, if any).
+     * Toggles the collapsed state for one message block (and optionally its pair).
      */
-    collapse(el: HTMLElement, yes: boolean) {
+    collapse(el: HTMLElement, yes: boolean, includePair = true) {
         const collapsed = !!yes;
         this.applyCollapse(el, collapsed);
-        const meta = this.registry.get(el);
-        const pairIdx = meta?.pairIndex;
-        if (typeof pairIdx === 'number') {
-            this.registry.forEach((otherMeta, otherEl) => {
-                if (otherEl === el) return;
-                if (otherMeta?.pairIndex === pairIdx) {
-                    this.applyCollapse(otherEl, collapsed);
-                }
-            });
+        if (includePair) {
+            const meta = this.registry.get(el);
+            const pairIdx = meta?.pairIndex;
+            if (typeof pairIdx === 'number') {
+                this.registry.forEach((otherMeta, otherEl) => {
+                    if (otherEl === el) return;
+                    if (otherMeta?.pairIndex === pairIdx) {
+                        this.applyCollapse(otherEl, collapsed);
+                    }
+                });
+            }
         }
         if (configService.isOverviewEnabled()) {
             overviewRulerController.refreshMarkers();
