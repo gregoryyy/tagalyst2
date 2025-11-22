@@ -7,13 +7,13 @@
  */
 class SidebarLabelController {
     private observer: MutationObserver | null = null;
-    private teardownFn: (() => void) | null = null;
+    private visibilityHandler: (() => void) | null = null;
 
     constructor(private readonly metadata: ThreadMetadataService, private readonly config: ConfigService) { }
 
     start() {
+        this.stop(); // prevent duplicate observers/handlers
         if (!this.config.isSidebarLabelsEnabled()) {
-            this.stop();
             return;
         }
         const nav = document.querySelector('nav');
@@ -25,45 +25,56 @@ class SidebarLabelController {
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        if (this.visibilityHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityHandler);
+            this.visibilityHandler = null;
+        }
         document.querySelectorAll('[data-ext="labels"]').forEach(el => el.remove());
     }
 
     private observe(nav: Element) {
-        this.observer = new MutationObserver(Utils.debounce(() => this.renderAll(nav), 150));
+        this.observer = new MutationObserver(Utils.debounce((records: MutationRecord[]) => {
+            // Ignore mutations caused by our own injected nodes.
+            const external = records.some(rec => {
+                if (!Utils.isExtensionNode(rec.target)) return true;
+                for (const n of Array.from(rec.addedNodes)) if (!Utils.isExtensionNode(n)) return true;
+                for (const n of Array.from(rec.removedNodes)) if (!Utils.isExtensionNode(n)) return true;
+                return false;
+            });
+            if (!external) return;
+            this.renderAll(nav);
+        }, 150));
         this.observer.observe(nav, { childList: true, subtree: true });
-        document.addEventListener('visibilitychange', () => {
+        this.visibilityHandler = () => {
             if (document.visibilityState === 'visible') this.renderAll(nav);
-        });
+        };
+        document.addEventListener('visibilitychange', this.visibilityHandler);
     }
 
     private async renderAll(nav: Element) {
-        const items = Array.from(nav.querySelectorAll<HTMLElement>('[data-testid^="history-item-"]'));
-        for (const item of items) {
-            this.renderItem(item);
-        }
+        const anchors = Array.from(nav.querySelectorAll<HTMLAnchorElement>('a[href*="/c/"]'));
+        await Promise.all(anchors.map(anchor => this.renderItem(anchor)));
     }
 
-    private async renderItem(item: HTMLElement) {
-        const link = item.closest('a') as HTMLAnchorElement | null;
+    private async renderItem(link: HTMLAnchorElement) {
         if (!link || !link.href) return;
         const threadIdMatch = link.href.match(/\/c\/([^/?#]+)/);
         if (!threadIdMatch || !threadIdMatch[1]) return;
         const threadId = threadIdMatch[1];
-        const projectMatch = link.href.match(/\/g\/([^/]+)/);
-        const projectId = projectMatch ? projectMatch[1] : null;
-        const meta = await this.metadata.read(threadIdKey(threadId, projectId));
+        const meta = await this.metadata.read(threadId);
 
-        let badge = item.querySelector<HTMLElement>('[data-ext="labels"]');
+        let badge = link.querySelector<HTMLElement>('[data-ext="labels"]');
         if (!badge) {
             badge = document.createElement('span');
             badge.dataset.ext = 'labels';
+            Utils.markExtNode(badge);
             badge.style.marginLeft = '6px';
             badge.style.display = 'inline-flex';
             badge.style.alignItems = 'center';
             badge.style.gap = '6px';
             badge.style.fontSize = '12px';
             badge.style.color = '#444';
-            item.appendChild(badge);
+            link.appendChild(badge);
         } else {
             badge.innerHTML = '';
         }
@@ -87,14 +98,10 @@ class SidebarLabelController {
             badge.appendChild(note);
         }
 
-        if (typeof meta.length === 'number') {
+        if (typeof meta.length === 'number' && meta.length > 0) {
             const length = document.createElement('span');
-            length.textContent = `${meta.length} prompts`;
+            length.textContent = `(${meta.length})`;
             badge.appendChild(length);
         }
     }
-}
-
-function threadIdKey(threadId: string, projectId: string | null) {
-    return projectId ? `${projectId}:${threadId}` : threadId;
 }

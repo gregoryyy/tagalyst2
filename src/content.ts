@@ -152,25 +152,24 @@ class BootstrapOrchestrator {
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
-    const pageKind = pageClassifier.classify(location.pathname);
-    if (pageKind !== 'thread' && pageKind !== 'project-thread') {
-        this.teardownUI();
-        this.threadAdapter?.disconnect();
-        activeThreadAdapter = null;
-        return;
-    }
+        const pageKind = pageClassifier.classify(location.pathname);
+        if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+            this.teardownUI();
+            this.threadAdapter?.disconnect();
+            activeThreadAdapter = null;
+            return;
+        }
 
-    const threadKey = Utils.getThreadKey();
-    const threadId = deriveThreadId();
-    sidebarLabelController.start();
-    const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-    if (showMeta) {
-        threadMetadataController.ensure(container, threadId);
-        threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
-    } else {
-        document.getElementById('ext-thread-meta')?.remove();
-    }
-    sidebarLabelController.start();
+        const threadKey = Utils.getThreadKey();
+        const threadId = deriveThreadId();
+        sidebarLabelController.start();
+        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+        if (showMeta) {
+            threadMetadataController.ensure(container, threadId);
+            threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
+        } else {
+            document.getElementById('ext-thread-meta')?.remove();
+        }
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
@@ -348,12 +347,13 @@ const keyboardController = new KeyboardController({
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {
-    sidebarLabelController.start();
     const pageKind = pageClassifier.classify(location.pathname);
     if (pageKind !== 'thread' && pageKind !== 'project-thread') {
         bootstrapOrchestrator['teardownUI']?.();
+        sidebarLabelController.start();
         return;
     }
+    sidebarLabelController.start();
     await bootstrapOrchestrator.run();
 }
 
