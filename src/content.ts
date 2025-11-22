@@ -79,6 +79,11 @@ configService.onChange(cfg => {
     } else {
         overviewRulerController.refreshMarkers();
     }
+    if (configService.isSidebarLabelsEnabled()) {
+        sidebarLabelController.start();
+    } else {
+        sidebarLabelController.stop();
+    }
     const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
     const container = threadDom.findTranscriptRoot();
     const threadId = deriveThreadId();
@@ -163,8 +168,9 @@ class BootstrapOrchestrator {
         threadMetadataController.ensure(container, threadId);
         threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
     } else {
-            document.getElementById('ext-thread-meta')?.remove();
-        }
+        document.getElementById('ext-thread-meta')?.remove();
+    }
+    sidebarLabelController.start();
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
@@ -342,6 +348,7 @@ const keyboardController = new KeyboardController({
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {
+    sidebarLabelController.start();
     const pageKind = pageClassifier.classify(location.pathname);
     if (pageKind !== 'thread' && pageKind !== 'project-thread') {
         bootstrapOrchestrator['teardownUI']?.();

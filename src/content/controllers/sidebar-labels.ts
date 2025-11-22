@@ -12,7 +12,10 @@ class SidebarLabelController {
     constructor(private readonly metadata: ThreadMetadataService, private readonly config: ConfigService) { }
 
     start() {
-        if (!this.config.isSidebarLabelsEnabled()) return;
+        if (!this.config.isSidebarLabelsEnabled()) {
+            this.stop();
+            return;
+        }
         const nav = document.querySelector('nav');
         if (!nav) return;
         this.renderAll(nav);
@@ -22,6 +25,7 @@ class SidebarLabelController {
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        document.querySelectorAll('[data-ext="labels"]').forEach(el => el.remove());
     }
 
     private observe(nav: Element) {
