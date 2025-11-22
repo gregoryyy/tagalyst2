@@ -1,7 +1,7 @@
 {
     "name": "Tagalyst 2",
     "description": "ChatGPT content management and search, branch ruler nav",
-    "version": "0.5.6",
+    "version": "0.5.7",
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "permissions": [
@@ -24,6 +24,7 @@
                 "content/content/utils.js",
                 "content/content/services/storage.js",
                 "content/content/services/render-scheduler.js",
+                "content/content/services/thread-metadata.js",
                 "content/content/services/page-classifier.js",
                 "content/content/services/config.js",
                 "content/content/state/message-meta.js",
@@ -33,6 +34,7 @@
                 "content/content/controllers/overview-ruler.js",
                 "content/content/controllers/editor.js",
                 "content/content/controllers/highlight.js",
+                "content/content/controllers/thread-metadata.js",
                 "content/content/controllers/thread-actions.js",
                 "content/content/controllers/toolbar.js",
                 "content/content/controllers/export.js",

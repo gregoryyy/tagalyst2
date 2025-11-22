@@ -11,6 +11,7 @@ const TAGALYST_DEFAULT_CONFIG = {
     searchExpands: true,
     tagsExpands: true,
     overviewExpands: true,
+    metaToolbarEnabled: true,
 };
 
 type TagalystConfig = typeof TAGALYST_DEFAULT_CONFIG;

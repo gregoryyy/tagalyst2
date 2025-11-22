@@ -90,6 +90,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when the thread metadata toolbar should be shown.
+     */
+    isMetaToolbarEnabled() {
+        return config.metaToolbarEnabled !== false;
+    }
+
+    /**
      * Notifies subscribed listeners about a config change.
      */
     private notify() {
