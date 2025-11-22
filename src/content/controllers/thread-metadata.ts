@@ -17,6 +17,7 @@ class ThreadMetadataController {
     private starButton: HTMLButtonElement | null = null;
     private currentThreadId: string | null = null;
     private isEditingName = false;
+    private titleRefreshTimer: number | null = null;
 
     constructor(private readonly service: ThreadMetadataService, private readonly editor: EditorController) { }
 
@@ -111,6 +112,9 @@ class ThreadMetadataController {
         const pageInfo = this.readPageInfo(threadId);
         const pageTitle = pageInfo.threadTitle;
         const resolvedName = meta.name || pageTitle || 'Untitled thread';
+        if (!meta.name && !pageTitle) {
+            this.scheduleTitleRefresh(threadId);
+        }
         if (!this.isEditingName) {
             if (!meta.name && resolvedName && resolvedName !== 'Untitled thread') {
                 meta.name = resolvedName;
@@ -255,6 +259,24 @@ class ThreadMetadataController {
         await this.service.write(threadId, meta);
         this.isEditingName = false;
         this.render(threadId, meta);
+    }
+
+    private scheduleTitleRefresh(threadId: string) {
+        if (this.titleRefreshTimer) {
+            clearTimeout(this.titleRefreshTimer);
+        }
+        this.titleRefreshTimer = window.setTimeout(async () => {
+            this.titleRefreshTimer = null;
+            if (this.isEditingName || this.currentThreadId !== threadId) return;
+            const meta = await this.service.read(threadId);
+            if (meta.name) return;
+            const refreshed = this.readPageInfo(threadId).threadTitle;
+            if (refreshed && refreshed !== 'Untitled thread') {
+                meta.name = refreshed;
+                await this.service.write(threadId, meta);
+                this.render(threadId, meta);
+            }
+        }, 800);
     }
 
     private readPageInfo(threadId: string): { threadTitle: string | null; projectTitle: string | null } {
