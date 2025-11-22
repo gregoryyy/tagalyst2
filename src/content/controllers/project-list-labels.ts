@@ -16,6 +16,9 @@ class ProjectListLabelController {
         const root = document.querySelector('main') || document.body;
         if (!root) return;
         this.renderAll(root);
+        // Handle late-loaded project lists.
+        setTimeout(() => this.renderAll(root), 500);
+        setTimeout(() => this.renderAll(root), 1500);
         this.observe(root);
     }
 
@@ -34,8 +37,9 @@ class ProjectListLabelController {
         this.observer.observe(root, { childList: true, subtree: true });
     }
 
-    private async renderAll(root: Element) {
-        const items = Array.from(root.querySelectorAll<HTMLAnchorElement>('li[class*="project-item"] a[href*="/c/"]'));
+    private async renderAll(root?: Element) {
+        const scope = root || document;
+        const items = Array.from(scope.querySelectorAll<HTMLAnchorElement>('li[class*="project-item"] a[href*="/c/"]'));
         await Promise.all(items.map(item => this.renderItem(item)));
     }
 

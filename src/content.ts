@@ -165,6 +165,24 @@ class BootstrapOrchestrator {
         const threadKey = Utils.getThreadKey();
         const threadId = deriveThreadId();
         sidebarLabelController.start();
+        const ensureMeta = async () => {
+            if (configService.isMetaToolbarEnabled()) {
+                threadMetadataController.ensure(container, threadId);
+                threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
+            } else {
+                document.getElementById('ext-thread-meta')?.remove();
+            }
+        };
+        // Initial and delayed retry to handle late header mounts.
+        await ensureMeta();
+        setTimeout(ensureMeta, 700);
+        const header = document.querySelector('#conversation-header-actions') || document.querySelector('main');
+        if (header) {
+            const metaObserver = new MutationObserver(() => {
+                ensureMeta();
+            });
+            metaObserver.observe(header, { childList: true, subtree: true, characterData: true });
+        }
         const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
         if (showMeta) {
             threadMetadataController.ensure(container, threadId);

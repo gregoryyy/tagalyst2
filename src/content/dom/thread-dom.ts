@@ -70,6 +70,26 @@ class ThreadDom {
 
     static defaultFindTranscriptRoot(): HTMLElement {
         const main = (document.querySelector('main') as HTMLElement) || document.body;
+        const messageNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn"], [data-message-author-role]'));
+
+        // Prefer a scrollable ancestor of the conversation messages (avoids picking nav/sidebar).
+        const ancestorCandidates = messageNodes
+            .map(node => node.closest<HTMLElement>('main, section, article, div'))
+            .filter(Boolean) as HTMLElement[];
+
+        const scored = ancestorCandidates.map(el => {
+            const s = getComputedStyle(el);
+            const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll';
+            const score = (scrollable ? 2 : 0) + (el.clientHeight || 0) / 1000;
+            return { el, score };
+        });
+
+        if (scored.length) {
+            scored.sort((a, b) => b.score - a.score);
+            return scored[0].el;
+        }
+
+        // Fallback to a large scrollable region under main.
         const candidates = Array.from(main.querySelectorAll<HTMLElement>('*')).filter(el => {
             const s = getComputedStyle(el);
             const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll';
