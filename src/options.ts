@@ -92,6 +92,7 @@ class OptionsController {
     private tagsExpand!: HTMLInputElement;
     private overviewEnable!: HTMLInputElement;
     private overviewExpand!: HTMLInputElement;
+    private metaToolbarEnable!: HTMLInputElement;
     private statusEl!: HTMLElement;
     private storageSizeEl!: HTMLElement;
     private viewBtn!: HTMLButtonElement;
@@ -117,6 +118,7 @@ class OptionsController {
         this.tagsExpand = document.getElementById('tags-expand') as HTMLInputElement;
         this.overviewEnable = document.getElementById('overview-enable') as HTMLInputElement;
         this.overviewExpand = document.getElementById('overview-expand') as HTMLInputElement;
+        this.metaToolbarEnable = document.getElementById('meta-toolbar-enable') as HTMLInputElement;
         this.statusEl = document.getElementById('status') as HTMLElement;
         this.storageSizeEl = document.getElementById('storage-size') as HTMLElement;
         this.viewBtn = document.getElementById('view-storage') as HTMLButtonElement;
@@ -140,6 +142,7 @@ class OptionsController {
                 tagsExpands: !!this.tagsExpand?.checked,
                 overviewEnabled: !!this.overviewEnable?.checked,
                 overviewExpands: !!this.overviewExpand?.checked,
+                metaToolbarEnabled: !!this.metaToolbarEnable?.checked,
             };
             await saveConfig(next);
             setStatus(this.statusEl, 'Saved');
@@ -152,6 +155,7 @@ class OptionsController {
             this.tagsExpand,
             this.overviewEnable,
             this.overviewExpand,
+            this.metaToolbarEnable,
         ].filter(Boolean).forEach(el => el?.addEventListener('change', onChange));
 
         this.viewBtn.addEventListener('click', async () => {
@@ -251,6 +255,7 @@ class OptionsController {
         if (this.tagsExpand) this.tagsExpand.checked = !!cfg.tagsExpands;
         if (this.overviewEnable) this.overviewEnable.checked = !!cfg.overviewEnabled;
         if (this.overviewExpand) this.overviewExpand.checked = !!cfg.overviewExpands;
+        if (this.metaToolbarEnable) this.metaToolbarEnable.checked = cfg.metaToolbarEnabled !== false;
     }
 
     private resetDeleteButton() {

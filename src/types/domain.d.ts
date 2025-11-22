@@ -62,6 +62,7 @@ declare global {
     interface ConfigState {
         searchEnabled: boolean;
         tagsEnabled: boolean;
+        metaToolbarEnabled?: boolean;
         [key: string]: unknown;
     }
 

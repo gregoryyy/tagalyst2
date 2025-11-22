@@ -78,6 +78,17 @@ configService.onChange(cfg => {
     } else {
         overviewRulerController.refreshMarkers();
     }
+    const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+    const container = threadDom.findTranscriptRoot();
+    const threadId = deriveThreadId();
+    if (showMeta) {
+        threadMetadataController.ensure(container, threadId);
+        threadMetadataService.read(threadId).then(meta => {
+            threadMetadataController.render(threadId, meta);
+        });
+    } else {
+        document.getElementById('ext-thread-meta')?.remove();
+    }
 });
 
 const enforceFocusConstraints = (cfg: typeof contentDefaultConfig) => {
@@ -144,8 +155,13 @@ class BootstrapOrchestrator {
 
         const threadKey = Utils.getThreadKey();
         const threadId = deriveThreadId();
-        threadMetadataController.ensure(container, threadId);
-        threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
+        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+        if (showMeta) {
+            threadMetadataController.ensure(container, threadId);
+            threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
+        } else {
+            document.getElementById('ext-thread-meta')?.remove();
+        }
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
