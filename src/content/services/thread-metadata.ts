@@ -7,6 +7,7 @@ type ThreadMetadata = {
     note?: string;
     size?: number;
     length?: number;
+    chars?: number;
     starred?: boolean;
 };
 
@@ -42,6 +43,13 @@ class ThreadMetadataService {
         if (!threadId) return;
         const existing = await this.read(threadId);
         existing.length = length;
+        await this.write(threadId, existing);
+    }
+
+    async updateChars(threadId: string, chars: number): Promise<void> {
+        if (!threadId) return;
+        const existing = await this.read(threadId);
+        existing.chars = chars;
         await this.write(threadId, existing);
     }
 

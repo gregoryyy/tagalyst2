@@ -11,6 +11,7 @@ class ThreadMetadataController {
     private noteEl: HTMLElement | null = null;
     private sizeEl: HTMLElement | null = null;
     private lengthEl: HTMLElement | null = null;
+    private charsEl: HTMLElement | null = null;
     private titleMarkerEl: HTMLElement | null = null;
     private projectEl: HTMLElement | null = null;
     private starButton: HTMLButtonElement | null = null;
@@ -45,6 +46,7 @@ class ThreadMetadataController {
                 <div class="ext-thread-meta-sub" style="display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#444;align-items:center;margin-top:-2px;">
                     <span class="ext-thread-meta-length"></span>
                     <span class="ext-thread-meta-size"></span>
+                    <span class="ext-thread-meta-chars"></span>
                     <span class="ext-thread-meta-tags"></span>
                     <span class="ext-thread-meta-note"></span>
                     <span class="ext-thread-meta-title-changed" style="display:none;color:#2b7a0b;font-weight:600;">Title changed</span>
@@ -95,6 +97,7 @@ class ThreadMetadataController {
         this.noteEl = header.querySelector('.ext-thread-meta-note');
         this.sizeEl = header.querySelector('.ext-thread-meta-size');
         this.lengthEl = header.querySelector('.ext-thread-meta-length');
+        this.charsEl = header.querySelector('.ext-thread-meta-chars');
         this.titleMarkerEl = header.querySelector('.ext-thread-meta-title-changed');
         this.projectEl = header.querySelector('.ext-thread-meta-project');
         this.starButton = header.querySelector('.ext-thread-meta-star');
@@ -144,11 +147,24 @@ class ThreadMetadataController {
         if (this.noteEl) this.noteEl.textContent = meta.note || '';
         if (this.lengthEl) {
             const count = typeof meta.length === 'number' ? meta.length : 0;
-            this.lengthEl.textContent = `${count} message${count === 1 ? '' : 's'}`;
+            this.lengthEl.textContent = `${count} prompt${count === 1 ? '' : 's'}`;
         }
         if (this.sizeEl) {
             const size = typeof meta.size === 'number' ? meta.size : null;
             this.sizeEl.textContent = size != null ? `${size} items` : '';
+        }
+        if (this.charsEl) {
+            const chars = typeof meta.chars === 'number' ? meta.chars : null;
+            if (chars != null) {
+                const formatted = this.formatLength(chars);
+                this.charsEl.textContent = formatted;
+                this.charsEl.setAttribute('title', `${chars.toLocaleString()} characters`);
+                this.charsEl.setAttribute('aria-label', `${chars.toLocaleString()} characters`);
+            } else {
+                this.charsEl.textContent = '';
+                this.charsEl.removeAttribute('title');
+                this.charsEl.removeAttribute('aria-label');
+            }
         }
         if (this.titleMarkerEl) {
             const changed = !!meta.name && meta.name !== pageTitle;
@@ -296,6 +312,14 @@ class ThreadMetadataController {
         }
 
         return { threadTitle, projectTitle };
+    }
+
+    private formatLength(length: number) {
+        if (length >= 1000) {
+            const value = length >= 10000 ? Math.round(length / 1000) : Math.round(length / 100) / 10;
+            return `${value}k chars`;
+        }
+        return `${length} chars`;
     }
 }
 

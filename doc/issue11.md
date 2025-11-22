@@ -74,3 +74,10 @@
 2. Add `ThreadMetadataController` to inject editable header in conversations. **Done:** header renders name/tags/note/length and auto-syncs length from message count during bootstrap.
 3. Add optional global/project toolbar scaffold (hidden/disabled for overview per current scope).
 4. Wire into `content.ts` after bootstrap to compute size and render header; guard by page kind (`thread`, `project-thread`). **Done:** injected during bootstrap with page classifier gating.
+
+### Plan: Sidebar / Navigation Markers
+1. Target the ChatGPT sidebar conversation list rows using `nav [data-testid^="history-item-"]` (kebab buttons carry `data-testid="history-item-<n>-options"`) and attach non-destructive badge spans keyed by thread URL/ID.
+2. For project contexts (`/g/<project>/c/<thread>`), include the project id in the storage key to disambiguate, but reuse the same marker rendering path.
+3. Observe the sidebar with a debounced `MutationObserver` and reapply markers on SPA navigation/virtualized list changes; also re-run on `visibilitychange` to cover lazy renders.
+4. Use a tiny overlay (absolute-positioned badge/pill) inside the list item without touching existing children; remove/recreate when nodes recycle.
+5. Keep all per-thread marker state in `chrome.storage.local` alongside metadata so list badges and header metadata share the same source of truth.

@@ -187,13 +187,21 @@ class BootstrapOrchestrator {
                     const pairAdapters = threadDom.buildPairAdaptersFromMessages(messageAdapters);
                     const pairMap = this.buildPairMap(pairAdapters);
                     const messageCount = messageAdapters.length;
+                    const promptCount = pairAdapters.length;
+                    const charCount = messageAdapters.reduce((sum, adapter) => {
+                        try {
+                            return sum + (adapter.getText()?.length || 0);
+                        } catch {
+                            return sum;
+                        }
+                    }, 0);
                     const entries = messageAdapters.map(messageAdapter => ({
                         adapter: messageAdapter,
                         el: messageAdapter.element,
                         key: messageAdapter.storageKey(threadKey),
                         pairIndex: pairMap.get(messageAdapter) ?? null,
                     }));
-                    await this.syncThreadMetadata(threadId, messageCount);
+                    await this.syncThreadMetadata(threadId, promptCount, charCount);
                     if (!entries.length) break;
                     const keys = entries.map(e => e.key);
                     const store = await this.storage.read(keys);
@@ -263,10 +271,12 @@ class BootstrapOrchestrator {
     /**
      * Updates thread-level metadata (length) and re-renders the header UI.
      */
-    private async syncThreadMetadata(threadId: string, messageCount: number) {
+    private async syncThreadMetadata(threadId: string, promptCount: number, charCount: number) {
         if (!threadId) return;
-        const desiredLength = typeof messageCount === 'number' && messageCount >= 0 ? messageCount : 0;
+        const desiredLength = typeof promptCount === 'number' && promptCount >= 0 ? promptCount : 0;
+        const desiredChars = typeof charCount === 'number' && charCount >= 0 ? charCount : 0;
         await threadMetadataService.updateLength(threadId, desiredLength);
+        await threadMetadataService.updateChars(threadId, desiredChars);
         const meta = await threadMetadataService.read(threadId);
         threadMetadataController.render(threadId, meta);
     }

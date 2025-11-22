@@ -35,7 +35,7 @@ describe('ThreadMetadataController', () => {
         const header = parent.firstElementChild as HTMLElement;
         expect(header.id).toBe('ext-thread-meta');
         expect(header.querySelector('.ext-thread-meta-name')?.textContent).toBe('Alpha');
-        expect(header.querySelector('.ext-thread-meta-length')?.textContent).toContain('3 message');
+        expect(header.querySelector('.ext-thread-meta-length')?.textContent).toContain('3 prompt');
     });
 
     it('saves edited name on blur', async () => {
