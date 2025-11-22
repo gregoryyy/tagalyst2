@@ -7,6 +7,7 @@
 /// <reference path="./content/dom/thread-dom.ts" />
 /// <reference path="./content/dom/chatgpt-adapter.ts" />
 /// <reference path="./content/controllers/keyboard.ts" />
+/// <reference path="./content/services/page-classifier.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -16,6 +17,7 @@
  */
 
 const storageService = new StorageService();
+const pageClassifier = new PageClassifier();
 /**
  * Manages extension configuration toggles and notifies listeners on change.
  */
@@ -128,6 +130,13 @@ class BootstrapOrchestrator {
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
+        const pageKind = classifyPage();
+        if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+            this.teardownUI();
+            this.threadAdapter?.disconnect();
+            activeThreadAdapter = null;
+            return;
+        }
 
         const threadKey = Utils.getThreadKey();
         this.toolbar.ensurePageControls(container, threadKey);
@@ -259,6 +268,16 @@ class BootstrapOrchestrator {
 /**
  * Adapts DOM discovery/pairing to either the native adapter or fallbacks.
  */
+const classifyPage = (): PageKind => {
+    const path = location.pathname || '';
+    const inProject = path.includes('/g/');
+    const inThread = path.includes('/c/');
+    if (inProject && inThread) return 'project-thread';
+    if (inThread) return 'thread';
+    if (inProject && /\/project\/?$/.test(path)) return 'project';
+    return 'unknown';
+};
+
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 const highlightController = new HighlightController(storageService, overviewRulerController);
 const threadActions = new ThreadActions(threadDom, messageMetaRegistry);
@@ -286,6 +305,11 @@ const keyboardController = new KeyboardController({
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {
+    const pageKind = pageClassifier.classify(location.pathname);
+    if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+        bootstrapOrchestrator['teardownUI']?.();
+        return;
+    }
     await bootstrapOrchestrator.run();
 }
 
@@ -294,9 +318,17 @@ let lastHref = location.href;
 new MutationObserver(() => {
     if (location.href !== lastHref) {
         lastHref = location.href;
-        bootstrap();
+       bootstrap();
     }
 }).observe(document, { subtree: true, childList: true });
+
+// Also poll URL changes in case SPA navigation doesn't trigger mutations
+setInterval(() => {
+    if (location.href !== lastHref) {
+        lastHref = location.href;
+        bootstrap();
+    }
+}, 800);
 
 // Surface a minimal pairing API for scripts / devtools.
 window.__tagalyst = Object.assign(window.__tagalyst || {}, {

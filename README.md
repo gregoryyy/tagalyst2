@@ -66,6 +66,7 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - This extension never calls private ChatGPT APIs and avoids reparenting nodes, minimizing breakage.
 - When switching chats the extension tears down and rebuilds its UI automatically, so you can move between projects without stale controls.
 - Unit tests (Jest) cover utilities/controllers; run them via `npm test`. A lightweight E2E smoke exists at `npm run test:e2e` (skips unless Puppeteer/Chrome is available—use `puppeteer-core` plus `PUPPETEER_EXECUTABLE_PATH` or install full Puppeteer).
+- UI injection runs only on conversation pages (`/c/...`), whether inside or outside projects. Project overview pages are ignored and trigger a teardown so toolbars/highlights/ruler/shortcuts stay hidden there. The built-in filters (e.g., overview ruler toggles) still apply on valid threads.
 
 ## Development
 - Install dependencies: `npm install`
