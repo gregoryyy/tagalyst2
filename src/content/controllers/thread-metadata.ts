@@ -294,13 +294,6 @@ class ThreadMetadataController {
         }
 
         if (!threadTitle) {
-            // Prefer header-area titles, avoid content h1 inside messages.
-            const heading = document.querySelector<HTMLElement>('#conversation-header-actions h1, header h1');
-            const headingText = heading?.textContent?.trim();
-            if (headingText) threadTitle = headingText;
-        }
-
-        if (!threadTitle) {
             const navCurrent = document.querySelector<HTMLElement>('nav [aria-current="page"], nav [data-active="true"], nav [aria-selected="true"]');
             const navText = navCurrent?.textContent?.trim();
             if (navText) threadTitle = navText;
