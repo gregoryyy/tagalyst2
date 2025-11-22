@@ -28,6 +28,9 @@ class ThreadMetadataController {
         header.style.alignItems = 'center';
         header.style.justifyContent = 'space-between';
         header.style.flex = '1 1 auto';
+        header.style.width = 'auto';
+        header.style.maxWidth = '100%';
+        header.style.margin = '0';
         header.style.gap = '12px';
         header.style.padding = '6px 12px';
         header.style.borderRadius = '10px';
@@ -56,17 +59,29 @@ class ThreadMetadataController {
         const modeButton = headerContainer?.querySelector<HTMLElement>('button[aria-label*="mode" i],button[aria-label*=\"model\" i],button[data-testid*=\"mode\" i]');
 
         if (modeButton && modeButton.parentElement) {
+            // Place immediately to the right of the mode selector, align with header controls.
             modeButton.insertAdjacentElement('afterend', header);
-            modeButton.parentElement.style.display = 'flex';
-            modeButton.parentElement.style.alignItems = 'center';
-            modeButton.parentElement.style.gap = '10px';
-            modeButton.parentElement.style.flexWrap = 'wrap';
+            const parent = modeButton.parentElement as HTMLElement;
+            parent.style.display = 'flex';
+            parent.style.alignItems = 'center';
+            parent.style.gap = '10px';
+            parent.style.flexWrap = 'nowrap';
+            parent.style.flex = '1 1 auto';
+            parent.style.minWidth = '0';
+            // Allow header row to stretch across available space
+            const headerRow = parent.closest('header');
+            if (headerRow) {
+                (headerRow as HTMLElement).style.display = 'flex';
+                (headerRow as HTMLElement).style.alignItems = 'center';
+                (headerRow as HTMLElement).style.gap = '10px';
+            }
         } else if (heading && heading.parentElement) {
             heading.insertAdjacentElement('afterend', header);
             heading.parentElement.style.display = 'flex';
             heading.parentElement.style.alignItems = 'center';
             heading.parentElement.style.gap = '10px';
             heading.parentElement.style.flexWrap = 'wrap';
+            heading.parentElement.style.flex = '1 1 auto';
         } else {
             container.parentElement?.insertBefore(header, container);
         }
@@ -83,7 +98,12 @@ class ThreadMetadataController {
 
     async render(threadId: string, meta: ThreadMetadata) {
         if (!this.headerEl || this.currentThreadId !== threadId) return;
-        if (this.nameEl) this.nameEl.textContent = meta.name || 'Untitled thread';
+        const resolvedName = meta.name || this.readPageTitle(threadId) || 'Untitled thread';
+        if (!meta.name && resolvedName && resolvedName !== 'Untitled thread') {
+            meta.name = resolvedName;
+            await this.service.write(threadId, meta);
+        }
+        if (this.nameEl) this.nameEl.textContent = resolvedName;
         if (this.tagsEl) {
             this.tagsEl.innerHTML = '';
             const tags = Array.isArray(meta.tags) ? meta.tags : [];
@@ -179,6 +199,23 @@ class ThreadMetadataController {
         meta.name = name || undefined;
         await this.service.write(threadId, meta);
         this.render(threadId, meta);
+    }
+
+    private readPageTitle(threadId: string): string | null {
+        // Prefer the navigation entry that matches the current thread id for non-project conversations.
+        if (threadId) {
+            const navMatch = document.querySelector<HTMLElement>(`nav a[href*="/c/${threadId}"]`);
+            const navText = navMatch?.textContent?.trim();
+            if (navText) return navText;
+        }
+        const heading = document.querySelector<HTMLElement>('main h1, main header h1, header h1');
+        const headingText = heading?.textContent?.trim();
+        if (headingText) return headingText;
+        const navCurrent = document.querySelector<HTMLElement>('nav [aria-current="page"], nav [data-active="true"], nav [aria-selected="true"]');
+        const navText = navCurrent?.textContent?.trim();
+        if (navText) return navText;
+        const docTitle = (document.title || '').replace(/-?\s*ChatGPT.*/i, '').trim();
+        return docTitle || null;
     }
 }
 
