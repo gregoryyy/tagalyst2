@@ -10,6 +10,7 @@
 /// <reference path="./content/services/page-classifier.ts" />
 /// <reference path="./content/services/thread-metadata.ts" />
 /// <reference path="./content/controllers/thread-metadata.ts" />
+/// <reference path="./content/controllers/sidebar-labels.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -123,6 +124,7 @@ type OverviewEntry = {
 const editorController = new EditorController(storageService);
 const threadMetadataService = new ThreadMetadataService(storageService);
 const threadMetadataController = new ThreadMetadataController(threadMetadataService, editorController);
+const sidebarLabelController = new SidebarLabelController(threadMetadataService, configService);
 
 
 const exportController = new ExportController();
@@ -145,21 +147,22 @@ class BootstrapOrchestrator {
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
-        const pageKind = pageClassifier.classify(location.pathname);
-        if (pageKind !== 'thread' && pageKind !== 'project-thread') {
-            this.teardownUI();
-            this.threadAdapter?.disconnect();
-            activeThreadAdapter = null;
-            return;
-        }
+    const pageKind = pageClassifier.classify(location.pathname);
+    if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+        this.teardownUI();
+        this.threadAdapter?.disconnect();
+        activeThreadAdapter = null;
+        return;
+    }
 
-        const threadKey = Utils.getThreadKey();
-        const threadId = deriveThreadId();
-        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-        if (showMeta) {
-            threadMetadataController.ensure(container, threadId);
-            threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
-        } else {
+    const threadKey = Utils.getThreadKey();
+    const threadId = deriveThreadId();
+    sidebarLabelController.start();
+    const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+    if (showMeta) {
+        threadMetadataController.ensure(container, threadId);
+        threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
+    } else {
             document.getElementById('ext-thread-meta')?.remove();
         }
         this.toolbar.ensurePageControls(container, threadKey);

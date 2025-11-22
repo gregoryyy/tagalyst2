@@ -63,6 +63,7 @@ declare global {
         searchEnabled: boolean;
         tagsEnabled: boolean;
         metaToolbarEnabled?: boolean;
+        sidebarLabelsEnabled?: boolean;
         [key: string]: unknown;
     }
 
