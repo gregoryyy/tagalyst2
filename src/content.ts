@@ -8,6 +8,8 @@
 /// <reference path="./content/dom/chatgpt-adapter.ts" />
 /// <reference path="./content/controllers/keyboard.ts" />
 /// <reference path="./content/services/page-classifier.ts" />
+/// <reference path="./content/services/thread-metadata.ts" />
+/// <reference path="./content/controllers/thread-metadata.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -108,6 +110,8 @@ type OverviewEntry = {
  * Renders the miniature overview ruler showing message, highlight, and focus markers.
  */
 const editorController = new EditorController(storageService);
+const threadMetadataService = new ThreadMetadataService(storageService);
+const threadMetadataController = new ThreadMetadataController(threadMetadataService, editorController);
 
 
 const exportController = new ExportController();
@@ -130,7 +134,7 @@ class BootstrapOrchestrator {
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
-        const pageKind = classifyPage();
+        const pageKind = pageClassifier.classify(location.pathname);
         if (pageKind !== 'thread' && pageKind !== 'project-thread') {
             this.teardownUI();
             this.threadAdapter?.disconnect();
@@ -139,6 +143,9 @@ class BootstrapOrchestrator {
         }
 
         const threadKey = Utils.getThreadKey();
+        const threadId = deriveThreadId();
+        threadMetadataController.ensure(container, threadId);
+        threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
         this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
@@ -163,12 +170,14 @@ class BootstrapOrchestrator {
                     const messageAdapters = this.resolveMessages(container);
                     const pairAdapters = threadDom.buildPairAdaptersFromMessages(messageAdapters);
                     const pairMap = this.buildPairMap(pairAdapters);
+                    const messageCount = messageAdapters.length;
                     const entries = messageAdapters.map(messageAdapter => ({
                         adapter: messageAdapter,
                         el: messageAdapter.element,
                         key: messageAdapter.storageKey(threadKey),
                         pairIndex: pairMap.get(messageAdapter) ?? null,
                     }));
+                    await this.syncThreadMetadata(threadId, messageCount);
                     if (!entries.length) break;
                     const keys = entries.map(e => e.key);
                     const store = await this.storage.read(keys);
@@ -236,6 +245,20 @@ class BootstrapOrchestrator {
     }
 
     /**
+     * Updates thread-level metadata (length) and re-renders the header UI.
+     */
+    private async syncThreadMetadata(threadId: string, messageCount: number) {
+        if (!threadId) return;
+        const meta = await threadMetadataService.read(threadId);
+        const desiredLength = typeof messageCount === 'number' && messageCount >= 0 ? messageCount : 0;
+        if (meta.length !== desiredLength) {
+            meta.length = desiredLength;
+            await threadMetadataService.write(threadId, meta);
+        }
+        threadMetadataController.render(threadId, meta);
+    }
+
+    /**
      * Returns true when the container currently contains messages.
      */
     private hasMessages(container: HTMLElement) {
@@ -252,6 +275,7 @@ class BootstrapOrchestrator {
         document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
         document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
         document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
+        document.getElementById('ext-thread-meta')?.remove();
         const controls = document.getElementById('ext-page-controls');
         if (controls) controls.remove();
         const panel = topPanelController.getElement();
@@ -264,19 +288,6 @@ class BootstrapOrchestrator {
         activeThreadAdapter = null;
     }
 } // BootstrapOrchestrator
-
-/**
- * Adapts DOM discovery/pairing to either the native adapter or fallbacks.
- */
-const classifyPage = (): PageKind => {
-    const path = location.pathname || '';
-    const inProject = path.includes('/g/');
-    const inThread = path.includes('/c/');
-    if (inProject && inThread) return 'project-thread';
-    if (inThread) return 'thread';
-    if (inProject && /\/project\/?$/.test(path)) return 'project';
-    return 'unknown';
-};
 
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 const highlightController = new HighlightController(storageService, overviewRulerController);

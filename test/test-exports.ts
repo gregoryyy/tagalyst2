@@ -5,6 +5,7 @@ require('../src/content/constants');
 require('../src/content/utils');
 require('../src/content/services/render-scheduler');
 require('../src/content/services/thread-metadata');
+require('../src/content/controllers/thread-metadata');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
 require('../src/content/controllers/keyboard');
@@ -25,6 +26,7 @@ export const TAGALYST_DEFAULT_CONFIG = globals.TAGALYST_DEFAULT_CONFIG;
 export const tagalystStorage = globals.tagalystStorage;
 export const ThreadMetadataService = globals.ThreadMetadataService;
 export const deriveThreadId = globals.deriveThreadId;
+export const ThreadMetadataController = globals.ThreadMetadataController;
 export const {
     sleep,
     hashString,

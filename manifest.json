@@ -34,6 +34,7 @@
                 "content/content/controllers/overview-ruler.js",
                 "content/content/controllers/editor.js",
                 "content/content/controllers/highlight.js",
+                "content/content/controllers/thread-metadata.js",
                 "content/content/controllers/thread-actions.js",
                 "content/content/controllers/toolbar.js",
                 "content/content/controllers/export.js",

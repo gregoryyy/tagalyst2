@@ -71,6 +71,6 @@
 
 ### Implementation steps
 1. Add `ThreadMetadataService` (storage helpers) + `threadId` helper (from URL).
-2. Add `ThreadMetadataController` to inject editable header in conversations.
+2. Add `ThreadMetadataController` to inject editable header in conversations. **Done:** header renders name/tags/note/length and auto-syncs length from message count during bootstrap.
 3. Add optional global/project toolbar scaffold (hidden/disabled for overview per current scope).
-4. Wire into `content.ts` after bootstrap to compute size and render header; guard by page kind (`thread`, `project-thread`).
+4. Wire into `content.ts` after bootstrap to compute size and render header; guard by page kind (`thread`, `project-thread`). **Done:** injected during bootstrap with page classifier gating.
