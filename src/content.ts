@@ -128,6 +128,13 @@ class BootstrapOrchestrator {
         this.threadAdapter = new ChatGptThreadAdapter();
         activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
+        const pageKind = classifyPage();
+        if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+            this.teardownUI();
+            this.threadAdapter?.disconnect();
+            activeThreadAdapter = null;
+            return;
+        }
 
         const threadKey = Utils.getThreadKey();
         this.toolbar.ensurePageControls(container, threadKey);
@@ -259,7 +266,17 @@ class BootstrapOrchestrator {
 /**
  * Adapts DOM discovery/pairing to either the native adapter or fallbacks.
  */
-const isConversationPage = () => /\/c\//.test(location.pathname);
+type PageKind = 'thread' | 'project-thread' | 'project' | 'unknown';
+
+const classifyPage = (): PageKind => {
+    const path = location.pathname || '';
+    const inProject = path.includes('/g/');
+    const inThread = path.includes('/c/');
+    if (inProject && inThread) return 'project-thread';
+    if (inThread) return 'thread';
+    if (inProject && /\/project\/?$/.test(path)) return 'project';
+    return 'unknown';
+};
 
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 const highlightController = new HighlightController(storageService, overviewRulerController);
@@ -288,7 +305,8 @@ const keyboardController = new KeyboardController({
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {
-    if (!isConversationPage()) {
+    const pageKind = classifyPage();
+    if (pageKind !== 'thread' && pageKind !== 'project-thread') {
         bootstrapOrchestrator['teardownUI']?.();
         return;
     }

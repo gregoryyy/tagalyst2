@@ -10,6 +10,7 @@ coverage/
 .jest/
 # remove js
 options/options.js
+# options/**/*.js
 content/*.js
 content/**/*.js
 dist/
