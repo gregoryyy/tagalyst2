@@ -205,7 +205,7 @@ class ToolbarController {
         const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
 
         if (collapseBtn) {
-            collapseBtn.onclick = () => this.threadActions.collapse(el, !el.classList.contains('ext-collapsed'));
+            collapseBtn.onclick = () => this.threadActions.collapse(el, !el.classList.contains('ext-collapsed'), false);
         }
         if (focusBtn) {
             focusBtn.onclick = async () => {

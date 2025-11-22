@@ -17,6 +17,7 @@ class ThreadMetadataController {
     private starButton: HTMLButtonElement | null = null;
     private currentThreadId: string | null = null;
     private isEditingName = false;
+    private titleRefreshTimer: number | null = null;
 
     constructor(private readonly service: ThreadMetadataService, private readonly editor: EditorController) { }
 
@@ -111,6 +112,9 @@ class ThreadMetadataController {
         const pageInfo = this.readPageInfo(threadId);
         const pageTitle = pageInfo.threadTitle;
         const resolvedName = meta.name || pageTitle || 'Untitled thread';
+        if (!meta.name && !pageTitle) {
+            this.scheduleTitleRefresh(threadId);
+        }
         if (!this.isEditingName) {
             if (!meta.name && resolvedName && resolvedName !== 'Untitled thread') {
                 meta.name = resolvedName;
@@ -167,8 +171,9 @@ class ThreadMetadataController {
             }
         }
         if (this.titleMarkerEl) {
-            const changed = !!meta.name && meta.name !== pageTitle;
+            const changed = !!meta.name && !!pageTitle && !this.titlesEquivalent(meta.name, pageTitle);
             this.titleMarkerEl.style.display = changed ? 'inline-flex' : 'none';
+            this.titleMarkerEl.textContent = changed ? `Title changed (ChatGPT: ${pageTitle || '—'})` : '';
         }
         if (this.starButton) {
             const starred = !!meta.starred;
@@ -257,6 +262,24 @@ class ThreadMetadataController {
         this.render(threadId, meta);
     }
 
+    private scheduleTitleRefresh(threadId: string) {
+        if (this.titleRefreshTimer) {
+            clearTimeout(this.titleRefreshTimer);
+        }
+        this.titleRefreshTimer = window.setTimeout(async () => {
+            this.titleRefreshTimer = null;
+            if (this.isEditingName || this.currentThreadId !== threadId) return;
+            const meta = await this.service.read(threadId);
+            if (meta.name) return;
+            const refreshed = this.readPageInfo(threadId).threadTitle;
+            if (refreshed && refreshed !== 'Untitled thread') {
+                meta.name = refreshed;
+                await this.service.write(threadId, meta);
+                this.render(threadId, meta);
+            }
+        }, 800);
+    }
+
     private readPageInfo(threadId: string): { threadTitle: string | null; projectTitle: string | null } {
         const path = location.pathname || '';
         const inProject = path.includes('/g/');
@@ -267,7 +290,7 @@ class ThreadMetadataController {
 
         if (threadId) {
             const navMatch = document.querySelector<HTMLElement>(`nav a[href*="/c/${threadId}"]`);
-            const navText = navMatch?.textContent?.trim() || null;
+            const navText = this.extractNavTitle(navMatch);
             if (navText) {
                 if (inProject && navText.includes('•')) {
                     const parts = navText.split('•').map(p => p.trim()).filter(Boolean);
@@ -289,22 +312,32 @@ class ThreadMetadataController {
                 : 'nav a[href*="/g/"]';
             const projectLink = document.querySelector<HTMLElement>(selector) ||
                 document.querySelector<HTMLElement>('nav a[href*="/project"]');
-            const text = projectLink?.textContent?.trim();
+            const text = this.extractNavTitle(projectLink);
             if (text) projectTitle = text;
         }
 
-        if (!threadTitle) {
-            const navCurrent = document.querySelector<HTMLElement>('nav [aria-current="page"], nav [data-active="true"], nav [aria-selected="true"]');
-            const navText = navCurrent?.textContent?.trim();
-            if (navText) threadTitle = navText;
-        }
-
-        if (!threadTitle) {
-            const docTitle = (document.title || '').replace(/-?\s*ChatGPT.*/i, '').trim();
-            if (docTitle) threadTitle = docTitle;
-        }
-
         return { threadTitle, projectTitle };
+    }
+
+    private titlesEquivalent(a: string, b: string): boolean {
+        const norm = (s: string) => s.trim().replace(/\s+/g, ' ');
+        const A = norm(a);
+        const B = norm(b);
+        if (A === B) return true;
+        // Handle truncated nav titles ending with ellipsis.
+        if (B.endsWith('…')) {
+            const prefix = B.slice(0, -1);
+            if (A.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    private extractNavTitle(node: HTMLElement | null): string | null {
+        if (!node) return null;
+        const clone = node.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('[data-ext]').forEach(el => el.remove());
+        const text = clone.textContent?.trim() || '';
+        return text || null;
     }
 
     private formatLength(length: number) {

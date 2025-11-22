@@ -149,6 +149,18 @@ namespace Utils {
         }
         return false;
     }
+
+    /**
+     * Simple debounce helper.
+     */
+    export function debounce<T extends (...args: any[]) => void>(fn: T, wait = 100): T {
+        let t: number | undefined;
+        const wrapped = ((...args: any[]) => {
+            if (t) clearTimeout(t);
+            t = window.setTimeout(() => fn(...args), wait);
+        }) as T;
+        return wrapped;
+    }
 } // Utils
 
 // Explicitly expose the namespace on globalThis for test side-effects and runtime access.

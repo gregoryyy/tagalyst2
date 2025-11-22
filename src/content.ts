@@ -10,6 +10,8 @@
 /// <reference path="./content/services/page-classifier.ts" />
 /// <reference path="./content/services/thread-metadata.ts" />
 /// <reference path="./content/controllers/thread-metadata.ts" />
+/// <reference path="./content/controllers/sidebar-labels.ts" />
+/// <reference path="./content/controllers/project-list-labels.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -78,6 +80,11 @@ configService.onChange(cfg => {
     } else {
         overviewRulerController.refreshMarkers();
     }
+    if (configService.isSidebarLabelsEnabled()) {
+        sidebarLabelController.start();
+    } else {
+        sidebarLabelController.stop();
+    }
     const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
     const container = threadDom.findTranscriptRoot();
     const threadId = deriveThreadId();
@@ -123,6 +130,8 @@ type OverviewEntry = {
 const editorController = new EditorController(storageService);
 const threadMetadataService = new ThreadMetadataService(storageService);
 const threadMetadataController = new ThreadMetadataController(threadMetadataService, editorController);
+const sidebarLabelController = new SidebarLabelController(threadMetadataService, configService);
+const projectListLabelController = new ProjectListLabelController(threadMetadataService, configService);
 
 
 const exportController = new ExportController();
@@ -155,6 +164,25 @@ class BootstrapOrchestrator {
 
         const threadKey = Utils.getThreadKey();
         const threadId = deriveThreadId();
+        sidebarLabelController.start();
+        const ensureMeta = async () => {
+            if (configService.isMetaToolbarEnabled()) {
+                threadMetadataController.ensure(container, threadId);
+                threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
+            } else {
+                document.getElementById('ext-thread-meta')?.remove();
+            }
+        };
+        // Initial and delayed retry to handle late header mounts.
+        await ensureMeta();
+        setTimeout(ensureMeta, 700);
+        const header = document.querySelector('#conversation-header-actions') || document.querySelector('main');
+        if (header) {
+            const metaObserver = new MutationObserver(() => {
+                ensureMeta();
+            });
+            metaObserver.observe(header, { childList: true, subtree: true, characterData: true });
+        }
         const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
         if (showMeta) {
             threadMetadataController.ensure(container, threadId);
@@ -340,10 +368,17 @@ const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, stora
 
 async function bootstrap(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
+    sidebarLabelController.start();
+    if (pageKind === 'project') {
+        projectListLabelController.start();
+        bootstrapOrchestrator['teardownUI']?.();
+        return;
+    }
     if (pageKind !== 'thread' && pageKind !== 'project-thread') {
         bootstrapOrchestrator['teardownUI']?.();
         return;
     }
+    projectListLabelController.stop();
     await bootstrapOrchestrator.run();
 }
 

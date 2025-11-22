@@ -97,6 +97,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when sidebar labels should be shown.
+     */
+    isSidebarLabelsEnabled() {
+        return config.sidebarLabelsEnabled !== false;
+    }
+
+    /**
      * Notifies subscribed listeners about a config change.
      */
     private notify() {
