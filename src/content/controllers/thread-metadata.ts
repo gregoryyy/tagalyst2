@@ -278,7 +278,8 @@ class ThreadMetadataController {
         }
 
         if (!threadTitle) {
-            const heading = document.querySelector<HTMLElement>('main h1, main header h1, header h1');
+            // Prefer header-area titles, avoid content h1 inside messages.
+            const heading = document.querySelector<HTMLElement>('#conversation-header-actions h1, header h1');
             const headingText = heading?.textContent?.trim();
             if (headingText) threadTitle = headingText;
         }
