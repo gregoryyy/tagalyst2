@@ -7,6 +7,7 @@
 /// <reference path="./content/dom/thread-dom.ts" />
 /// <reference path="./content/dom/chatgpt-adapter.ts" />
 /// <reference path="./content/controllers/keyboard.ts" />
+/// <reference path="./content/services/page-classifier.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -16,6 +17,7 @@
  */
 
 const storageService = new StorageService();
+const pageClassifier = new PageClassifier();
 /**
  * Manages extension configuration toggles and notifies listeners on change.
  */
@@ -266,8 +268,6 @@ class BootstrapOrchestrator {
 /**
  * Adapts DOM discovery/pairing to either the native adapter or fallbacks.
  */
-type PageKind = 'thread' | 'project-thread' | 'project' | 'unknown';
-
 const classifyPage = (): PageKind => {
     const path = location.pathname || '';
     const inProject = path.includes('/g/');
@@ -305,7 +305,7 @@ const keyboardController = new KeyboardController({
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
 
 async function bootstrap(): Promise<void> {
-    const pageKind = classifyPage();
+    const pageKind = pageClassifier.classify(location.pathname);
     if (pageKind !== 'thread' && pageKind !== 'project-thread') {
         bootstrapOrchestrator['teardownUI']?.();
         return;
