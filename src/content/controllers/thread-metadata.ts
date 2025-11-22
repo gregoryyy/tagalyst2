@@ -23,7 +23,7 @@ class ThreadMetadataController {
         }
         const header = document.createElement('div');
         header.id = 'ext-thread-meta';
-        header.className = 'ext-thread-meta';
+        header.className = 'ext-thread-meta ext-toolbar';
         header.style.display = 'flex';
         header.style.alignItems = 'center';
         header.style.justifyContent = 'space-between';
@@ -32,14 +32,11 @@ class ThreadMetadataController {
         header.style.maxWidth = '100%';
         header.style.margin = '0';
         header.style.gap = '12px';
-        header.style.padding = '6px 12px';
-        header.style.borderRadius = '10px';
-        header.style.background = 'rgba(255,255,255,0.9)';
-        header.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
-        header.style.color = '#2b2b2b';
+        header.style.padding = '.25rem .65rem';
+        header.style.borderRadius = '12px';
         header.innerHTML = `
             <div class="ext-thread-meta-left" style="display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-width:0;">
-                <div class="ext-thread-meta-name" contenteditable="true" aria-label="Thread name" style="font-size:16px;font-weight:600;line-height:1.3;"></div>
+                <div class="ext-thread-meta-name" contenteditable="true" aria-label="Thread name" style="font-size:15px;font-weight:600;line-height:1.3;"></div>
                 <div class="ext-thread-meta-sub" style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#444;align-items:center;">
                     <span class="ext-thread-meta-length"></span>
                     <span class="ext-thread-meta-size"></span>
@@ -47,10 +44,10 @@ class ThreadMetadataController {
                     <span class="ext-thread-meta-note"></span>
                 </div>
             </div>
-            <div class="ext-thread-meta-right" style="display:flex;gap:6px;flex-shrink:0;">
-                <button type="button" class="ext-thread-meta-edit-name" title="Edit title (C)" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;cursor:pointer;font-weight:600;">C</button>
-                <button type="button" class="ext-thread-meta-edit-tags" title="Edit tags (T)" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;cursor:pointer;font-weight:600;">T</button>
-                <button type="button" class="ext-thread-meta-edit-note" title="Edit annotation (A)" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;cursor:pointer;font-weight:600;">A</button>
+            <div class="ext-thread-meta-right ext-toolbar" style="display:flex;gap:6px;flex-shrink:0;padding:0;border:none;box-shadow:none;background:transparent;">
+                <button type="button" class="ext-thread-meta-edit-name" title="Edit title (C)"><span class="ext-btn-icon">✎<small>C</small></span></button>
+                <button type="button" class="ext-thread-meta-edit-tags" title="Edit tags (T)"><span class="ext-btn-icon">✎<small>T</small></span></button>
+                <button type="button" class="ext-thread-meta-edit-note" title="Edit annotation (A)"><span class="ext-btn-icon">✎<small>A</small></span></button>
             </div>
         `;
         Utils.markExtNode(header);
