@@ -171,8 +171,9 @@ class ThreadMetadataController {
             }
         }
         if (this.titleMarkerEl) {
-            const changed = !!meta.name && meta.name !== pageTitle;
+            const changed = !!meta.name && !!pageTitle && !this.titlesEquivalent(meta.name, pageTitle);
             this.titleMarkerEl.style.display = changed ? 'inline-flex' : 'none';
+            this.titleMarkerEl.textContent = changed ? `Title changed (ChatGPT: ${pageTitle || '—'})` : '';
         }
         if (this.starButton) {
             const starred = !!meta.starred;
@@ -289,7 +290,7 @@ class ThreadMetadataController {
 
         if (threadId) {
             const navMatch = document.querySelector<HTMLElement>(`nav a[href*="/c/${threadId}"]`);
-            const navText = navMatch?.textContent?.trim() || null;
+            const navText = this.extractNavTitle(navMatch);
             if (navText) {
                 if (inProject && navText.includes('•')) {
                     const parts = navText.split('•').map(p => p.trim()).filter(Boolean);
@@ -311,22 +312,32 @@ class ThreadMetadataController {
                 : 'nav a[href*="/g/"]';
             const projectLink = document.querySelector<HTMLElement>(selector) ||
                 document.querySelector<HTMLElement>('nav a[href*="/project"]');
-            const text = projectLink?.textContent?.trim();
+            const text = this.extractNavTitle(projectLink);
             if (text) projectTitle = text;
         }
 
-        if (!threadTitle) {
-            const navCurrent = document.querySelector<HTMLElement>('nav [aria-current="page"], nav [data-active="true"], nav [aria-selected="true"]');
-            const navText = navCurrent?.textContent?.trim();
-            if (navText) threadTitle = navText;
-        }
-
-        if (!threadTitle) {
-            const docTitle = (document.title || '').replace(/-?\s*ChatGPT.*/i, '').trim();
-            if (docTitle) threadTitle = docTitle;
-        }
-
         return { threadTitle, projectTitle };
+    }
+
+    private titlesEquivalent(a: string, b: string): boolean {
+        const norm = (s: string) => s.trim().replace(/\s+/g, ' ');
+        const A = norm(a);
+        const B = norm(b);
+        if (A === B) return true;
+        // Handle truncated nav titles ending with ellipsis.
+        if (B.endsWith('…')) {
+            const prefix = B.slice(0, -1);
+            if (A.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    private extractNavTitle(node: HTMLElement | null): string | null {
+        if (!node) return null;
+        const clone = node.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('[data-ext]').forEach(el => el.remove());
+        const text = clone.textContent?.trim() || '';
+        return text || null;
     }
 
     private formatLength(length: number) {
