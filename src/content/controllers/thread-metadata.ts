@@ -12,6 +12,7 @@ class ThreadMetadataController {
     private sizeEl: HTMLElement | null = null;
     private lengthEl: HTMLElement | null = null;
     private titleMarkerEl: HTMLElement | null = null;
+    private starButton: HTMLButtonElement | null = null;
     private currentThreadId: string | null = null;
     private isEditingName = false;
 
@@ -51,6 +52,7 @@ class ThreadMetadataController {
                 <button type="button" class="ext-thread-meta-edit-name" title="Edit title (C)"><span class="ext-btn-icon">✎<small>C</small></span></button>
                 <button type="button" class="ext-thread-meta-edit-tags" title="Edit tags (T)"><span class="ext-btn-icon">✎<small>T</small></span></button>
                 <button type="button" class="ext-thread-meta-edit-note" title="Edit annotation (A)"><span class="ext-btn-icon">✎<small>A</small></span></button>
+                <button type="button" class="ext-thread-meta-star" title="Star thread" aria-pressed="false"><span class="ext-btn-icon" style="transform: translate(0,0);">☆</span></button>
             </div>
         `;
         Utils.markExtNode(header);
@@ -92,6 +94,7 @@ class ThreadMetadataController {
         this.sizeEl = header.querySelector('.ext-thread-meta-size');
         this.lengthEl = header.querySelector('.ext-thread-meta-length');
         this.titleMarkerEl = header.querySelector('.ext-thread-meta-title-changed');
+        this.starButton = header.querySelector('.ext-thread-meta-star');
         this.currentThreadId = threadId;
         this.bindEditors(threadId);
         return header;
@@ -138,6 +141,12 @@ class ThreadMetadataController {
             const changed = !!meta.name && meta.name !== pageTitle;
             this.titleMarkerEl.style.display = changed ? 'inline-flex' : 'none';
         }
+        if (this.starButton) {
+            const starred = !!meta.starred;
+            this.starButton.setAttribute('aria-pressed', starred ? 'true' : 'false');
+            const icon = this.starButton.querySelector<HTMLElement>('.ext-btn-icon');
+            if (icon) icon.textContent = starred ? '★' : '☆';
+        }
     }
 
     private bindEditors(threadId: string) {
@@ -158,6 +167,14 @@ class ThreadMetadataController {
                     this.saveName(threadId);
                 }
             });
+        }
+        if (this.starButton) {
+            this.starButton.onclick = async () => {
+                const meta = await this.service.read(threadId);
+                meta.starred = !meta.starred;
+                await this.service.write(threadId, meta);
+                this.render(threadId, meta);
+            };
         }
         const editTags = this.headerEl?.querySelector<HTMLButtonElement>('.ext-thread-meta-edit-tags');
         if (editTags) {

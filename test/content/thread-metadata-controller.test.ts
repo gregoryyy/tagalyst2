@@ -62,4 +62,13 @@ describe('ThreadMetadataController', () => {
         await options.onSave('foo, bar');
         expect(service.write).toHaveBeenCalledWith('t1', expect.objectContaining({ tags: ['foo', 'bar'] }));
     });
+
+    it('toggles star', async () => {
+        controller.ensure(container, 't1');
+        await controller.render('t1', {});
+        const btn = parent.querySelector('.ext-thread-meta-star') as HTMLButtonElement;
+        btn.click();
+        await Promise.resolve();
+        expect(service.write).toHaveBeenCalledWith('t1', expect.objectContaining({ starred: true }));
+    });
 });

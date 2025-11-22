@@ -7,6 +7,7 @@ type ThreadMetadata = {
     note?: string;
     size?: number;
     length?: number;
+    starred?: boolean;
 };
 
 /**
