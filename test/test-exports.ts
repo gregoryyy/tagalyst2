@@ -4,6 +4,7 @@ require('../src/shared/storage');
 require('../src/content/constants');
 require('../src/content/utils');
 require('../src/content/services/render-scheduler');
+require('../src/content/services/thread-metadata');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
 require('../src/content/controllers/keyboard');
@@ -22,6 +23,8 @@ export const TopPanelController = globals.TopPanelController;
 export const TAGALYST_CONFIG_STORAGE_KEY = globals.TAGALYST_CONFIG_STORAGE_KEY;
 export const TAGALYST_DEFAULT_CONFIG = globals.TAGALYST_DEFAULT_CONFIG;
 export const tagalystStorage = globals.tagalystStorage;
+export const ThreadMetadataService = globals.ThreadMetadataService;
+export const deriveThreadId = globals.deriveThreadId;
 export const {
     sleep,
     hashString,
