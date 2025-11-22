@@ -12,6 +12,7 @@ class ThreadMetadataController {
     private sizeEl: HTMLElement | null = null;
     private lengthEl: HTMLElement | null = null;
     private titleMarkerEl: HTMLElement | null = null;
+    private projectEl: HTMLElement | null = null;
     private starButton: HTMLButtonElement | null = null;
     private currentThreadId: string | null = null;
     private isEditingName = false;
@@ -38,9 +39,10 @@ class ThreadMetadataController {
         header.style.padding = '.25rem .65rem';
         header.style.borderRadius = '12px';
         header.innerHTML = `
-            <div class="ext-thread-meta-left" style="display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-width:0;">
+            <div class="ext-thread-meta-left" style="display:flex;flex-direction:column;gap:0;flex:1 1 auto;min-width:0;">
+                <div class="ext-thread-meta-project" style="font-size:11px;color:#555;font-weight:600;line-height:1.2;display:none;"></div>
                 <div class="ext-thread-meta-name" contenteditable="true" aria-label="Thread name" style="font-size:15px;font-weight:600;line-height:1.3;"></div>
-                <div class="ext-thread-meta-sub" style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#444;align-items:center;">
+                <div class="ext-thread-meta-sub" style="display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#444;align-items:center;margin-top:-2px;">
                     <span class="ext-thread-meta-length"></span>
                     <span class="ext-thread-meta-size"></span>
                     <span class="ext-thread-meta-tags"></span>
@@ -94,6 +96,7 @@ class ThreadMetadataController {
         this.sizeEl = header.querySelector('.ext-thread-meta-size');
         this.lengthEl = header.querySelector('.ext-thread-meta-length');
         this.titleMarkerEl = header.querySelector('.ext-thread-meta-title-changed');
+        this.projectEl = header.querySelector('.ext-thread-meta-project');
         this.starButton = header.querySelector('.ext-thread-meta-star');
         this.currentThreadId = threadId;
         this.bindEditors(threadId);
@@ -102,7 +105,8 @@ class ThreadMetadataController {
 
     async render(threadId: string, meta: ThreadMetadata) {
         if (!this.headerEl || this.currentThreadId !== threadId) return;
-        const pageTitle = this.readPageTitle(threadId);
+        const pageInfo = this.readPageInfo(threadId);
+        const pageTitle = pageInfo.threadTitle;
         const resolvedName = meta.name || pageTitle || 'Untitled thread';
         if (!this.isEditingName) {
             if (!meta.name && resolvedName && resolvedName !== 'Untitled thread') {
@@ -110,6 +114,15 @@ class ThreadMetadataController {
                 await this.service.write(threadId, meta);
             }
             if (this.nameEl) this.nameEl.textContent = resolvedName;
+        }
+        if (this.projectEl) {
+            if (pageInfo.projectTitle) {
+                this.projectEl.textContent = pageInfo.projectTitle;
+                this.projectEl.style.display = 'inline';
+            } else {
+                this.projectEl.style.display = 'none';
+                this.projectEl.textContent = '';
+            }
         }
         if (this.tagsEl) {
             this.tagsEl.innerHTML = '';
@@ -228,21 +241,60 @@ class ThreadMetadataController {
         this.render(threadId, meta);
     }
 
-    private readPageTitle(threadId: string): string | null {
-        // Prefer the navigation entry that matches the current thread id for non-project conversations.
+    private readPageInfo(threadId: string): { threadTitle: string | null; projectTitle: string | null } {
+        const path = location.pathname || '';
+        const inProject = path.includes('/g/');
+        const projectIdMatch = path.match(/\/g\/([^/]+)/);
+        const projectId = projectIdMatch ? projectIdMatch[1] : null;
+        let threadTitle: string | null = null;
+        let projectTitle: string | null = null;
+
         if (threadId) {
             const navMatch = document.querySelector<HTMLElement>(`nav a[href*="/c/${threadId}"]`);
-            const navText = navMatch?.textContent?.trim();
-            if (navText) return navText;
+            const navText = navMatch?.textContent?.trim() || null;
+            if (navText) {
+                if (inProject && navText.includes('•')) {
+                    const parts = navText.split('•').map(p => p.trim()).filter(Boolean);
+                    if (parts.length >= 2) {
+                        projectTitle = parts[0];
+                        threadTitle = parts.slice(1).join(' • ');
+                    } else {
+                        threadTitle = navText;
+                    }
+                } else {
+                    threadTitle = navText;
+                }
+            }
         }
-        const heading = document.querySelector<HTMLElement>('main h1, main header h1, header h1');
-        const headingText = heading?.textContent?.trim();
-        if (headingText) return headingText;
-        const navCurrent = document.querySelector<HTMLElement>('nav [aria-current="page"], nav [data-active="true"], nav [aria-selected="true"]');
-        const navText = navCurrent?.textContent?.trim();
-        if (navText) return navText;
-        const docTitle = (document.title || '').replace(/-?\s*ChatGPT.*/i, '').trim();
-        return docTitle || null;
+
+        if (inProject && !projectTitle) {
+            const selector = projectId
+                ? `nav a[href*="/g/${projectId}"]`
+                : 'nav a[href*="/g/"]';
+            const projectLink = document.querySelector<HTMLElement>(selector) ||
+                document.querySelector<HTMLElement>('nav a[href*="/project"]');
+            const text = projectLink?.textContent?.trim();
+            if (text) projectTitle = text;
+        }
+
+        if (!threadTitle) {
+            const heading = document.querySelector<HTMLElement>('main h1, main header h1, header h1');
+            const headingText = heading?.textContent?.trim();
+            if (headingText) threadTitle = headingText;
+        }
+
+        if (!threadTitle) {
+            const navCurrent = document.querySelector<HTMLElement>('nav [aria-current="page"], nav [data-active="true"], nav [aria-selected="true"]');
+            const navText = navCurrent?.textContent?.trim();
+            if (navText) threadTitle = navText;
+        }
+
+        if (!threadTitle) {
+            const docTitle = (document.title || '').replace(/-?\s*ChatGPT.*/i, '').trim();
+            if (docTitle) threadTitle = docTitle;
+        }
+
+        return { threadTitle, projectTitle };
     }
 }
 
