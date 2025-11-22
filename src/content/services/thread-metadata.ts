@@ -31,12 +31,14 @@ class ThreadMetadataService {
     }
 
     async updateSize(threadId: string, size: number): Promise<void> {
+        if (!threadId) return;
         const existing = await this.read(threadId);
         existing.size = size;
         await this.write(threadId, existing);
     }
 
     async updateLength(threadId: string, length: number): Promise<void> {
+        if (!threadId) return;
         const existing = await this.read(threadId);
         existing.length = length;
         await this.write(threadId, existing);

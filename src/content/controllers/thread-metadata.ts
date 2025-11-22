@@ -11,7 +11,9 @@ class ThreadMetadataController {
     private noteEl: HTMLElement | null = null;
     private sizeEl: HTMLElement | null = null;
     private lengthEl: HTMLElement | null = null;
+    private titleMarkerEl: HTMLElement | null = null;
     private currentThreadId: string | null = null;
+    private isEditingName = false;
 
     constructor(private readonly service: ThreadMetadataService, private readonly editor: EditorController) { }
 
@@ -42,6 +44,7 @@ class ThreadMetadataController {
                     <span class="ext-thread-meta-size"></span>
                     <span class="ext-thread-meta-tags"></span>
                     <span class="ext-thread-meta-note"></span>
+                    <span class="ext-thread-meta-title-changed" style="display:none;color:#2b7a0b;font-weight:600;">Title changed</span>
                 </div>
             </div>
             <div class="ext-thread-meta-right ext-toolbar" style="display:flex;gap:6px;flex-shrink:0;padding:0;border:none;box-shadow:none;background:transparent;">
@@ -88,6 +91,7 @@ class ThreadMetadataController {
         this.noteEl = header.querySelector('.ext-thread-meta-note');
         this.sizeEl = header.querySelector('.ext-thread-meta-size');
         this.lengthEl = header.querySelector('.ext-thread-meta-length');
+        this.titleMarkerEl = header.querySelector('.ext-thread-meta-title-changed');
         this.currentThreadId = threadId;
         this.bindEditors(threadId);
         return header;
@@ -95,12 +99,15 @@ class ThreadMetadataController {
 
     async render(threadId: string, meta: ThreadMetadata) {
         if (!this.headerEl || this.currentThreadId !== threadId) return;
-        const resolvedName = meta.name || this.readPageTitle(threadId) || 'Untitled thread';
-        if (!meta.name && resolvedName && resolvedName !== 'Untitled thread') {
-            meta.name = resolvedName;
-            await this.service.write(threadId, meta);
+        const pageTitle = this.readPageTitle(threadId);
+        const resolvedName = meta.name || pageTitle || 'Untitled thread';
+        if (!this.isEditingName) {
+            if (!meta.name && resolvedName && resolvedName !== 'Untitled thread') {
+                meta.name = resolvedName;
+                await this.service.write(threadId, meta);
+            }
+            if (this.nameEl) this.nameEl.textContent = resolvedName;
         }
-        if (this.nameEl) this.nameEl.textContent = resolvedName;
         if (this.tagsEl) {
             this.tagsEl.innerHTML = '';
             const tags = Array.isArray(meta.tags) ? meta.tags : [];
@@ -127,6 +134,10 @@ class ThreadMetadataController {
             const size = typeof meta.size === 'number' ? meta.size : null;
             this.sizeEl.textContent = size != null ? `${size} items` : '';
         }
+        if (this.titleMarkerEl) {
+            const changed = !!meta.name && meta.name !== pageTitle;
+            this.titleMarkerEl.style.display = changed ? 'inline-flex' : 'none';
+        }
     }
 
     private bindEditors(threadId: string) {
@@ -139,6 +150,7 @@ class ThreadMetadataController {
             };
         }
         if (this.nameEl) {
+            this.nameEl.addEventListener('focus', () => { this.isEditingName = true; });
             this.nameEl.addEventListener('blur', () => this.saveName(threadId));
             this.nameEl.addEventListener('keydown', (evt) => {
                 if (evt.key === 'Enter') {
@@ -195,6 +207,7 @@ class ThreadMetadataController {
         const name = (this.nameEl.textContent || '').trim();
         meta.name = name || undefined;
         await this.service.write(threadId, meta);
+        this.isEditingName = false;
         this.render(threadId, meta);
     }
 

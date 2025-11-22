@@ -249,12 +249,9 @@ class BootstrapOrchestrator {
      */
     private async syncThreadMetadata(threadId: string, messageCount: number) {
         if (!threadId) return;
-        const meta = await threadMetadataService.read(threadId);
         const desiredLength = typeof messageCount === 'number' && messageCount >= 0 ? messageCount : 0;
-        if (meta.length !== desiredLength) {
-            meta.length = desiredLength;
-            await threadMetadataService.write(threadId, meta);
-        }
+        await threadMetadataService.updateLength(threadId, desiredLength);
+        const meta = await threadMetadataService.read(threadId);
         threadMetadataController.render(threadId, meta);
     }
 
