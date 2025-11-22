@@ -9,6 +9,7 @@ class ThreadMetadataController {
     private nameEl: HTMLElement | null = null;
     private tagsEl: HTMLElement | null = null;
     private noteEl: HTMLElement | null = null;
+    private sizeEl: HTMLElement | null = null;
     private lengthEl: HTMLElement | null = null;
     private currentThreadId: string | null = null;
 
@@ -23,22 +24,57 @@ class ThreadMetadataController {
         const header = document.createElement('div');
         header.id = 'ext-thread-meta';
         header.className = 'ext-thread-meta';
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.flex = '1 1 auto';
+        header.style.gap = '12px';
+        header.style.padding = '6px 12px';
+        header.style.borderRadius = '10px';
+        header.style.background = 'rgba(255,255,255,0.9)';
+        header.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        header.style.color = '#2b2b2b';
         header.innerHTML = `
-            <div class="ext-thread-meta-name" contenteditable="true" aria-label="Thread name"></div>
-            <div class="ext-thread-meta-row">
-                <div class="ext-thread-meta-tags"></div>
-                <button type="button" class="ext-thread-meta-edit-tags">Edit tags</button>
-                <button type="button" class="ext-thread-meta-edit-note">Edit note</button>
+            <div class="ext-thread-meta-left" style="display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-width:0;">
+                <div class="ext-thread-meta-name" contenteditable="true" aria-label="Thread name" style="font-size:16px;font-weight:600;line-height:1.3;"></div>
+                <div class="ext-thread-meta-sub" style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#444;align-items:center;">
+                    <span class="ext-thread-meta-length"></span>
+                    <span class="ext-thread-meta-size"></span>
+                    <span class="ext-thread-meta-tags"></span>
+                    <span class="ext-thread-meta-note"></span>
+                </div>
             </div>
-            <div class="ext-thread-meta-note"></div>
-            <div class="ext-thread-meta-length"></div>
+            <div class="ext-thread-meta-right" style="display:flex;gap:6px;flex-shrink:0;">
+                <button type="button" class="ext-thread-meta-edit-name" title="Edit title (C)" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;cursor:pointer;font-weight:600;">C</button>
+                <button type="button" class="ext-thread-meta-edit-tags" title="Edit tags (T)" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;cursor:pointer;font-weight:600;">T</button>
+                <button type="button" class="ext-thread-meta-edit-note" title="Edit annotation (A)" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:8px;background:#f6f8fa;cursor:pointer;font-weight:600;">A</button>
+            </div>
         `;
         Utils.markExtNode(header);
-        container.parentElement?.insertBefore(header, container);
+        const heading = document.querySelector<HTMLElement>('main h1, main header h1, header h1');
+        const headerContainer = heading?.closest('header') || heading?.parentElement || document.querySelector<HTMLElement>('header');
+        const modeButton = headerContainer?.querySelector<HTMLElement>('button[aria-label*="mode" i],button[aria-label*=\"model\" i],button[data-testid*=\"mode\" i]');
+
+        if (modeButton && modeButton.parentElement) {
+            modeButton.insertAdjacentElement('afterend', header);
+            modeButton.parentElement.style.display = 'flex';
+            modeButton.parentElement.style.alignItems = 'center';
+            modeButton.parentElement.style.gap = '10px';
+            modeButton.parentElement.style.flexWrap = 'wrap';
+        } else if (heading && heading.parentElement) {
+            heading.insertAdjacentElement('afterend', header);
+            heading.parentElement.style.display = 'flex';
+            heading.parentElement.style.alignItems = 'center';
+            heading.parentElement.style.gap = '10px';
+            heading.parentElement.style.flexWrap = 'wrap';
+        } else {
+            container.parentElement?.insertBefore(header, container);
+        }
         this.headerEl = header;
         this.nameEl = header.querySelector('.ext-thread-meta-name');
         this.tagsEl = header.querySelector('.ext-thread-meta-tags');
         this.noteEl = header.querySelector('.ext-thread-meta-note');
+        this.sizeEl = header.querySelector('.ext-thread-meta-size');
         this.lengthEl = header.querySelector('.ext-thread-meta-length');
         this.currentThreadId = threadId;
         this.bindEditors(threadId);
@@ -70,9 +106,21 @@ class ThreadMetadataController {
             const count = typeof meta.length === 'number' ? meta.length : 0;
             this.lengthEl.textContent = `${count} message${count === 1 ? '' : 's'}`;
         }
+        if (this.sizeEl) {
+            const size = typeof meta.size === 'number' ? meta.size : null;
+            this.sizeEl.textContent = size != null ? `${size} items` : '';
+        }
     }
 
     private bindEditors(threadId: string) {
+        const nameButton = this.headerEl?.querySelector<HTMLButtonElement>('.ext-thread-meta-edit-name');
+        if (nameButton) {
+            nameButton.onclick = () => {
+                if (!this.nameEl) return;
+                this.nameEl.focus();
+                document.execCommand?.('selectAll', false);
+            };
+        }
         if (this.nameEl) {
             this.nameEl.addEventListener('blur', () => this.saveName(threadId));
             this.nameEl.addEventListener('keydown', (evt) => {
