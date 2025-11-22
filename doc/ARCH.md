@@ -68,15 +68,22 @@ BootstrapOrchestrator
 ### Utilities
 - Stateless helpers live in the `Utils` namespace (hashing, text normalization, caret placement, floating editor positioning, DOM ownership markers). Anything that needs state moved into one of the services/controllers above.
 
+## Current Shape and Page Classification
+
+The content script is modular; `content.ts` orchestrates services/controllers/adapters. A `PageClassifier` determines page kind:
+- `thread` and `project-thread` (URLs containing `/c/`, optionally `/g/`) → UI injects (toolbars, highlights, ruler, keyboard).
+- `project` overview (URLs with `/g/.../project`) and other pages → UI skips/tears down.
+
 ## Next Steps
 
-1. **Modularize Services**  
-   - Move each service/controller into its own file (e.g., `src/services/focus.ts`, `src/controllers/toolbar.ts`) so `content.ts` mainly orchestrates dependency wiring. The new class boundaries make this a mechanical split.
+1. **Controller Attach/Detach by Page Kind**  
+   - Continue to attach only the controllers needed per page type; add new classifiers if future surfaces (e.g., Gemini) are supported.
 
 2. **Config & Options Integration**  
-   - Have the Options page talk directly to `ConfigService` (or a shared facade) so UI toggles stay in sync across popup/options/content surfaces with zero duplicate logic.
+   - Keep Options and content aligned via shared config/storage; add tests for options-controller and config flows.
 
 3. **Pluggable DOM Adapters**  
-   - After splitting modules, experiment with alternate `ThreadAdapter` implementations (e.g., for future ChatGPT layouts or other chat platforms) without touching higher-level controllers. `ThreadDom` already hides the fallback heuristics; the next step is swapping adapter instances via dependency injection.
+   - Preserve the ability to swap adapters for alternate layouts/platforms via dependency injection without touching controllers.
 
- These steps continue the same philosophy as earlier refactors: isolate ChatGPT-specific details, ensure behavior stays 1:1, and make every feature depend on adapters + services instead of raw DOM.
+4. **Performance & UX**  
+   - Smooth overview ruler interactions; keyboard shortcut robustness across SPA changes; highlight rendering under large threads.

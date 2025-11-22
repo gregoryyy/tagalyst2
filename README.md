@@ -65,8 +65,9 @@ Note: Tagalyst 1 was not robust in the insane ChatGPT frontend structure. This v
 - The script is defensive (MutationObserver + heuristics). DOM changes on the site can still break selectors; update `isMessageNode` heuristics if needed.
 - This extension never calls private ChatGPT APIs and avoids reparenting nodes, minimizing breakage.
 - When switching chats the extension tears down and rebuilds its UI automatically, so you can move between projects without stale controls.
-- Unit tests (Jest) cover utilities/controllers; run them via `npm test`. A lightweight E2E smoke exists at `npm run test:e2e` (skips unless Puppeteer/Chrome is available—use `puppeteer-core` plus `PUPPETEER_EXECUTABLE_PATH` or install full Puppeteer).
-- UI injection runs only on conversation pages (`/c/...`), whether inside or outside projects. Project overview pages are ignored and trigger a teardown so toolbars/highlights/ruler/shortcuts stay hidden there. The built-in filters (e.g., overview ruler toggles) still apply on valid threads.
+- Tests: Jest covers utilities/controllers and a load smoke; run via `npm test`. Optional E2E smoke is `npm run test:e2e` (skips unless Puppeteer/Chrome available—use `puppeteer-core` + `PUPPETEER_EXECUTABLE_PATH` or install full Puppeteer).
+- Page scope: UI injects only on conversation pages (`/c/...`), including project threads; project overview pages skip UI and trigger teardown. Overview ruler filters still apply on valid threads.
+- Keyboard: YAML-driven shortcuts (`content/keymap.yaml`) control navigation/collapse/export/search/star; defaults ship in the YAML and fall back to baked-in mappings if the file is unreachable.
 
 ## Development
 - Install dependencies: `npm install`

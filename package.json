@@ -1,6 +1,6 @@
 {
   "name": "tagalyst2",
-  "version": "0.5.4",
+  "version": "0.5.6",
   "private": true,
   "scripts": {
     "clean": "rm -rf .tsbuild content/content.js content/markdown.js content/content dom",
