@@ -11,6 +11,7 @@
 /// <reference path="./content/services/thread-metadata.ts" />
 /// <reference path="./content/controllers/thread-metadata.ts" />
 /// <reference path="./content/controllers/sidebar-labels.ts" />
+/// <reference path="./content/controllers/project-list-labels.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -130,6 +131,7 @@ const editorController = new EditorController(storageService);
 const threadMetadataService = new ThreadMetadataService(storageService);
 const threadMetadataController = new ThreadMetadataController(threadMetadataService, editorController);
 const sidebarLabelController = new SidebarLabelController(threadMetadataService, configService);
+const projectListLabelController = new ProjectListLabelController(threadMetadataService, configService);
 
 
 const exportController = new ExportController();
@@ -348,12 +350,17 @@ const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, stora
 
 async function bootstrap(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
-    if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+    sidebarLabelController.start();
+    if (pageKind === 'project') {
+        projectListLabelController.start();
         bootstrapOrchestrator['teardownUI']?.();
-        sidebarLabelController.start();
         return;
     }
-    sidebarLabelController.start();
+    if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+        bootstrapOrchestrator['teardownUI']?.();
+        return;
+    }
+    projectListLabelController.stop();
     await bootstrapOrchestrator.run();
 }
 
