@@ -15,7 +15,7 @@ This folder holds the capture/mirroring tooling for saved HTML/DOM fixtures. Use
   PORT=9222 npx ts-node scripts/mirror/capture.ts [--mirror]
   ```
   - Saves `<name>.mhtml` next to `targets.json`.
-  - `--mirror` downloads externally referenced HTTP(S) resources (scripts, stylesheets, images, etc.) into `<name>_files/` and rewrites links inside the saved MHTML to point to the local copies (useful for offline fixtures).
+  - `--mirror` downloads externally referenced HTTP(S) resources (scripts, stylesheets, images, protocol-relative URLs, srcset/poster targets, CSS url()/@import, etc.) into `<name>_files/` and rewrites links inside the saved MHTML to point to the local copies (useful for offline fixtures).
   - `PORT` defaults to 9222 if not set.
 
 ## Converting MHTML to standalone HTML (`convert.ts`)
