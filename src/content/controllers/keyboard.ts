@@ -23,6 +23,7 @@ type KeyboardDeps = {
     storageService: StorageService;
     messageMetaRegistry: MessageMetaRegistry;
     topPanelController: TopPanelController;
+    requestRender: () => void;
 };
 
 class KeyboardController {
@@ -141,6 +142,7 @@ class KeyboardController {
         this.deps.storageService.write({ [key]: value });
         registry.update(el, { value });
         this.deps.focusController.refreshButtons();
+        this.deps.requestRender();
     }
 
     private findNearestIndex(nodes: HTMLElement[]) {

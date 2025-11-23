@@ -19,6 +19,7 @@ class TopPanelController {
         private readonly focusService: FocusService,
         private readonly configService: ConfigService,
         private readonly focusController: FocusController,
+        private readonly requestRender: () => void = () => { },
     ) { }
 
     ensurePanels(): HTMLElement {
@@ -235,6 +236,7 @@ class TopPanelController {
         this.focusService.setSearchQuery(value || '');
         this.focusController.syncMode();
         this.updateSearchResultCount();
+        this.requestRender();
     }
 
     private toggleTagSelection(tag: string, row?: HTMLElement) {
@@ -247,6 +249,7 @@ class TopPanelController {
             row.classList.toggle('ext-tag-selected', willSelect);
         }
         this.focusController.syncMode();
+        this.requestRender();
     }
 }
 

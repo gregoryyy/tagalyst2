@@ -22,7 +22,12 @@ class RenderScheduler {
         if (this.rafId) cancelAnimationFrame(this.rafId);
         this.rafId = requestAnimationFrame(() => {
             this.rafId = null;
-            target();
+            try {
+                void target();
+            } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('RenderScheduler error', err);
+            }
         });
     }
 } // RenderScheduler

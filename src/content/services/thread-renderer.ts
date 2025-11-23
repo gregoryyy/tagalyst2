@@ -133,6 +133,7 @@ class ThreadRenderService {
             .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
         this.topPanelController.updateTagList(sortedTags);
         this.focusController.refreshButtons();
+        this.overviewRulerController.setExpandable(this.configService.doesOverviewExpand());
         if (this.configService.isOverviewEnabled() && entries.length) {
             this.overviewRulerController.update(this.container, entries);
         } else {

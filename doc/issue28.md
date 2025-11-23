@@ -60,6 +60,10 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Thread fixture captured; adapter test `test/content/dom-adapter.test.ts` (with `dom-adapter.conf.json`) loads it to validate ChatGPT adapter/ThreadDom/message adapters.
 5. Push state into services and standardize render scheduling: thin controllers to rendering/wiring only, move stateful logic into services with clear contracts, and route refreshes through a single render loop to avoid races.
    - Added `ThreadRenderService` to own the render loop via `RenderScheduler`; bootstrap delegates refresh triggers and teardown to it.
+   - Done: focus/tag/search/key/highlight events now request renders via `ThreadRenderService`; toolbar injection/updates and overview refresh all run through the service path.
+   - TODO: route SPA/nav URL changes through the render service when possible to avoid full teardown/reboot.
+   - TODO: add guardrails/telemetry for long renders/re-entrancy and tests around the render service/scheduler.
+   - TODO: ensure teardown safety vs in-flight renders on SPA reloads.
 6. Define a canonical transcript model/service shared by UI and future indexing so DOM/API harvesters can swap without touching controllers.
 7. Strengthen adapter boundaries: separate harvest adapters from renderers and keep ChatGPT-specific selectors isolated to reduce breakage from DOM changes.
 8. Decouple DOM watching from feature renderers: split mutation/teardown concerns so SPA nav doesn’t leave stale UI.

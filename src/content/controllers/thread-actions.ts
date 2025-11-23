@@ -3,7 +3,11 @@
  * Provides DOM mutations for collapsing/expanding message rows.
  */
 class ThreadActions {
-    constructor(private readonly threadDom: ThreadDom, private readonly registry: MessageMetaRegistry) { }
+    constructor(
+        private readonly threadDom: ThreadDom,
+        private readonly registry: MessageMetaRegistry,
+        private readonly requestRender: () => void,
+    ) { }
     /**
      * Ensures collapse buttons stay visible when a toolbar is injected.
      */
@@ -44,9 +48,7 @@ class ThreadActions {
                 });
             }
         }
-        if (configService.isOverviewEnabled()) {
-            overviewRulerController.refreshMarkers();
-        }
+        this.requestRender();
     }
 
     private applyCollapse(el: HTMLElement, collapsed: boolean) {
@@ -61,6 +63,7 @@ class ThreadActions {
     toggleAll(container: HTMLElement, yes: boolean) {
         const msgs = this.threadDom.enumerateMessages(container);
         for (const m of msgs) this.collapse(m, !!yes);
+        this.requestRender();
     }
     
     /**
@@ -76,6 +79,7 @@ class ThreadActions {
                 this.collapse(el, collapseState);
             }
         }
+        this.requestRender();
     }
 
     private getCollapseButton(el: HTMLElement) {

@@ -51,17 +51,17 @@ const focusService = new FocusService(configService);
  */
 const focusController = new FocusController(focusService, messageMetaRegistry);
 
+let threadRenderServiceRef: ThreadRenderService | null = null;
+const requestRender = () => { threadRenderServiceRef?.requestRender(); };
 /**
  * Manages the floating search/tag control panel at the top of the page.
  */
-const topPanelController = new TopPanelController(focusService, configService, focusController);
+const topPanelController = new TopPanelController(focusService, configService, focusController, requestRender);
 const overviewRulerController = new OverviewRulerController();
 focusController.attachSelectionSync(() => {
     topPanelController.syncSelectionUI();
     topPanelController.updateSearchResultCount();
-    if (configService.isOverviewEnabled()) {
-        overviewRulerController.refreshMarkers();
-    }
+    requestRender();
 });
 configService.onChange(cfg => {
     enforceFocusConstraints(cfg);
@@ -69,14 +69,13 @@ configService.onChange(cfg => {
     overviewRulerController.setExpandable(!!cfg.overviewExpands);
     if (!cfg.overviewEnabled) {
         overviewRulerController.reset();
-    } else {
-        overviewRulerController.refreshMarkers();
     }
     if (configService.isSidebarLabelsEnabled()) {
         sidebarLabelController.start();
     } else {
         sidebarLabelController.stop();
     }
+    requestRender();
     const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
     const container = threadDom.findTranscriptRoot();
     const threadId = deriveThreadId();
@@ -88,7 +87,7 @@ configService.onChange(cfg => {
     } else {
         document.getElementById('ext-thread-meta')?.remove();
     }
-    threadRenderService.requestRender();
+    requestRender();
 });
 
 const enforceFocusConstraints = (cfg: typeof contentDefaultConfig) => {
@@ -238,8 +237,8 @@ class BootstrapOrchestrator {
 } // BootstrapOrchestrator
 
 const threadDom = new ThreadDom(() => activeThreadAdapter);
-const highlightController = new HighlightController(storageService, overviewRulerController);
-const threadActions = new ThreadActions(threadDom, messageMetaRegistry);
+const highlightController = new HighlightController(storageService, overviewRulerController, requestRender);
+const threadActions = new ThreadActions(threadDom, messageMetaRegistry, requestRender);
 
 const toolbarController = new ToolbarController({
     focusService,
@@ -260,6 +259,7 @@ const keyboardController = new KeyboardController({
     storageService,
     messageMetaRegistry,
     topPanelController,
+    requestRender,
 });
 const threadRenderService = new ThreadRenderService(
     renderScheduler,
@@ -275,6 +275,7 @@ const threadRenderService = new ThreadRenderService(
     threadMetadataService,
     threadMetadataController,
 );
+threadRenderServiceRef = threadRenderService;
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
 async function bootstrap(): Promise<void> {
