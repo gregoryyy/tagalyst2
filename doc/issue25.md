@@ -30,8 +30,9 @@ Surface per-thread labels (stars, tags/annotations, size) directly in the ChatGP
    - Gate with a config flag (e.g., `sidebarLabelsEnabled`), default on.
 
 ## Implementation Steps
-1. Add `sidebarLabelsEnabled` to shared config and options UI (checkbox, no expand).
-2. Create a `SidebarLabelController` (content): observe `nav` for history items, map href -> thread/project id, fetch metadata, and inject badges (star/tags/size).
-3. Wire controller into `content.ts` bootstrap and config change listener; tear down on non-thread pages.
-4. Reuse `ThreadMetadataService` data; add a helper to format size (`prompts`, `chars`).
-5. (Optional) Add an indexer stub for future size prefetch; currently only show size when metadata exists.
+1. Add `sidebarLabelsEnabled` to shared config and options UI (checkbox, no expand). **Done.**
+2. Create a `SidebarLabelController` (content): observe `nav` for history items, map href -> thread id, fetch metadata, and inject badges (star/tags/size). **Done:** labels render on all conversation links in the left sidebar when enabled.
+3. Wire controller into `content.ts` bootstrap and config change listener; keep running on all pages (no teardown) so labels stay visible. **Done.**
+4. Reuse `ThreadMetadataService` data; add a helper to format size (`prompts`, `chars`). **Done:** prompt counts shown as `(N)`; chars formatted like message badges.
+5. (Optional) Add an indexer stub for future size prefetch; currently only show size when metadata exists. **Not done.**
+6. Add `ProjectListLabelController` to render the same metadata line in the right-hand project thread list (stars, tags, note text, prompts/chars when known). **Done**, with delayed retries to catch late-loaded lists.

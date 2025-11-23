@@ -85,3 +85,6 @@ class ProjectListLabelController {
         }
     }
 }
+
+// Expose for tests
+(globalThis as any).ProjectListLabelController = ProjectListLabelController;
