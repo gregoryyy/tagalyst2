@@ -12,6 +12,7 @@
 /// <reference path="./content/controllers/thread-metadata.ts" />
 /// <reference path="./content/controllers/sidebar-labels.ts" />
 /// <reference path="./content/controllers/project-list-labels.ts" />
+/// <reference path="./content/services/thread-renderer.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -87,6 +88,7 @@ configService.onChange(cfg => {
     } else {
         document.getElementById('ext-thread-meta')?.remove();
     }
+    threadRenderService.requestRender();
 });
 
 const enforceFocusConstraints = (cfg: typeof contentDefaultConfig) => {
@@ -128,11 +130,13 @@ const projectListLabelController = new ProjectListLabelController(threadMetadata
 const exportController = new ExportController();
 
 class BootstrapOrchestrator {
-    private refreshRunning = false;
-    private refreshQueued = false;
     private threadAdapter: ThreadAdapter | null = null;
 
-    constructor(private readonly toolbar: ToolbarController, private readonly storage: StorageService) { }
+    constructor(
+        private readonly toolbar: ToolbarController,
+        private readonly storage: StorageService,
+        private readonly renderService: ThreadRenderService,
+    ) { }
 
     /**
      * Bootstraps the UI when a transcript is detected.
@@ -193,111 +197,12 @@ class BootstrapOrchestrator {
             overviewRulerController.reset();
         }
 
-        const render = async () => {
-            if (this.refreshRunning) {
-                this.refreshQueued = true;
-                return;
-            }
-            this.refreshRunning = true;
-            try {
-                do {
-                    this.refreshQueued = false;
-                    const messageAdapters = this.resolveMessages(container);
-                    const pairAdapters = threadDom.buildPairAdaptersFromMessages(messageAdapters);
-                    const pairMap = this.buildPairMap(pairAdapters);
-                    const messageCount = messageAdapters.length;
-                    const promptCount = pairAdapters.length;
-                    const charCount = messageAdapters.reduce((sum, adapter) => {
-                        try {
-                            return sum + (adapter.getText()?.length || 0);
-                        } catch {
-                            return sum;
-                        }
-                    }, 0);
-                    const entries = messageAdapters.map(messageAdapter => ({
-                        adapter: messageAdapter,
-                        el: messageAdapter.element,
-                        key: messageAdapter.storageKey(threadKey),
-                        pairIndex: pairMap.get(messageAdapter) ?? null,
-                    }));
-                    await this.syncThreadMetadata(threadId, promptCount, charCount);
-                    if (!entries.length) break;
-                    const keys = entries.map(e => e.key);
-                    const store = await this.storage.read(keys);
-                    const tagCounts = new Map<string, number>();
-                    highlightController.resetAll();
-                    messageMetaRegistry.clear();
-                    for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-                        this.toolbar.injectToolbar(el, threadKey);
-                        this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-                        this.toolbar.updateMessageLength(messageAdapter);
-                        const value = store[key] || {};
-                        messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
-                        if (value && Array.isArray(value.tags)) {
-                            for (const t of value.tags) {
-                                if (!t) continue;
-                                tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
-                            }
-                        }
-                        this.toolbar.updateBadges(el, threadKey, value, messageAdapter);
-                    }
-                const sortedTags = Array.from(tagCounts.entries())
-                    .map(([tag, count]) => ({ tag, count }))
-                    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-                topPanelController.updateTagList(sortedTags);
-                focusController.refreshButtons();
-                if (configService.isOverviewEnabled() && entries.length) {
-                    overviewRulerController.update(container, entries);
-                } else {
-                    overviewRulerController.reset();
-                }
-                topPanelController.updateSearchResultCount();
-                } while (this.refreshQueued);
-            } finally {
-                this.refreshRunning = false;
-            }
-        };
-
-        renderScheduler.setRenderer(render);
-        await render();
+        this.renderService.attach({ container, threadId, threadKey, adapter: this.threadAdapter });
+        await this.renderService.renderNow();
         this.threadAdapter.observe(container, (records) => {
             if (!records.some(Utils.mutationTouchesExternal)) return;
-            renderScheduler.request(render);
+            this.renderService.requestRender();
         });
-    }
-
-    /**
-     * Resolves MessageAdapters for the container via thread adapters or defaults.
-     */
-    private resolveMessages(container: HTMLElement): MessageAdapter[] {
-        const threadAdapter = this.threadAdapter;
-        return (threadAdapter
-            ? threadAdapter.getMessages(container)
-            : ThreadDom.defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
-    }
-
-    /**
-     * Builds a lookup from MessageAdapter to pair index.
-     */
-    private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
-        const pairMap = new Map<MessageAdapter, number>();
-        pairAdapters.forEach((pair, idx) => {
-            pair.getMessages().forEach(msg => pairMap.set(msg, idx));
-        });
-        return pairMap;
-    }
-
-    /**
-     * Updates thread-level metadata (length) and re-renders the header UI.
-     */
-    private async syncThreadMetadata(threadId: string, promptCount: number, charCount: number) {
-        if (!threadId) return;
-        const desiredLength = typeof promptCount === 'number' && promptCount >= 0 ? promptCount : 0;
-        const desiredChars = typeof charCount === 'number' && charCount >= 0 ? charCount : 0;
-        await threadMetadataService.updateLength(threadId, desiredLength);
-        await threadMetadataService.updateChars(threadId, desiredChars);
-        const meta = await threadMetadataService.read(threadId);
-        threadMetadataController.render(threadId, meta);
     }
 
     /**
@@ -327,6 +232,7 @@ class BootstrapOrchestrator {
         overviewRulerController.reset();
         focusController.reset();
         this.threadAdapter?.disconnect();
+        this.renderService.reset();
         activeThreadAdapter = null;
     }
 } // BootstrapOrchestrator
@@ -355,7 +261,21 @@ const keyboardController = new KeyboardController({
     messageMetaRegistry,
     topPanelController,
 });
-const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
+const threadRenderService = new ThreadRenderService(
+    renderScheduler,
+    threadDom,
+    toolbarController,
+    highlightController,
+    overviewRulerController,
+    topPanelController,
+    focusController,
+    configService,
+    storageService,
+    messageMetaRegistry,
+    threadMetadataService,
+    threadMetadataController,
+);
+const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
 async function bootstrap(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
