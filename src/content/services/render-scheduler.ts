@@ -26,5 +26,6 @@ class RenderScheduler {
         });
     }
 } // RenderScheduler
-// Expose globally for export wrapper.
+
+// Expose globally for tests/debug helpers.
 (globalThis as any).RenderScheduler = RenderScheduler;

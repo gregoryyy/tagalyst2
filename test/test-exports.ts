@@ -11,6 +11,8 @@ require('../src/content/controllers/top-panel');
 require('../src/content/controllers/keyboard');
 require('../src/content/controllers/sidebar-labels');
 require('../src/content/controllers/project-list-labels');
+require('../src/shared/globals');
+require('../src/content/globals');
 
 // Extract from globals set by the modules.
 const globals = globalThis as any;

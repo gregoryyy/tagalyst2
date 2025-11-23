@@ -34,15 +34,6 @@ type ActiveEditor = {
     cleanup: () => void;
 };
 
-type PageControls = {
-    root: HTMLElement;
-    focusPrev: HTMLButtonElement | null;
-    focusNext: HTMLButtonElement | null;
-    collapseNonFocus: HTMLButtonElement | null;
-    expandFocus: HTMLButtonElement | null;
-    exportFocus: HTMLButtonElement | null;
-};
-
 /**
  * Throttles expensive renders through requestAnimationFrame.
  */

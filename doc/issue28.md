@@ -43,6 +43,10 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 
 ## Codebase
 1. Consolidate globals: centralize shared config/storage/constants/utils/types and runtime attachments (e.g., `TAGALYST_*`, `tagalystStorage`, `EXT_ATTR`, `Utils`, ambient interfaces, `ThreadMetadataService`/`deriveThreadId`) into a single header/attachment point.
+   - Shared header added: `src/shared/globals.ts` for config/storage.
+   - Content header added: `src/content/globals.ts` for EXT_ATTR/Utils/thread metadata/helpers/controllers.
+   - Updated load order (`manifest.json`, `options/options.html`) to include consolidated globals and retained `globalThis` attachments for test exports. 
+   - Follow-ups: tests still expect per-file attachments; consider moving remaining exports into the headers and dropping per-file globals once test loaders are updated.
 2. Define a MV3-safe import/module strategy (paper plan + small spike only) without adopting a bundler yet; keep current script-style stable while scoping a future migration.
 3. Expand Jest coverage for render/focus/search flows to catch regressions.
 4. Add real DOM fixtures: capture sanitized ChatGPT thread HTML via a scripted fetch (e.g., Puppeteer `page.content()` saved to fixtures after removing personal data) so adapters/controllers can be tested against real layouts.

@@ -47,6 +47,15 @@ declare global {
         exportMarkdown(focusOnly: boolean): void;
     }
 
+    interface PageControls {
+        root: HTMLElement;
+        focusPrev: HTMLButtonElement | null;
+        focusNext: HTMLButtonElement | null;
+        collapseNonFocus: HTMLButtonElement | null;
+        expandFocus: HTMLButtonElement | null;
+        exportFocus: HTMLButtonElement | null;
+    }
+
     interface EditorController {
         openTagEditor(message: MessageAdapter): Promise<void>;
         openNoteEditor(message: MessageAdapter): Promise<void>;

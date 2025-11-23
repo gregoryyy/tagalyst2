@@ -1,3 +1,11 @@
+/// <reference path="../services/config.ts" />
+/// <reference path="../services/storage.ts" />
+/// <reference path="./message-meta.ts" />
+/// <reference path="../dom/message-adapters.ts" />
+/// <reference path="../../types/domain.d.ts" />
+/// <reference path="../../types/globals.d.ts" />
+/// <reference path="../utils.ts" />
+
 const FOCUS_MODES = Object.freeze({
     STARS: 'stars',
     TAGS: 'tags',
