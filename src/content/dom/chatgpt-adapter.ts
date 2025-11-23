@@ -1,3 +1,6 @@
+/// <reference path="../../types/domain.d.ts" />
+/// <reference path="./thread-dom.ts" />
+/// <reference path="./message-adapters.ts" />
 /**
  * ThreadAdapter specialized for the current ChatGPT DOM structure.
  */
@@ -56,3 +59,5 @@ class ChatGptThreadAdapter implements ThreadAdapter {
         return ThreadDom.buildDomPairAdaptersFromMessages(messages);
     }
 } // ChatGptThreadAdapter
+
+(globalThis as any).ChatGptThreadAdapter = ChatGptThreadAdapter;

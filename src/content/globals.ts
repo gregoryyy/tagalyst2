@@ -7,6 +7,9 @@
 /// <reference path="./controllers/thread-metadata.ts" />
 /// <reference path="./controllers/top-panel.ts" />
 /// <reference path="./controllers/sidebar-labels.ts" />
+/// <reference path="./dom/message-adapters.ts" />
+/// <reference path="./dom/thread-dom.ts" />
+/// <reference path="./dom/chatgpt-adapter.ts" />
 
 /**
  * Centralized global attachments for content scripts.
@@ -26,4 +29,8 @@
     if (typeof ThreadMetadataController !== 'undefined') g.ThreadMetadataController = ThreadMetadataController;
     if (typeof TopPanelController !== 'undefined') g.TopPanelController = TopPanelController;
     if (typeof SidebarLabelController !== 'undefined') g.SidebarLabelController = SidebarLabelController;
+    if (typeof DomMessageAdapter !== 'undefined') g.DomMessageAdapter = DomMessageAdapter;
+    if (typeof DomPairAdapter !== 'undefined') g.DomPairAdapter = DomPairAdapter;
+    if (typeof ThreadDom !== 'undefined') g.ThreadDom = ThreadDom;
+    if (typeof ChatGptThreadAdapter !== 'undefined') g.ChatGptThreadAdapter = ChatGptThreadAdapter;
 })();

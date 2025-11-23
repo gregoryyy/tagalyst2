@@ -1,3 +1,8 @@
+/// <reference path="../utils.ts" />
+/// <reference path="../constants.ts" />
+/// <reference path="../../types/domain.d.ts" />
+/// <reference path="../../types/globals.d.ts" />
+/// <reference path="./message-adapters.ts" />
 /**
  * Provides DOM traversal helpers abstracted behind the ThreadAdapter interface.
  */
@@ -169,3 +174,5 @@ class ThreadDom {
         return pairs;
     }
 } // ThreadDom
+
+(globalThis as any).ThreadDom = ThreadDom;

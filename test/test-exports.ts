@@ -3,6 +3,9 @@ require('../src/shared/config');
 require('../src/shared/storage');
 require('../src/content/constants');
 require('../src/content/utils');
+require('../src/content/dom/message-adapters');
+require('../src/content/dom/thread-dom');
+require('../src/content/dom/chatgpt-adapter');
 require('../src/content/services/render-scheduler');
 require('../src/content/services/thread-metadata');
 require('../src/content/controllers/thread-metadata');
@@ -31,6 +34,10 @@ export const tagalystStorage = globals.tagalystStorage;
 export const ThreadMetadataService = globals.ThreadMetadataService;
 export const deriveThreadId = globals.deriveThreadId;
 export const ThreadMetadataController = globals.ThreadMetadataController;
+export const DomMessageAdapter = globals.DomMessageAdapter;
+export const DomPairAdapter = globals.DomPairAdapter;
+export const ThreadDom = globals.ThreadDom;
+export const ChatGptThreadAdapter = globals.ChatGptThreadAdapter;
 export const {
     sleep,
     hashString,
