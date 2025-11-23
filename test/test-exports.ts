@@ -9,6 +9,8 @@ require('../src/content/controllers/thread-metadata');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
 require('../src/content/controllers/keyboard');
+require('../src/content/controllers/sidebar-labels');
+require('../src/content/controllers/project-list-labels');
 
 // Extract from globals set by the modules.
 const globals = globalThis as any;
@@ -41,3 +43,5 @@ export const {
     isExtensionNode,
     mutationTouchesExternal,
 } = globals.Utils || {};
+export const SidebarLabelController = globals.SidebarLabelController;
+export const ProjectListLabelController = globals.ProjectListLabelController;

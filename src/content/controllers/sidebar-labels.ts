@@ -105,3 +105,6 @@ class SidebarLabelController {
         }
     }
 }
+
+// Expose for tests
+(globalThis as any).SidebarLabelController = SidebarLabelController;
