@@ -71,4 +71,16 @@ describe('ThreadMetadataController', () => {
         await Promise.resolve();
         expect(service.write).toHaveBeenCalledWith('t1', expect.objectContaining({ starred: true }));
     });
+
+    it('debounces late header mounts by retrying ensure', async () => {
+        controller.ensure(container, 't1');
+        await controller.render('t1', {});
+        const header = container.parentElement?.querySelector('#ext-thread-meta') as HTMLElement;
+        expect(header).toBeTruthy();
+        // Simulate removal and re-ensure
+        header?.remove();
+        const again = controller.ensure(container, 't1');
+        await controller.render('t1', {});
+        expect(again).toBeTruthy();
+    });
 });

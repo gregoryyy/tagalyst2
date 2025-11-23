@@ -56,4 +56,10 @@ describe('RenderScheduler', () => {
         expect(fn1).not.toHaveBeenCalled();
         expect(fn2).toHaveBeenCalledTimes(1);
     });
+
+    it('no-ops when no renderer is set', () => {
+        scheduler = new RenderScheduler();
+        scheduler.request();
+        expect(rafSpy).toHaveBeenCalledTimes(0);
+    });
 });
