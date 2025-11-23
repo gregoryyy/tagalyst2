@@ -4,6 +4,16 @@ import * as path from 'path';
 /**
  * Mirrors external HTTP(S) resources referenced in HTML/CSS into a local asset directory
  * and rewrites links to point to the local copies.
+ *
+ * Coverage:
+ * - src/href pointing to http(s) or protocol-relative URLs.
+ * - srcset entries (img/picture/source), video poster.
+ * - CSS url(...) and @import references.
+ * - Recursive mirroring for CSS assets referenced inside mirrored stylesheets.
+ *
+ * Notes:
+ * - Relative or data: URLs are left untouched.
+ * - Non-HTTP(S) protocols are ignored.
  */
 export async function mirrorResources(html: string, baseName: string, assetDir: string): Promise<string> {
     let result = html;
