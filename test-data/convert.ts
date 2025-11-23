@@ -6,23 +6,38 @@ type Part = {
     body: Buffer;
 };
 
-function decodeQuotedPrintable(input: string): string {
+function decodeQuotedPrintableToBuffer(input: string): Buffer {
     // Remove soft line breaks (=`\r\n`)
-    let str = input.replace(/=\r?\n/g, '');
-    // Replace =XX hex codes
-    return str.replace(/=([A-Fa-f0-9]{2})/g, (_m, hex) => {
-        const code = parseInt(hex, 16);
-        return String.fromCharCode(code);
-    });
+    const str = input.replace(/=\r?\n/g, '');
+    const bytes: number[] = [];
+    for (let i = 0; i < str.length; i++) {
+        const ch = str[i];
+        if (ch === '=' && i + 2 < str.length) {
+            const hex = str.slice(i + 1, i + 3);
+            if (/^[A-Fa-f0-9]{2}$/.test(hex)) {
+                bytes.push(parseInt(hex, 16));
+                i += 2;
+                continue;
+            }
+        }
+        bytes.push(str.charCodeAt(i));
+    }
+    return Buffer.from(bytes);
 }
 
 function escapeRegex(str: string) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function parseCharset(contentType: string | undefined): string {
+    if (!contentType) return 'utf-8';
+    const match = contentType.match(/charset="?([A-Za-z0-9._-]+)"?/i);
+    return (match && match[1]) ? match[1].toLowerCase() : 'utf-8';
+}
+
 function parseMhtml(filePath: string): Part[] {
-    // Read as latin1 to preserve raw bytes (quoted-printable/base64).
-    const raw = fs.readFileSync(filePath, 'latin1');
+    // Read as binary string to preserve raw bytes.
+    const raw = fs.readFileSync(filePath, 'binary');
     const boundaryMatch = raw.match(/boundary="?([^\";\r\n]+)"?/i);
     if (!boundaryMatch) throw new Error('Boundary not found in MHTML');
     const boundary = boundaryMatch[1];
@@ -45,9 +60,9 @@ function parseMhtml(filePath: string): Part[] {
         if (/base64/i.test(contentTransfer)) {
             buf = Buffer.from(body.replace(/\s+/g, ''), 'base64');
         } else if (/quoted-printable/i.test(contentTransfer)) {
-            buf = Buffer.from(decodeQuotedPrintable(body), 'utf8');
+            buf = decodeQuotedPrintableToBuffer(body);
         } else {
-            buf = Buffer.from(body, 'utf8');
+            buf = Buffer.from(body, 'binary');
         }
         return { headers, body: buf };
     });
@@ -94,7 +109,15 @@ function main() {
     const htmlPart = parts.find(p => (p.headers['content-type'] || '').toLowerCase().includes('text/html'));
     if (!htmlPart) throw new Error('No text/html part found in MHTML');
 
-    const html = htmlPart.body.toString('utf8');
+    const charset = parseCharset(htmlPart.headers['content-type']);
+    let html: string;
+    try {
+        const decoder = new TextDecoder(charset);
+        html = decoder.decode(htmlPart.body);
+    } catch {
+        html = htmlPart.body.toString('utf8');
+    }
+
     const inlinedCid = inlineCid(html, parts);
     const fullyInlined = inlineContentLocations(inlinedCid, parts);
 

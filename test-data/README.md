@@ -54,6 +54,7 @@ npx tsc test-data/download.ts --module commonjs --target es2020 && node test-dat
   npx ts-node test-data/convert.ts test-data/Thread.mhtml test-data/Thread.html
   ```
   (output defaults to replacing `.mhtml` with `.html` if omitted).
+- The converter now decodes quoted-printable/base64 parts, respects the declared charset, and inlines `Content-Location` resources; use it when raw MHTML shows `=3D` artifacts or missing assets.
 
 ## Steps
 1) Start Chrome with `--remote-debugging-port=9222`.
