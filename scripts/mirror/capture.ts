@@ -1,9 +1,18 @@
 import CDP = require('chrome-remote-interface');
 import * as fs from 'fs';
 import * as path from 'path';
-import { mirrorResources } from './mirror';
+import { mirrorResources } from './externals';
 
-type Target = { name: string; url: string };
+type Target = {
+    name: string;
+    url: string;
+    mirrorExternals?: boolean;
+    delayMs?: number;
+    scrollToBottom?: boolean;
+    scrollPasses?: number;
+    waitSelector?: string;
+    useLiveDom?: boolean;
+};
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 9222;
 const DEFAULT_TARGETS = path.join(__dirname, 'targets.json');
@@ -23,6 +32,7 @@ const OUTPUT_DIR = CUSTOM_OUT ? path.resolve(CUSTOM_OUT) : __dirname;
 type Resource = {
     url: string;
     type: string;
+    frameId?: string;
     content?: string;
     base64Encoded?: boolean;
 };
@@ -62,6 +72,59 @@ function rewriteContent(content: string, urlMap: Map<string, string>) {
 }
 
 /**
+ * Wait until network goes idle (no in-flight requests for idleMs) or timeout.
+ */
+async function waitForNetworkIdle(client: any, idleMs = 2000, timeoutMs = 15000): Promise<void> {
+    let inflight = 0;
+    let idleResolve: (() => void) | null = null;
+    let idleTimer: NodeJS.Timeout | null = null;
+
+    const resetIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+            if (inflight === 0 && idleResolve) {
+                idleResolve();
+            }
+        }, idleMs);
+    };
+
+    client.Network.requestWillBeSent(() => {
+        inflight += 1;
+        if (idleTimer) clearTimeout(idleTimer);
+    });
+    const onDone = () => {
+        inflight = Math.max(0, inflight - 1);
+        if (inflight === 0) resetIdle();
+    };
+    client.Network.loadingFinished(onDone);
+    client.Network.loadingFailed(onDone);
+
+    await new Promise<void>((resolve, reject) => {
+        idleResolve = resolve;
+        resetIdle();
+        setTimeout(() => reject(new Error('Network idle timeout')), timeoutMs);
+    }).catch(() => {});
+
+    if (idleTimer) clearTimeout(idleTimer);
+}
+
+async function waitForSelector(client: any, selector: string, timeoutMs = 15000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const { result } = await client.Runtime.evaluate({
+                expression: `!!document.querySelector(${JSON.stringify(selector)})`,
+                returnByValue: true
+            });
+            if (result?.value) return;
+        } catch {
+            // ignore
+        }
+        await new Promise(res => setTimeout(res, 300));
+    }
+}
+
+/**
  * Fetch resource contents via CDP.
  */
 async function fetchResources(client: any, frameId: string, resources: Resource[]): Promise<Resource[]> {
@@ -69,7 +132,7 @@ async function fetchResources(client: any, frameId: string, resources: Resource[
     const fetched: Resource[] = [];
     for (const res of resources) {
         try {
-            const { content, base64Encoded } = await Page.getResourceContent({ frameId, url: res.url });
+            const { content, base64Encoded } = await Page.getResourceContent({ frameId: res.frameId || frameId, url: res.url });
             fetched.push({ ...res, content, base64Encoded });
         } catch {
             // skip resources we cannot fetch (cross-origin blocking etc.)
@@ -83,14 +146,43 @@ async function fetchResources(client: any, frameId: string, resources: Resource[
  */
 async function mirrorTarget(target: Target, port: number) {
     const client = await CDP({ port });
-    const { Page, Network } = client;
-    await Promise.all([Page.enable(), Network.enable()]);
+    const { Page, Network, Runtime } = client;
+    await Promise.all([Page.enable(), Network.enable(), Runtime.enable()]);
     await Page.navigate({ url: target.url });
     await Page.loadEventFired();
-    await new Promise(res => setTimeout(res, 5000));
+    await waitForNetworkIdle(client).catch(() => {});
+    if (target.waitSelector) {
+        await waitForSelector(client, target.waitSelector).catch(() => {});
+    }
+    const passes = target.scrollPasses ?? (target.scrollToBottom ? 1 : 0);
+    for (let i = 0; i < passes; i++) {
+        try {
+            await Runtime.evaluate({ expression: 'window.scrollTo(0, document.body.scrollHeight);' });
+        } catch {
+            // ignore scroll errors
+        }
+        await waitForNetworkIdle(client).catch(() => {});
+    }
+    const delay = target.delayMs ?? 8000;
+    await new Promise(res => setTimeout(res, delay));
+    await waitForNetworkIdle(client).catch(() => {});
+
+    let liveDomHtml: string | null = null;
+    if (target.useLiveDom !== false) {
+        try {
+            const { result } = await Runtime.evaluate({
+                expression: 'document.documentElement.outerHTML',
+                returnByValue: true
+            });
+            liveDomHtml = result?.value || null;
+        } catch {
+            liveDomHtml = null;
+        }
+    }
 
     const { frameTree } = await Page.getResourceTree();
     const mainFrameId = frameTree.frame.id;
+    const mainFrameUrl = frameTree.frame.url;
     const resources: Resource[] = [];
     const collect = (tree: any) => {
         if (tree.resources) {
@@ -101,19 +193,30 @@ async function mirrorTarget(target: Target, port: number) {
     collect(frameTree);
 
     const fetched = await fetchResources(client, mainFrameId, resources);
+    // Ensure the main document is fetched even if not listed in resources (redirects/SPA).
+    const hasMain = fetched.some(r => r.url === mainFrameUrl);
+    if (!hasMain) {
+        try {
+            const { content, base64Encoded } = await Page.getResourceContent({ frameId: mainFrameId, url: mainFrameUrl });
+            fetched.push({ url: mainFrameUrl, type: 'Document', content, base64Encoded });
+        } catch {
+            // ignore if not accessible
+        }
+    }
     await client.close();
 
     const safe = sanitizeName(target.name);
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    const assetDir = path.join(OUTPUT_DIR, `${safe}_files`);
+    const assetRelBase = `${safe}_assets`;
+    const assetDir = path.join(OUTPUT_DIR, assetRelBase);
     if (!fs.existsSync(assetDir)) fs.mkdirSync(assetDir, { recursive: true });
 
     const urlMap = new Map<string, string>();
     let counter = 1;
     fetched.forEach(res => {
         const ext = extForResource(res);
-        const fileName = `${safe}-res-${counter++}${ext}`;
-        const relPath = `${safe}_files/${fileName}`;
+        const fileName = `asset-${counter++}${ext}`;
+        const relPath = `${assetRelBase}/${fileName}`;
         urlMap.set(res.url, relPath);
     });
 
@@ -133,12 +236,33 @@ async function mirrorTarget(target: Target, port: number) {
         }
     }
 
-    const mainRes = fetched.find(r => r.url === target.url) || fetched.find(r => (r.type || '').toLowerCase().includes('document'));
+    const mainRes =
+        (liveDomHtml && ({ url: mainFrameUrl, type: 'Document', content: liveDomHtml, base64Encoded: false } as Resource)) ||
+        fetched.find(r => r.url === mainFrameUrl) ||
+        fetched.find(r => (r.type || '').toLowerCase().includes('document')) ||
+        fetched[0];
     if (!mainRes || !mainRes.content) throw new Error(`Main document not captured for ${target.url}`);
     const htmlText = mainRes.base64Encoded ? Buffer.from(mainRes.content, 'base64').toString('utf8') : mainRes.content;
-    const rewrittenHtml = rewriteContent(htmlText, urlMap);
+    let rewrittenHtml = rewriteContent(htmlText, urlMap);
+    let externalsMap: Record<string, string> | null = null;
+    if (target.mirrorExternals) {
+        const externalRelBase = `${safe}_externals`;
+        const externalDir = path.join(OUTPUT_DIR, externalRelBase);
+        const mirrored = await mirrorResources(rewrittenHtml, safe, externalDir, externalRelBase);
+        rewrittenHtml = mirrored.html;
+        externalsMap = mirrored.map;
+    }
     const htmlOut = path.join(OUTPUT_DIR, `${safe}.html`);
     fs.writeFileSync(htmlOut, rewrittenHtml, 'utf8');
+
+    // Write mapping logs
+    const assetsMapPath = path.join(OUTPUT_DIR, `${safe}_assets_map.json`);
+    const assetsMapObj = Object.fromEntries(urlMap);
+    fs.writeFileSync(assetsMapPath, JSON.stringify(assetsMapObj, null, 2), 'utf8');
+    if (externalsMap) {
+        const externalsMapPath = path.join(OUTPUT_DIR, `${safe}_externals_map.json`);
+        fs.writeFileSync(externalsMapPath, JSON.stringify({ count: Object.keys(externalsMap).length, map: externalsMap }, null, 2), 'utf8');
+    }
     // eslint-disable-next-line no-console
     console.log(`Mirrored ${target.url} to ${htmlOut}`);
 }

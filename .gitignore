@@ -15,8 +15,5 @@ content/*.js
 content/**/*.js
 dist/
 
-test-data/**
-!test-data/**/*.ts
-!test-data/**/*.json
-!test-data/**/*.md
+test-data/*
 

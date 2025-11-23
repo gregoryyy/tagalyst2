@@ -15,7 +15,12 @@ import * as path from 'path';
  * - Relative or data: URLs are left untouched.
  * - Non-HTTP(S) protocols are ignored.
  */
-export async function mirrorResources(html: string, baseName: string, assetDir: string): Promise<string> {
+export async function mirrorResources(
+    html: string,
+    baseName: string,
+    assetDir: string,
+    assetUrlBase = `${baseName}_files`
+): Promise<{ html: string; map: Record<string, string> }> {
     let result = html;
     const ensureDir = () => {
         if (!fs.existsSync(assetDir)) fs.mkdirSync(assetDir, { recursive: true });
@@ -42,9 +47,10 @@ export async function mirrorResources(html: string, baseName: string, assetDir: 
                     ? `.${contentType.split('/')[1]}`
                     : '.bin';
         const ext = extFromPath || fallbackExt;
-        const fileName = `${baseName}-external-${counter++}${ext}`;
+        const fileName = `asset-${counter++}${ext}`;
         fs.writeFileSync(path.join(assetDir, fileName), buf);
-        urlMap.set(url, `${baseName}_files/${fileName}`);
+        const targetPath = `${assetUrlBase}/${fileName}`;
+        urlMap.set(url, targetPath);
         return { fileName, ext };
     };
 
@@ -128,5 +134,38 @@ export async function mirrorResources(html: string, baseName: string, assetDir: 
         result = result.split(remote).join(local);
     });
 
-    return result;
+    return { html: result, map: Object.fromEntries(urlMap) };
+}
+
+async function main() {
+    const [inputHtml, baseArg, assetDirArg] = process.argv.slice(2);
+    if (!inputHtml) {
+        // eslint-disable-next-line no-console
+        console.error('Usage: npx ts-node scripts/mirror/externals.ts <input.html> [baseName] [assetDir]');
+        process.exit(1);
+    }
+    const htmlPath = path.resolve(inputHtml);
+    const baseName = baseArg || path.basename(htmlPath, path.extname(htmlPath));
+    const assetDir = assetDirArg
+        ? path.resolve(assetDirArg)
+        : path.join(path.dirname(htmlPath), `${baseName}_externals`);
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const { html: rewritten, map } = await mirrorResources(html, baseName, assetDir, `${baseName}_externals`);
+    const backupPath = `${htmlPath}.bak`;
+    fs.copyFileSync(htmlPath, backupPath);
+    fs.writeFileSync(htmlPath, rewritten, 'utf8');
+    const mapPath = path.join(path.dirname(htmlPath), `${baseName}_externals_map.json`);
+    fs.writeFileSync(mapPath, JSON.stringify({ count: Object.keys(map).length, map }, null, 2), 'utf8');
+    // eslint-disable-next-line no-console
+    console.log(
+        `Mirrored externals for ${htmlPath} into ${assetDir} (map: ${mapPath}, count: ${Object.keys(map).length}, backup: ${backupPath})`
+    );
+}
+
+if (require.main === module) {
+    main().catch(err => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        process.exit(1);
+    });
 }
