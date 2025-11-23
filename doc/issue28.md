@@ -47,6 +47,11 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 3. Expand Jest coverage for render/focus/search flows to catch regressions.
 4. Add real DOM fixtures: capture sanitized ChatGPT thread HTML via a scripted fetch (e.g., Puppeteer `page.content()` saved to fixtures after removing personal data) so adapters/controllers can be tested against real layouts.
 5. Push state into services and standardize render scheduling: thin controllers to rendering/wiring only, move stateful logic into services with clear contracts, and route refreshes through a single render loop to avoid races.
+6. Define a canonical transcript model/service shared by UI and future indexing so DOM/API harvesters can swap without touching controllers.
+7. Strengthen adapter boundaries: separate harvest adapters from renderers and keep ChatGPT-specific selectors isolated to reduce breakage from DOM changes.
+8. Decouple DOM watching from feature renderers: split mutation/teardown concerns so SPA nav doesn’t leave stale UI.
+9. Add adapter harnesses/tests: fakes + fixtures for `ThreadAdapter`/`MessageAdapter` to catch heuristic regressions.
+10. Plan storage/indexing: design IndexedDB-backed storage + hash-based incremental reindex to overcome `chrome.storage.local` limits for cross-thread search.
 
 ## Enhancements
 1. Add per-thread search highlights to search mode as the foundation for cross-thread UX.
