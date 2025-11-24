@@ -75,7 +75,7 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Tests: registry selection, transcript fixture, and DOM vs API parity using Thread3 capture.
 8. Decouple DOM watching from feature renderers: split mutation/teardown concerns so SPA nav doesn’t leave stale UI.
    - Implemented `DomWatcher` for mutation + URL watching; render service listens for mutations/nav.
-   - Tests: `test/content/dom-watcher.test.ts` covers mutation events on external nodes.
+   - Tests: `test/content/dom-watcher.test.ts` covers mutation events and root changes (re-attach) on external nodes.
 9. Add adapter harnesses/tests: fakes + fixtures for `ThreadAdapter`/`MessageAdapter` to catch heuristic regressions.
 10. Plan storage/indexing: design IndexedDB-backed storage + hash-based incremental reindex to overcome `chrome.storage.local` limits for cross-thread search.
 

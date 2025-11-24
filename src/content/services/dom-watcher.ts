@@ -4,6 +4,7 @@
 type DomWatcherHandlers = {
     onMutations: () => void;
     onNav: () => void;
+    onRootChange?: (next: HTMLElement | null) => void;
 };
 
 /**
@@ -13,6 +14,7 @@ class DomWatcher {
     private mutationObserver: MutationObserver | null = null;
     private lastHref: string = location.href;
     private urlTimer: number | null = null;
+    private currentRoot: HTMLElement | null = null;
 
     constructor(private readonly handlers: DomWatcherHandlers) { }
 
@@ -21,6 +23,10 @@ class DomWatcher {
      */
     watchContainer(container: HTMLElement | null) {
         this.stopMutationObserver();
+        if (this.currentRoot !== container) {
+            this.currentRoot = container;
+            this.handlers.onRootChange?.(container);
+        }
         if (!container) return;
         this.mutationObserver = new MutationObserver(records => {
             if (records.some(Utils.mutationTouchesExternal)) {

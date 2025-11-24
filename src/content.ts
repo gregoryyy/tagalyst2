@@ -291,6 +291,10 @@ threadRenderServiceRef = threadRenderService;
 const domWatcher = new DomWatcher({
     onMutations: () => requestRender(),
     onNav: () => handleSpaNavigation(),
+    onRootChange: (root) => {
+        if (!root) return;
+        domWatcher.watchContainer(root);
+    },
 });
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
