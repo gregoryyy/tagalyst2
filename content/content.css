@@ -275,6 +275,12 @@
     border-radius: 6px;
 }
 
+.ext-search-mark {
+    background: rgba(161, 91, 253, 0.35);
+    border-radius: 3px;
+    padding: 0 2px;
+}
+
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"] {
     left: 6px;
     right: 0;

@@ -25,6 +25,7 @@ class ThreadRenderService {
     private running = false;
     private queued = false;
     private generation = 0;
+    private currentSearchQuery = '';
 
     constructor(
         private readonly scheduler: RenderScheduler,
@@ -132,6 +133,7 @@ class ThreadRenderService {
             this.messageMetaRegistry.update(el, meta);
             const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
             el.classList.toggle('ext-search-hit', isSearchHit);
+            this.applySearchHighlight(el, isSearchHit ? searchQuery : '');
             if (value && Array.isArray(value.tags)) {
                 for (const t of value.tags) {
                     if (!t) continue;
@@ -152,6 +154,7 @@ class ThreadRenderService {
             this.overviewRulerController.reset();
         }
         this.topPanelController.updateSearchResultCount();
+        this.currentSearchQuery = searchQuery;
     }
 
     private async syncThreadMetadata(promptCount: number, charCount: number) {
@@ -162,6 +165,58 @@ class ThreadRenderService {
         await this.threadMetadataService.updateChars(this.threadId, desiredChars);
         const meta = await this.threadMetadataService.read(this.threadId);
         this.threadMetadataController.render(this.threadId, meta);
+    }
+
+    /**
+     * Adds/removes inline search highlights within a message element.
+     */
+    private applySearchHighlight(el: HTMLElement, query: string) {
+        // Clear prior marks
+        el.querySelectorAll('.ext-search-mark').forEach(mark => {
+            const parent = mark.parentNode;
+            if (parent) {
+                parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+                parent.normalize();
+            }
+        });
+        const normalized = (query || '').trim();
+        if (!normalized) return;
+        const regex = new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => {
+                if (!node.parentElement) return NodeFilter.FILTER_REJECT;
+                if ((node.parentElement as HTMLElement).closest(`[${EXT_ATTR}]`)) return NodeFilter.FILTER_REJECT;
+                if ((node.parentElement as HTMLElement).classList.contains('ext-search-mark')) return NodeFilter.FILTER_REJECT;
+                const text = node.nodeValue || '';
+                return regex.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            }
+        });
+        const toProcess: Text[] = [];
+        let n = walker.nextNode();
+        while (n) {
+            toProcess.push(n as Text);
+            n = walker.nextNode();
+        }
+        toProcess.forEach(textNode => {
+            const frag = document.createDocumentFragment();
+            let lastIndex = 0;
+            const text = textNode.nodeValue || '';
+            text.replace(regex, (match, offset) => {
+                if (offset > lastIndex) {
+                    frag.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
+                }
+                const span = document.createElement('span');
+                span.className = 'ext-search-mark';
+                span.textContent = match;
+                frag.appendChild(span);
+                lastIndex = offset + match.length;
+                return match;
+            });
+            if (lastIndex < text.length) {
+                frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+            textNode.parentNode?.replaceChild(frag, textNode);
+        });
     }
 } // ThreadRenderService
 
