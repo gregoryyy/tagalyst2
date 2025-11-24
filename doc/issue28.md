@@ -80,6 +80,11 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Implemented adapter fakes (`FakeThreadAdapter`) and harness tests (fixture parity, edge cases) plus API shim parity.
    - Tests: adapter registry selection, DOM vs API parity, fixture transcript, and fake adapter edge cases.
 10. Plan storage/indexing: design IndexedDB-backed storage + hash-based incremental reindex to overcome `chrome.storage.local` limits for cross-thread search.
+    - Plan: introduce `IndexedDbStorage` for transcripts/snippets; add hash-based dedupe per message/snippet.
+    - Steps: define schema (threads, messages, tags, highlights, index terms), add background indexer, and wire `TranscriptService` outputs into the indexer.
+    - Tests: persistence/lookup round trips, reindex skips unchanged messages (hash compare), and capacity/cleanup checks.
+    - Proposal: start with a lightweight IndexedDB layer (`idb` wrapper or vanilla) storing `{ threadId, messageId, role, textHash, text, tags, highlights }` plus an inverted index table keyed by term → message ids. Use `TranscriptService` hashes to skip unchanged messages during reindex; keep `chrome.storage` for config/options only. Add a background reindexer triggered on thread render completion and a simple search API that returns message ids + snippets for UI consumption.
+    - --> We leave this only as a plan.
 
 ## Enhancements (Issue #30)
 1. Add per-thread search highlights to search mode as the foundation for cross-thread UX.
@@ -92,3 +97,5 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 3. Fix toolbar visibility load order so message/global toolbars render reliably.
 4. Fix sidebar/project marker visibility by adjusting observer timing and retry strategy.
 5. Fix unresponsive message toolbar buttons by hardening event wiring and DOM ownership checks.
+
+
