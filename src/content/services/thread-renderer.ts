@@ -17,6 +17,7 @@ class ThreadRenderService {
     private threadAdapter: ThreadAdapter | null = null;
     private running = false;
     private queued = false;
+    private generation = 0;
 
     constructor(
         private readonly scheduler: RenderScheduler,
@@ -37,17 +38,20 @@ class ThreadRenderService {
     * Establishes the current render context and primes the scheduler.
     */
     attach(ctx: { container: HTMLElement; threadId: string; threadKey: string; adapter: ThreadAdapter | null }) {
+        this.generation += 1;
         this.container = ctx.container;
         this.threadId = ctx.threadId;
         this.threadKey = ctx.threadKey;
         this.threadAdapter = ctx.adapter;
-        this.scheduler.setRenderer(() => this.runRender());
+        const token = this.generation;
+        this.scheduler.setRenderer(() => this.runRender(token));
     }
 
     /**
      * Clears the current context and any pending work.
      */
     reset() {
+        this.generation += 1;
         this.container = null;
         this.threadId = null;
         this.threadKey = null;
@@ -60,17 +64,19 @@ class ThreadRenderService {
      * Queues a render pass via the scheduler.
      */
     requestRender() {
-        this.scheduler.request(() => this.runRender());
+        const token = this.generation;
+        this.scheduler.request(() => this.runRender(token));
     }
 
     /**
      * Executes a render immediately (bypassing RAF).
      */
     async renderNow() {
-        await this.runRender();
+        await this.runRender(this.generation);
     }
 
-    private async runRender() {
+    private async runRender(token: number) {
+        if (token !== this.generation) return;
         if (!this.container || !this.threadKey) return;
         if (this.running) {
             this.queued = true;
@@ -80,14 +86,15 @@ class ThreadRenderService {
         try {
             do {
                 this.queued = false;
-                await this.renderOnce();
+                await this.renderOnce(token);
             } while (this.queued);
         } finally {
             this.running = false;
         }
     }
 
-    private async renderOnce() {
+    private async renderOnce(token: number) {
+        if (token !== this.generation) return;
         if (!this.container || !this.threadKey) return;
         const messageAdapters = this.resolveMessages(this.container);
         const pairAdapters = this.threadDom.buildPairAdaptersFromMessages(messageAdapters);

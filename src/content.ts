@@ -294,12 +294,38 @@ async function bootstrap(): Promise<void> {
     await bootstrapOrchestrator.run();
 }
 
+async function handleSpaNavigation(): Promise<void> {
+    const pageKind = pageClassifier.classify(location.pathname);
+    const isThreadPage = pageKind === 'thread' || pageKind === 'project-thread';
+    if (isThreadPage && activeThreadAdapter) {
+        const container = threadDom.findTranscriptRoot();
+        const threadKey = Utils.getThreadKey();
+        const threadId = deriveThreadId();
+        sidebarLabelController.start();
+        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+        if (showMeta) {
+            threadMetadataController.ensure(container, threadId);
+            threadMetadataService.read(threadId).then(meta => {
+                threadMetadataController.render(threadId, meta);
+            });
+        } else {
+            document.getElementById('ext-thread-meta')?.remove();
+        }
+        toolbarController.ensurePageControls(container, threadKey);
+        topPanelController.ensurePanels();
+        threadRenderService.attach({ container, threadId, threadKey, adapter: activeThreadAdapter });
+        await threadRenderService.renderNow();
+        return;
+    }
+    await bootstrap();
+}
+
 // Some pages use SPA routing; re-bootstrap on URL changes
 let lastHref = location.href;
 new MutationObserver(() => {
     if (location.href !== lastHref) {
         lastHref = location.href;
-       bootstrap();
+       handleSpaNavigation();
     }
 }).observe(document, { subtree: true, childList: true });
 
@@ -307,7 +333,7 @@ new MutationObserver(() => {
 setInterval(() => {
     if (location.href !== lastHref) {
         lastHref = location.href;
-        bootstrap();
+        handleSpaNavigation();
     }
 }, 800);
 
@@ -324,7 +350,7 @@ window.__tagalyst = Object.assign(window.__tagalyst || {}, {
 }) as TagalystApi;
 
 // First boot
-bootstrap();
+handleSpaNavigation();
 
 if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
