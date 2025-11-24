@@ -70,6 +70,9 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Structure: `TranscriptMessage { id, role, text, adapter }`, `TranscriptPair { index, query, response }`, snapshot includes `pairIndexByMessage`.
    - Future: add API-backed adapter shim so controllers/indexing can swap sources without DOM coupling.
 7. Strengthen adapter boundaries: separate harvest adapters from renderers and keep ChatGPT-specific selectors isolated to reduce breakage from DOM changes.
+   - Implemented `ThreadAdapterRegistry` to select adapters per host; ChatGPT DOM adapter registered and isolated.
+   - Controllers/render loop consume adapters via registry + `TranscriptService`; added registry test.
+   - Future: add API-backed adapter and selector parity tests against fixtures.
 8. Decouple DOM watching from feature renderers: split mutation/teardown concerns so SPA nav doesn’t leave stale UI.
 9. Add adapter harnesses/tests: fakes + fixtures for `ThreadAdapter`/`MessageAdapter` to catch heuristic regressions.
 10. Plan storage/indexing: design IndexedDB-backed storage + hash-based incremental reindex to overcome `chrome.storage.local` limits for cross-thread search.

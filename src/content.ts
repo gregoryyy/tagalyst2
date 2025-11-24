@@ -14,6 +14,7 @@
 /// <reference path="./content/controllers/project-list-labels.ts" />
 /// <reference path="./content/services/thread-renderer.ts" />
 /// <reference path="./content/services/transcript.ts" />
+/// <reference path="./content/adapters/registry.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -28,6 +29,12 @@ const pageClassifier = new PageClassifier();
  * Manages extension configuration toggles and notifies listeners on change.
  */
 let activeThreadAdapter: ThreadAdapter | null = null;
+const adapterRegistry = new ThreadAdapterRegistry();
+adapterRegistry.register({
+    name: 'chatgpt-dom',
+    supports: (loc: Location) => /chatgpt\.com|chat\.openai\.com/i.test(loc.host || ''),
+    create: () => new ChatGptThreadAdapter(),
+});
 
 const messageMetaRegistry = new MessageMetaRegistry();
 
@@ -144,10 +151,10 @@ class BootstrapOrchestrator {
     async run() {
         // Wait a moment for the app shell to mount
         await Utils.sleep(600);
-        await configService.load();
-        this.teardownUI();
-        this.threadAdapter = new ChatGptThreadAdapter();
-        activeThreadAdapter = this.threadAdapter;
+    await configService.load();
+    this.teardownUI();
+    this.threadAdapter = adapterRegistry.getAdapterForLocation(location);
+    activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
         const pageKind = pageClassifier.classify(location.pathname);
         if (pageKind !== 'thread' && pageKind !== 'project-thread') {
@@ -302,6 +309,10 @@ async function handleSpaNavigation(): Promise<void> {
     const isThreadPage = pageKind === 'thread' || pageKind === 'project-thread';
     if (isThreadPage && activeThreadAdapter) {
         const container = threadDom.findTranscriptRoot();
+        if (!container) {
+            await bootstrap();
+            return;
+        }
         const threadKey = Utils.getThreadKey();
         const threadId = deriveThreadId();
         sidebarLabelController.start();
