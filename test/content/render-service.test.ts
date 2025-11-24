@@ -5,10 +5,10 @@ describe('RenderScheduler guardrails', () => {
         const scheduler = new RenderScheduler();
         const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
         scheduler.setRenderer(async () => {
-            await new Promise(res => setTimeout(res, 25));
+            await new Promise(res => setTimeout(res, 60));
         });
         scheduler.request();
-        await new Promise(res => setTimeout(res, 60));
+        await new Promise(res => setTimeout(res, 80));
         expect(warnSpy).toHaveBeenCalled();
         warnSpy.mockRestore();
     });

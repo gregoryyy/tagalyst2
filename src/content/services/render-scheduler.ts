@@ -5,6 +5,7 @@ class RenderScheduler {
     private rafId: number | null = null;
     private renderer: (() => Promise<void>) | null = null;
     private inflight = false;
+    private pending = false;
 
     /**
      * Sets the current renderer callback.
@@ -20,15 +21,14 @@ class RenderScheduler {
         if (renderer) this.renderer = renderer;
         const target = renderer ?? this.renderer;
         if (!target) return;
+        if (this.inflight) {
+            this.pending = true;
+            return;
+        }
         if (this.rafId) cancelAnimationFrame(this.rafId);
         this.rafId = requestAnimationFrame(() => {
             this.rafId = null;
             const start = performance.now();
-            if (this.inflight) {
-                // eslint-disable-next-line no-console
-                console.warn('RenderScheduler: renderer re-entered, dropping this tick');
-                return;
-            }
             this.inflight = true;
             try {
                 const res = target();
@@ -50,8 +50,12 @@ class RenderScheduler {
 
     private finish(start: number) {
         this.inflight = false;
+        if (this.pending) {
+            this.pending = false;
+            this.request();
+        }
         const duration = performance.now() - start;
-        if (duration > 16) {
+        if (duration > 50) {
             // eslint-disable-next-line no-console
             console.warn(`RenderScheduler: slow render ${duration.toFixed(1)}ms`);
         }
