@@ -13,6 +13,7 @@
 /// <reference path="./services/thread-renderer.ts" />
 /// <reference path="./services/transcript.ts" />
 /// <reference path="./adapters/registry.ts" />
+/// <reference path="./adapters/api-shim.ts" />
 
 /**
  * Centralized global attachments for content scripts.
@@ -39,4 +40,5 @@
     if (typeof ThreadRenderService !== 'undefined') g.ThreadRenderService = ThreadRenderService;
     if (typeof TranscriptService !== 'undefined') g.TranscriptService = TranscriptService;
     if (typeof ThreadAdapterRegistry !== 'undefined') g.ThreadAdapterRegistry = ThreadAdapterRegistry;
+    if (typeof ApiThreadAdapter !== 'undefined') g.ApiThreadAdapter = ApiThreadAdapter;
 })();
