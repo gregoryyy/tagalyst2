@@ -98,6 +98,7 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Plan: add a new option in Options UI to enable/disable the nav toolbar; persist in config and reactively show/hide without reload.
    - Steps: update config schema/defaults, options page, and TopPanel/Toolbar controllers to respect the toggle; ensure render service detaches/tears down toolbar when disabled.
    - Tests: options controller round-trip for the new flag and jsdom check that toolbar rows/page controls are mounted/unmounted when toggled.
+   - Status: implemented nav toggle; options saves; render/UI honors enable/disable and removes toolbars when off.
 
 ## Fixes and Hardening (Issue #31)
 1. Stabilize bootstrap/render: audit `BootstrapOrchestrator` timing, ensure controllers mount after config load, and add logging/guards to catch render errors.
@@ -105,3 +106,16 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 3. Fix toolbar visibility load order so message/global toolbars render reliably.
 4. Fix sidebar/project marker visibility by adjusting observer timing and retry strategy.
 5. Fix unresponsive message toolbar buttons by hardening event wiring and DOM ownership checks.
+6. Add regression checks for highlights/metadata/tagging to prevent selector drift.
+
+# Fixes and Hardening
+
+This last chapter can be complex, therefore let's give it its own chapter
+
+### Step 1 Plan — Bootstrap/Render Stabilization
+1. Instrument the bootstrap timeline: `configService.load` start/end, adapter selection, transcript root discovery, render attach, first render. Use guarded `console.info` with elapsed timings so noisy logs can be toggled.
+2. Gate all controller mounting on a loaded config snapshot; fail fast if config load rejects and surface a lightweight banner/log so we do not partially mount.
+3. Clarify the sequence inside `BootstrapOrchestrator.run`: teardown → adapter selection → container discovery (with retry if null) → config-aware UI mount (top panel, toolbars, overview) → render service attach → dom watcher attach. Add an early-return guard if SPA nav changed the path during the delay.
+4. Wrap render entrypoints (`renderNow`/scheduler callback) in try/catch with a single error reporter that tags the current thread id/key; ensure we reset `running/queued` flags on error to avoid render deadlocks and optionally schedule a safe retry.
+5. Harden DOM watcher/nav handling: ignore mutation batches while no container is attached; on root change, detach render/watchers before reattaching to the new root.
+6. Add verification notes: (a) log timeline on first load and on SPA hop, (b) confirm toolbar/top panel/overview appear on first render after toggling config, (c) verify no uncaught errors in console during rapid nav + search typing.

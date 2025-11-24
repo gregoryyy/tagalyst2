@@ -23,6 +23,40 @@
  * - Non-destructive overlays (no reparenting site nodes)
  * - Local persistence via chrome.storage
  */
+const BOOTSTRAP_DEBUG_FLAG = '__tagalystDebugBootstrap';
+const isBootstrapTimingEnabled = () => (globalThis as any)[BOOTSTRAP_DEBUG_FLAG] === true;
+const logBootstrapTiming = (label: string, startedAt: number, data?: Record<string, unknown>) => {
+    if (!isBootstrapTimingEnabled()) return;
+    const elapsed = Math.round(performance.now() - startedAt);
+    const parts: any[] = ['[tagalyst][bootstrap]', label, `+${elapsed}ms`];
+    if (data) parts.push(data);
+    console.info(...parts);
+};
+const BOOTSTRAP_NOTICE_ID = 'ext-bootstrap-error';
+const showBootstrapError = (message: string) => {
+    try {
+        document.getElementById(BOOTSTRAP_NOTICE_ID)?.remove();
+        const box = document.createElement('div');
+        box.id = BOOTSTRAP_NOTICE_ID;
+        box.setAttribute('role', 'alert');
+        box.textContent = message;
+        box.style.position = 'fixed';
+        box.style.top = '10px';
+        box.style.right = '10px';
+        box.style.zIndex = '2147483647';
+        box.style.background = 'rgba(187, 0, 0, 0.9)';
+        box.style.color = '#fff';
+        box.style.padding = '8px 12px';
+        box.style.borderRadius = '6px';
+        box.style.fontSize = '12px';
+        box.style.fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        box.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.25)';
+        box.style.pointerEvents = 'auto';
+        document.body?.appendChild(box);
+    } catch (err) {
+        console.error('Tagalyst bootstrap error', err);
+    }
+};
 
 const storageService = new StorageService();
 const pageClassifier = new PageClassifier();
@@ -158,15 +192,46 @@ class BootstrapOrchestrator {
      * Bootstraps the UI when a transcript is detected.
      */
     async run() {
+        const startedAt = performance.now();
+        const initialPath = location.pathname;
+        logBootstrapTiming('run:start', startedAt, { path: location.pathname });
         // Wait a moment for the app shell to mount
         await Utils.sleep(600);
-        await configService.load();
+        if (location.pathname !== initialPath) {
+            logBootstrapTiming('run:nav-abort', startedAt, { from: initialPath, to: location.pathname });
+            return;
+        }
+        logBootstrapTiming('config:load:start', startedAt);
+        try {
+            const cfg = await configService.load();
+            logBootstrapTiming('config:load:done', startedAt, { navToolbar: cfg?.navToolbarEnabled, overview: cfg?.overviewEnabled });
+        } catch (err) {
+            logBootstrapTiming('config:load:failed', startedAt, { error: (err as any)?.message || String(err) });
+            console.error('Tagalyst failed to load config', err);
+            showBootstrapError('Tagalyst failed to load settings. Reload the page or re-enable the extension.');
+            return;
+        }
+        if (location.pathname !== initialPath) {
+            logBootstrapTiming('run:nav-abort', startedAt, { from: initialPath, to: location.pathname });
+            return;
+        }
         this.teardownUI();
         this.threadAdapter = adapterRegistry.getAdapterForLocation(location);
+        logBootstrapTiming('adapter:selected', startedAt, {
+            adapter: (this.threadAdapter as any)?.name || (this.threadAdapter as any)?.constructor?.name || 'none',
+        });
         activeThreadAdapter = this.threadAdapter;
-        const container = threadDom.findTranscriptRoot();
+        const container = await this.findTranscriptRootWithRetry();
+        logBootstrapTiming('transcript:root', startedAt, { found: !!container });
         const pageKind = pageClassifier.classify(location.pathname);
         if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+            this.teardownUI();
+            this.threadAdapter?.disconnect();
+            activeThreadAdapter = null;
+            return;
+        }
+        if (!container) {
+            logBootstrapTiming('transcript:root:missing', startedAt);
             this.teardownUI();
             this.threadAdapter?.disconnect();
             activeThreadAdapter = null;
@@ -219,6 +284,8 @@ class BootstrapOrchestrator {
             document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
         }
 
+        this.renderService.setBootstrapStart(startedAt);
+        logBootstrapTiming('render:attach', startedAt, { threadId, threadKey });
         this.renderService.attach({ container, threadId, threadKey, adapter: this.threadAdapter });
         await this.renderService.renderNow();
         this.threadAdapter.observe(container, (records) => {
@@ -257,6 +324,16 @@ class BootstrapOrchestrator {
         this.renderService.reset();
         activeThreadAdapter = null;
         domWatcher.watchContainer(null);
+    }
+
+    /**
+     * Attempts to find the transcript root with a short retry to handle late mounts.
+     */
+    private async findTranscriptRootWithRetry(): Promise<HTMLElement | null> {
+        const first = threadDom.findTranscriptRoot();
+        if (first) return first;
+        await Utils.sleep(250);
+        return threadDom.findTranscriptRoot();
     }
 } // BootstrapOrchestrator
 

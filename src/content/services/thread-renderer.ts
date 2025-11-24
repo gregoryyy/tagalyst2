@@ -13,6 +13,17 @@
 /// <reference path="./config.ts" />
 /// <reference path="../state/focus.ts" />
 
+const BOOTSTRAP_TIMING_FLAG_NAME = '__tagalystDebugBootstrap';
+const isRenderTimingEnabled = () => (globalThis as any)[BOOTSTRAP_TIMING_FLAG_NAME] === true;
+const logRenderTiming = (label: string, startedAt?: number | null, data?: Record<string, unknown>) => {
+    if (!isRenderTimingEnabled()) return;
+    const base = typeof startedAt === 'number' ? startedAt : performance.now();
+    const elapsed = Math.round(performance.now() - base);
+    const parts: any[] = ['[tagalyst][bootstrap]', label, `+${elapsed}ms`];
+    if (data) parts.push(data);
+    console.info(...parts);
+};
+
 /**
  * Central render loop for thread UI. Coalesces refreshes through a single scheduler
  * and owns render-time state (counts, metadata sync, toolbar injection).
@@ -26,6 +37,9 @@ class ThreadRenderService {
     private queued = false;
     private generation = 0;
     private currentSearchQuery = '';
+    private bootstrapStartedAt: number | null = null;
+    private loggedFirstRender = false;
+    private retryScheduled = false;
 
     constructor(
         private readonly scheduler: RenderScheduler,
@@ -53,8 +67,20 @@ class ThreadRenderService {
         this.threadId = ctx.threadId;
         this.threadKey = ctx.threadKey;
         this.threadAdapter = ctx.adapter;
+        if (this.bootstrapStartedAt === null) {
+            this.bootstrapStartedAt = performance.now();
+        }
+        this.loggedFirstRender = false;
         const token = this.generation;
         this.scheduler.setRenderer(() => this.runRender(token));
+    }
+
+    /**
+     * Propagates the bootstrap start time for render timing logs.
+     */
+    setBootstrapStart(startedAt: number) {
+        this.bootstrapStartedAt = startedAt;
+        this.loggedFirstRender = false;
     }
 
     /**
@@ -68,6 +94,8 @@ class ThreadRenderService {
         this.threadAdapter = null;
         this.running = false;
         this.queued = false;
+        this.bootstrapStartedAt = null;
+        this.loggedFirstRender = false;
     }
 
     /**
@@ -82,7 +110,11 @@ class ThreadRenderService {
      * Executes a render immediately (bypassing RAF).
      */
     async renderNow() {
-        await this.runRender(this.generation);
+        try {
+            await this.runRender(this.generation);
+        } catch (err) {
+            this.reportRenderError(err, 'renderNow');
+        }
     }
 
     private async runRender(token: number) {
@@ -98,6 +130,9 @@ class ThreadRenderService {
                 this.queued = false;
                 await this.renderOnce(token);
             } while (this.queued);
+        } catch (err) {
+            this.reportRenderError(err, 'runRender');
+            this.queued = false;
         } finally {
             this.running = false;
         }
@@ -106,62 +141,72 @@ class ThreadRenderService {
     private async renderOnce(token: number) {
         if (token !== this.generation) return;
         if (!this.container || !this.threadKey) return;
-        const transcript = this.transcriptService.buildTranscript(this.container, this.threadAdapter);
-        const messageCount = transcript.messages.length;
-        const promptCount = transcript.pairs.length;
-        const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
-        const searchQuery = this.focusService.getSearchQuery();
-        const entries = transcript.messages.map(message => ({
-            adapter: message.adapter,
-            el: message.adapter.element,
-            key: message.adapter.storageKey(this.threadKey!),
-            pairIndex: transcript.pairIndexByMessage.get(message.adapter) ?? null,
-        }));
-        await this.syncThreadMetadata(promptCount, charCount);
-        if (!entries.length) return;
-        const keys = entries.map(e => e.key);
-        const store = await this.storageService.read(keys);
-        const tagCounts = new Map<string, number>();
-        this.highlightController.resetAll();
-        this.messageMetaRegistry.clear();
-        const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
-        if (!navEnabled) {
-            document.getElementById('ext-page-controls')?.remove();
-            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        if (!this.loggedFirstRender) {
+            logRenderTiming('render:first', this.bootstrapStartedAt, { threadId: this.threadId, threadKey: this.threadKey });
+            this.loggedFirstRender = true;
         }
-        for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-            if (navEnabled) {
-                this.toolbar.injectToolbar(el, this.threadKey!);
-                this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-                this.toolbar.updateMessageLength(messageAdapter);
+        try {
+            const transcript = this.transcriptService.buildTranscript(this.container, this.threadAdapter);
+            const messageCount = transcript.messages.length;
+            const promptCount = transcript.pairs.length;
+            const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
+            const searchQuery = this.focusService.getSearchQuery();
+            const entries = transcript.messages.map(message => ({
+                adapter: message.adapter,
+                el: message.adapter.element,
+                key: message.adapter.storageKey(this.threadKey!),
+                pairIndex: transcript.pairIndexByMessage.get(message.adapter) ?? null,
+            }));
+            await this.syncThreadMetadata(promptCount, charCount);
+            if (!entries.length) return;
+            const keys = entries.map(e => e.key);
+            const store = await this.storageService.read(keys);
+            const tagCounts = new Map<string, number>();
+            this.highlightController.resetAll();
+            this.messageMetaRegistry.clear();
+            const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
+            if (!navEnabled) {
+                document.getElementById('ext-page-controls')?.remove();
+                document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
             }
-            const value = store[key] || {};
-            const meta = { key, value, pairIndex, adapter: messageAdapter };
-            this.messageMetaRegistry.update(el, meta);
-            const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
-            el.classList.toggle('ext-search-hit', isSearchHit);
-            this.applySearchHighlight(el, isSearchHit ? searchQuery : '');
-            if (value && Array.isArray(value.tags)) {
-                for (const t of value.tags) {
-                    if (!t) continue;
-                    tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+            for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
+                if (navEnabled) {
+                    this.toolbar.injectToolbar(el, this.threadKey!);
+                    this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                    this.toolbar.updateMessageLength(messageAdapter);
                 }
+                const value = store[key] || {};
+                const meta = { key, value, pairIndex, adapter: messageAdapter };
+                this.messageMetaRegistry.update(el, meta);
+                const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
+                el.classList.toggle('ext-search-hit', isSearchHit);
+                this.applySearchHighlight(el, isSearchHit ? searchQuery : '');
+                if (value && Array.isArray(value.tags)) {
+                    for (const t of value.tags) {
+                        if (!t) continue;
+                        tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+                    }
+                }
+                this.toolbar.updateBadges(el, this.threadKey!, value, messageAdapter);
             }
-            this.toolbar.updateBadges(el, this.threadKey!, value, messageAdapter);
+            const sortedTags = Array.from(tagCounts.entries())
+                .map(([tag, count]) => ({ tag, count }))
+                .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+            this.topPanelController.updateTagList(sortedTags);
+            this.focusController.refreshButtons();
+            this.overviewRulerController.setExpandable(this.configService.doesOverviewExpand());
+            if (this.configService.isOverviewEnabled() && entries.length) {
+                this.overviewRulerController.update(this.container, entries);
+            } else {
+                this.overviewRulerController.reset();
+            }
+            this.topPanelController.updateSearchResultCount();
+            this.currentSearchQuery = searchQuery;
+        } catch (err) {
+            this.reportRenderError(err, 'renderOnce');
+            this.queued = false;
+            this.scheduleRetry();
         }
-        const sortedTags = Array.from(tagCounts.entries())
-            .map(([tag, count]) => ({ tag, count }))
-            .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-        this.topPanelController.updateTagList(sortedTags);
-        this.focusController.refreshButtons();
-        this.overviewRulerController.setExpandable(this.configService.doesOverviewExpand());
-        if (this.configService.isOverviewEnabled() && entries.length) {
-            this.overviewRulerController.update(this.container, entries);
-        } else {
-            this.overviewRulerController.reset();
-        }
-        this.topPanelController.updateSearchResultCount();
-        this.currentSearchQuery = searchQuery;
     }
 
     private async syncThreadMetadata(promptCount: number, charCount: number) {
@@ -224,6 +269,32 @@ class ThreadRenderService {
             }
             textNode.parentNode?.replaceChild(frag, textNode);
         });
+    }
+
+    /**
+     * Reports render-time failures with thread context.
+     */
+    private reportRenderError(err: any, phase: string) {
+        const payload = {
+            phase,
+            threadId: this.threadId,
+            threadKey: this.threadKey,
+            message: (err as any)?.message || String(err),
+            stack: (err as any)?.stack,
+        };
+        console.error('[tagalyst][render] error', payload);
+    }
+
+    /**
+     * Schedules a single retry after a render error to avoid deadlocks.
+     */
+    private scheduleRetry() {
+        if (this.retryScheduled) return;
+        this.retryScheduled = true;
+        setTimeout(() => {
+            this.retryScheduled = false;
+            this.requestRender();
+        }, 200);
     }
 } // ThreadRenderService
 
