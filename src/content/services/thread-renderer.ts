@@ -117,6 +117,10 @@ class ThreadRenderService {
         }
     }
 
+    hasActiveContainer() {
+        return !!this.container;
+    }
+
     private async runRender(token: number) {
         if (token !== this.generation) return;
         if (!this.container || !this.threadKey) return;

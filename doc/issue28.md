@@ -112,10 +112,15 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 
 This last chapter can be complex, therefore let's give it its own chapter
 
-### Step 1 Plan — Bootstrap/Render Stabilization
+## Step 1 Plan — Bootstrap/Render Stabilization
 1. Instrument the bootstrap timeline: `configService.load` start/end, adapter selection, transcript root discovery, render attach, first render. Use guarded `console.info` with elapsed timings so noisy logs can be toggled.
 2. Gate all controller mounting on a loaded config snapshot; fail fast if config load rejects and surface a lightweight banner/log so we do not partially mount.
 3. Clarify the sequence inside `BootstrapOrchestrator.run`: teardown → adapter selection → container discovery (with retry if null) → config-aware UI mount (top panel, toolbars, overview) → render service attach → dom watcher attach. Add an early-return guard if SPA nav changed the path during the delay.
 4. Wrap render entrypoints (`renderNow`/scheduler callback) in try/catch with a single error reporter that tags the current thread id/key; ensure we reset `running/queued` flags on error to avoid render deadlocks and optionally schedule a safe retry.
 5. Harden DOM watcher/nav handling: ignore mutation batches while no container is attached; on root change, detach render/watchers before reattaching to the new root.
 6. Add verification notes: (a) log timeline on first load and on SPA hop, (b) confirm toolbar/top panel/overview appear on first render after toggling config, (c) verify no uncaught errors in console during rapid nav + search typing.
+
+### Step 1.6 Verification Notes
+- Enable timing logs: set `window.__tagalystDebugBootstrap = true` in DevTools before reload; expect `[tagalyst][bootstrap]` lines for `run:start`, `config:load:*`, `adapter:selected`, `transcript:root`, `render:attach`, and `render:first` on initial load and after SPA navigation.
+- Toggle config flags: via Options, flip nav toolbar/overview toggles, then reload a thread page; verify toolbar/top panel/overview mount on the first render after config loads (no extra manual refresh).
+- Stress nav/search: rapidly switch chats (SPA) while typing in search; ensure no uncaught console errors and UI stays responsive. If errors occur, note thread id/path from log payloads.
