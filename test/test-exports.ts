@@ -8,9 +8,11 @@ require('../src/content/dom/thread-dom');
 require('../src/content/dom/chatgpt-adapter');
 require('../src/content/adapters/registry');
 require('../src/content/adapters/api-shim');
+require('../src/content/adapters/fakes');
 require('../src/content/services/render-scheduler');
 require('../src/content/services/thread-metadata');
 require('../src/content/services/transcript');
+require('../src/content/services/thread-renderer');
 require('../src/content/services/dom-watcher');
 require('../src/content/controllers/thread-metadata');
 require('../src/content/state/focus');
@@ -46,6 +48,9 @@ export const ThreadAdapterRegistry = globals.ThreadAdapterRegistry;
 export const TranscriptService = globals.TranscriptService;
 export const ApiThreadAdapter = globals.ApiThreadAdapter;
 export const DomWatcher = globals.DomWatcher;
+export const FakeThreadAdapter = globals.FakeThreadAdapter;
+export const FakeMessageAdapter = globals.FakeMessageAdapter;
+export const ThreadRenderService = globals.ThreadRenderService;
 export const {
     sleep,
     hashString,

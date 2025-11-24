@@ -6,6 +6,11 @@
 /// <reference path="./render-scheduler.ts" />
 /// <reference path="./thread-metadata.ts" />
 /// <reference path="./transcript.ts" />
+/// <reference path="../state/message-meta.ts" />
+/// <reference path="../controllers/toolbar.ts" />
+/// <reference path="../controllers/overview-ruler.ts" />
+/// <reference path="../controllers/thread-metadata.ts" />
+/// <reference path="./config.ts" />
 
 /**
  * Central render loop for thread UI. Coalesces refreshes through a single scheduler
@@ -155,3 +160,8 @@ class ThreadRenderService {
 } // ThreadRenderService
 
 (globalThis as any).ThreadRenderService = ThreadRenderService;
+/// <reference path="../controllers/toolbar.ts" />
+/// <reference path="../controllers/overview-ruler.ts" />
+/// <reference path="../state/message-meta.ts" />
+/// <reference path="../controllers/thread-metadata.ts" />
+/// <reference path="./config.ts" />

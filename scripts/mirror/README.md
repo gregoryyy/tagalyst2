@@ -6,9 +6,13 @@ This folder holds the mirroring tooling for saved HTML/DOM fixtures. Use Chrome 
 - Chrome/Chromium installed.
 - Node.js + `chrome-remote-interface` (`npm install chrome-remote-interface`).
 - Launch Chrome with remote debugging, e.g. (use a throwaway profile):
-  - macOS: `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-mhtml`
+  - macOS: `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-tagalyst`
 
-## Site mirroring (`capture.ts`)
+Notes:
+- Use a separate Chrome profile (`--user-data-dir`) so you can sign into ChatGPT in the debug-enabled instance without affecting your main profile. Newer versions of Chrome enforce this.
+- Sessions/cookies persist in that temp profile between captures.
+
+## Page mirroring (`capture.ts`)
 - Define targets in `scripts/mirror/targets.json` as an array of `{ "name": "...", "url": "..." }`.
 - Run the mirror (from repo root):
   ```bash
@@ -33,7 +37,7 @@ This folder holds the mirroring tooling for saved HTML/DOM fixtures. Use Chrome 
 - Uses Chrome DevTools Protocol to fetch the main document and all resources (`Page.getResourceContent`) and rewrites links to local copies for offline fixtures.
 - `PORT` defaults to 9222 if not set.
 
-## External mirroring helper (`externals.ts`)
+## Externals mirroring (`externals.ts`)
 - Exposes `mirrorResources(html, baseName, assetDir)` which downloads external HTTP(S) resources referenced via `src=""`, `href=""`, or CSS `url(...)`, stores them under `<baseName>_files/`, and rewrites the HTML to point to the local copies (for standalone HTML processing workflows).
 - Can be run directly on a saved HTML page:
   ```bash
@@ -42,15 +46,12 @@ This folder holds the mirroring tooling for saved HTML/DOM fixtures. Use Chrome 
   This will mirror external resources into `<baseName>_externals/` (default) and rewrite the HTML in-place.
 
 ## Workflow
-1) Start Chrome with `--remote-debugging-port=9222 --user-data-dir=/tmp/chrome-mhtml` and log into ChatGPT in that profile.
-2) Add the URLs you want to capture to `targets.json`.
-3) Run `capture.ts` to produce mirrored HTML + assets for offline fixtures (no MHTML involved).
+1. Start Chrome with `--remote-debugging-port=9222 --user-data-dir=/tmp/chrome-tagalyst` and log into ChatGPT in that profile.
+2. Add the URLs you want to capture to `targets.json`.
+3. Run `capture.ts` to produce mirrored HTML + assets for offline fixtures (no MHTML involved).
 
-## Authentication
-- Use a separate Chrome profile (`--user-data-dir`) so you can sign into ChatGPT in the debug-enabled instance without affecting your main profile.
-- Sessions/cookies persist in that temp profile between captures.
+Alternative:
+1. Open Page in Chrome and "Save Page As..." > "Web Page, Complete".
+2. Start Chrome with remote debugging like Step 1 above to authenticate the page (if needed).
+3. Run `externals.ts` pointing at the saved page to create a local mirror of the dependent page resources not downloaded.
 
-## Notes
-- Ensure you start Chrome with remote debugging before running the capture script.
-- For TypeScript, run via `ts-node` or compile to JS before running.
-- Avoid using your main profile; keep captures isolated.

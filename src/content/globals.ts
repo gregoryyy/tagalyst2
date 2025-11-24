@@ -14,6 +14,8 @@
 /// <reference path="./services/transcript.ts" />
 /// <reference path="./adapters/registry.ts" />
 /// <reference path="./adapters/api-shim.ts" />
+/// <reference path="./adapters/fakes.ts" />
+/// <reference path="./services/dom-watcher.ts" />
 
 /**
  * Centralized global attachments for content scripts.
@@ -42,4 +44,6 @@
     if (typeof ThreadAdapterRegistry !== 'undefined') g.ThreadAdapterRegistry = ThreadAdapterRegistry;
     if (typeof ApiThreadAdapter !== 'undefined') g.ApiThreadAdapter = ApiThreadAdapter;
     if (typeof DomWatcher !== 'undefined') g.DomWatcher = DomWatcher;
+    if (typeof FakeThreadAdapter !== 'undefined') g.FakeThreadAdapter = FakeThreadAdapter;
+    if (typeof FakeMessageAdapter !== 'undefined') g.FakeMessageAdapter = FakeMessageAdapter;
 })();

@@ -77,6 +77,8 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Implemented `DomWatcher` for mutation + URL watching; render service listens for mutations/nav.
    - Tests: `test/content/dom-watcher.test.ts` covers mutation events and root changes (re-attach) on external nodes.
 9. Add adapter harnesses/tests: fakes + fixtures for `ThreadAdapter`/`MessageAdapter` to catch heuristic regressions.
+   - Implemented adapter fakes (`FakeThreadAdapter`) and harness tests (fixture parity, edge cases) plus API shim parity.
+   - Tests: adapter registry selection, DOM vs API parity, fixture transcript, and fake adapter edge cases.
 10. Plan storage/indexing: design IndexedDB-backed storage + hash-based incremental reindex to overcome `chrome.storage.local` limits for cross-thread search.
 
 ## Enhancements (Issue #30)

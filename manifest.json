@@ -28,6 +28,7 @@
                 "content/content/services/dom-watcher.js",
                 "content/content/adapters/registry.js",
                 "content/content/adapters/api-shim.js",
+                "content/content/adapters/fakes.js",
                 "content/content/services/thread-renderer.js",
                 "content/content/services/thread-metadata.js",
                 "content/shared/globals.js",
