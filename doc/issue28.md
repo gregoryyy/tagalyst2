@@ -41,7 +41,7 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 
 # Issue #28 Implementation Plan
 
-## Codebase
+## Codebase (Issue #29)
 1. Consolidate globals: centralize shared config/storage/constants/utils/types and runtime attachments (e.g., `TAGALYST_*`, `tagalystStorage`, `EXT_ATTR`, `Utils`, ambient interfaces, `ThreadMetadataService`/`deriveThreadId`) into a single header/attachment point.
    - Shared header added: `src/shared/globals.ts` for config/storage.
    - Content header added: `src/content/globals.ts` for EXT_ATTR/Utils/thread metadata/helpers/controllers.
@@ -65,17 +65,21 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Added guardrails/telemetry for long renders/re-entrancy in `RenderScheduler` plus a slow-render test.
    - Done: render service uses generation tokens to drop stale/in-flight renders on teardown/navigation.
 6. Define a canonical transcript model/service shared by UI and future indexing so DOM/API harvesters can swap without touching controllers.
+   - Implemented `TranscriptService` to normalize messages/pairs and feed `ThreadRenderService`.
+   - Added fixture test (`test/content/transcript-service.test.ts`) using Thread3 capture.
+   - Structure: `TranscriptMessage { id, role, text, adapter }`, `TranscriptPair { index, query, response }`, snapshot includes `pairIndexByMessage`.
+   - Future: add API-backed adapter shim so controllers/indexing can swap sources without DOM coupling.
 7. Strengthen adapter boundaries: separate harvest adapters from renderers and keep ChatGPT-specific selectors isolated to reduce breakage from DOM changes.
 8. Decouple DOM watching from feature renderers: split mutation/teardown concerns so SPA nav doesn’t leave stale UI.
 9. Add adapter harnesses/tests: fakes + fixtures for `ThreadAdapter`/`MessageAdapter` to catch heuristic regressions.
 10. Plan storage/indexing: design IndexedDB-backed storage + hash-based incremental reindex to overcome `chrome.storage.local` limits for cross-thread search.
 
-## Enhancements
+## Enhancements (Issue #30)
 1. Add per-thread search highlights to search mode as the foundation for cross-thread UX.
 2. Refine overview ruler marker layout for clearer alignment and readability.
 3. Add an options toggle for the navigation toolbar and wire live show/hide behavior.
 
-## Fixes and Hardening
+## Fixes and Hardening (Issue #31)
 1. Stabilize bootstrap/render: audit `BootstrapOrchestrator` timing, ensure controllers mount after config load, and add logging/guards to catch render errors.
 2. Make options reactive: propagate `ConfigService` updates immediately without requiring reloads.
 3. Fix toolbar visibility load order so message/global toolbars render reliably.

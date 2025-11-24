@@ -8,6 +8,7 @@ require('../src/content/dom/thread-dom');
 require('../src/content/dom/chatgpt-adapter');
 require('../src/content/services/render-scheduler');
 require('../src/content/services/thread-metadata');
+require('../src/content/services/transcript');
 require('../src/content/controllers/thread-metadata');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
@@ -38,6 +39,7 @@ export const DomMessageAdapter = globals.DomMessageAdapter;
 export const DomPairAdapter = globals.DomPairAdapter;
 export const ThreadDom = globals.ThreadDom;
 export const ChatGptThreadAdapter = globals.ChatGptThreadAdapter;
+export const TranscriptService = globals.TranscriptService;
 export const {
     sleep,
     hashString,

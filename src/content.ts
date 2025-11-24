@@ -13,6 +13,7 @@
 /// <reference path="./content/controllers/sidebar-labels.ts" />
 /// <reference path="./content/controllers/project-list-labels.ts" />
 /// <reference path="./content/services/thread-renderer.ts" />
+/// <reference path="./content/services/transcript.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -239,6 +240,7 @@ class BootstrapOrchestrator {
 const threadDom = new ThreadDom(() => activeThreadAdapter);
 const highlightController = new HighlightController(storageService, overviewRulerController, requestRender);
 const threadActions = new ThreadActions(threadDom, messageMetaRegistry, requestRender);
+const transcriptService = new TranscriptService(threadDom);
 
 const toolbarController = new ToolbarController({
     focusService,
@@ -264,6 +266,7 @@ const keyboardController = new KeyboardController({
 const threadRenderService = new ThreadRenderService(
     renderScheduler,
     threadDom,
+    transcriptService,
     toolbarController,
     highlightController,
     overviewRulerController,

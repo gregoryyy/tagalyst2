@@ -11,6 +11,7 @@
 /// <reference path="./dom/thread-dom.ts" />
 /// <reference path="./dom/chatgpt-adapter.ts" />
 /// <reference path="./services/thread-renderer.ts" />
+/// <reference path="./services/transcript.ts" />
 
 /**
  * Centralized global attachments for content scripts.
@@ -35,4 +36,5 @@
     if (typeof ThreadDom !== 'undefined') g.ThreadDom = ThreadDom;
     if (typeof ChatGptThreadAdapter !== 'undefined') g.ChatGptThreadAdapter = ChatGptThreadAdapter;
     if (typeof ThreadRenderService !== 'undefined') g.ThreadRenderService = ThreadRenderService;
+    if (typeof TranscriptService !== 'undefined') g.TranscriptService = TranscriptService;
 })();

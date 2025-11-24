@@ -5,6 +5,7 @@
 /// <reference path="../../types/globals.d.ts" />
 /// <reference path="./render-scheduler.ts" />
 /// <reference path="./thread-metadata.ts" />
+/// <reference path="./transcript.ts" />
 
 /**
  * Central render loop for thread UI. Coalesces refreshes through a single scheduler
@@ -22,6 +23,7 @@ class ThreadRenderService {
     constructor(
         private readonly scheduler: RenderScheduler,
         private readonly threadDom: ThreadDom,
+        private readonly transcriptService: TranscriptService,
         private readonly toolbar: ToolbarController,
         private readonly highlightController: any,
         private readonly overviewRulerController: any,
@@ -96,23 +98,15 @@ class ThreadRenderService {
     private async renderOnce(token: number) {
         if (token !== this.generation) return;
         if (!this.container || !this.threadKey) return;
-        const messageAdapters = this.resolveMessages(this.container);
-        const pairAdapters = this.threadDom.buildPairAdaptersFromMessages(messageAdapters);
-        const pairMap = this.buildPairMap(pairAdapters);
-        const messageCount = messageAdapters.length;
-        const promptCount = pairAdapters.length;
-        const charCount = messageAdapters.reduce((sum, adapter) => {
-            try {
-                return sum + (adapter.getText()?.length || 0);
-            } catch {
-                return sum;
-            }
-        }, 0);
-        const entries = messageAdapters.map(messageAdapter => ({
-            adapter: messageAdapter,
-            el: messageAdapter.element,
-            key: messageAdapter.storageKey(this.threadKey!),
-            pairIndex: pairMap.get(messageAdapter) ?? null,
+        const transcript = this.transcriptService.buildTranscript(this.container, this.threadAdapter);
+        const messageCount = transcript.messages.length;
+        const promptCount = transcript.pairs.length;
+        const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
+        const entries = transcript.messages.map(message => ({
+            adapter: message.adapter,
+            el: message.adapter.element,
+            key: message.adapter.storageKey(this.threadKey!),
+            pairIndex: transcript.pairIndexByMessage.get(message.adapter) ?? null,
         }));
         await this.syncThreadMetadata(promptCount, charCount);
         if (!entries.length) return;
@@ -147,21 +141,6 @@ class ThreadRenderService {
             this.overviewRulerController.reset();
         }
         this.topPanelController.updateSearchResultCount();
-    }
-
-    private resolveMessages(container: HTMLElement): MessageAdapter[] {
-        const adapter = this.threadAdapter;
-        return (adapter
-            ? adapter.getMessages(container)
-            : ThreadDom.defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
-    }
-
-    private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
-        const pairMap = new Map<MessageAdapter, number>();
-        pairAdapters.forEach((pair, idx) => {
-            pair.getMessages().forEach(msg => pairMap.set(msg, idx));
-        });
-        return pairMap;
     }
 
     private async syncThreadMetadata(promptCount: number, charCount: number) {
