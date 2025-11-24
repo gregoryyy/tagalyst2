@@ -11,6 +11,7 @@
 /// <reference path="../controllers/overview-ruler.ts" />
 /// <reference path="../controllers/thread-metadata.ts" />
 /// <reference path="./config.ts" />
+/// <reference path="../state/focus.ts" />
 
 /**
  * Central render loop for thread UI. Coalesces refreshes through a single scheduler
@@ -24,6 +25,7 @@ class ThreadRenderService {
     private running = false;
     private queued = false;
     private generation = 0;
+    private currentSearchQuery = '';
 
     constructor(
         private readonly scheduler: RenderScheduler,
@@ -34,6 +36,7 @@ class ThreadRenderService {
         private readonly overviewRulerController: any,
         private readonly topPanelController: any,
         private readonly focusController: any,
+        private readonly focusService: FocusService,
         private readonly configService: ConfigService,
         private readonly storageService: StorageService,
         private readonly messageMetaRegistry: MessageMetaRegistry,
@@ -107,6 +110,7 @@ class ThreadRenderService {
         const messageCount = transcript.messages.length;
         const promptCount = transcript.pairs.length;
         const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
+        const searchQuery = this.focusService.getSearchQuery();
         const entries = transcript.messages.map(message => ({
             adapter: message.adapter,
             el: message.adapter.element,
@@ -120,12 +124,23 @@ class ThreadRenderService {
         const tagCounts = new Map<string, number>();
         this.highlightController.resetAll();
         this.messageMetaRegistry.clear();
+        const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
+        if (!navEnabled) {
+            document.getElementById('ext-page-controls')?.remove();
+            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        }
         for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-            this.toolbar.injectToolbar(el, this.threadKey!);
-            this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-            this.toolbar.updateMessageLength(messageAdapter);
+            if (navEnabled) {
+                this.toolbar.injectToolbar(el, this.threadKey!);
+                this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                this.toolbar.updateMessageLength(messageAdapter);
+            }
             const value = store[key] || {};
-            this.messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
+            const meta = { key, value, pairIndex, adapter: messageAdapter };
+            this.messageMetaRegistry.update(el, meta);
+            const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
+            el.classList.toggle('ext-search-hit', isSearchHit);
+            this.applySearchHighlight(el, isSearchHit ? searchQuery : '');
             if (value && Array.isArray(value.tags)) {
                 for (const t of value.tags) {
                     if (!t) continue;
@@ -146,6 +161,7 @@ class ThreadRenderService {
             this.overviewRulerController.reset();
         }
         this.topPanelController.updateSearchResultCount();
+        this.currentSearchQuery = searchQuery;
     }
 
     private async syncThreadMetadata(promptCount: number, charCount: number) {
@@ -156,6 +172,58 @@ class ThreadRenderService {
         await this.threadMetadataService.updateChars(this.threadId, desiredChars);
         const meta = await this.threadMetadataService.read(this.threadId);
         this.threadMetadataController.render(this.threadId, meta);
+    }
+
+    /**
+     * Adds/removes inline search highlights within a message element.
+     */
+    private applySearchHighlight(el: HTMLElement, query: string) {
+        // Clear prior marks
+        el.querySelectorAll('.ext-search-mark').forEach(mark => {
+            const parent = mark.parentNode;
+            if (parent) {
+                parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+                parent.normalize();
+            }
+        });
+        const normalized = (query || '').trim();
+        if (!normalized) return;
+        const regex = new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => {
+                if (!node.parentElement) return NodeFilter.FILTER_REJECT;
+                if ((node.parentElement as HTMLElement).closest(`[${EXT_ATTR}]`)) return NodeFilter.FILTER_REJECT;
+                if ((node.parentElement as HTMLElement).classList.contains('ext-search-mark')) return NodeFilter.FILTER_REJECT;
+                const text = node.nodeValue || '';
+                return regex.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            }
+        });
+        const toProcess: Text[] = [];
+        let n = walker.nextNode();
+        while (n) {
+            toProcess.push(n as Text);
+            n = walker.nextNode();
+        }
+        toProcess.forEach(textNode => {
+            const frag = document.createDocumentFragment();
+            let lastIndex = 0;
+            const text = textNode.nodeValue || '';
+            text.replace(regex, (match, offset) => {
+                if (offset > lastIndex) {
+                    frag.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
+                }
+                const span = document.createElement('span');
+                span.className = 'ext-search-mark';
+                span.textContent = match;
+                frag.appendChild(span);
+                lastIndex = offset + match.length;
+                return match;
+            });
+            if (lastIndex < text.length) {
+                frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+            textNode.parentNode?.replaceChild(frag, textNode);
+        });
     }
 } // ThreadRenderService
 

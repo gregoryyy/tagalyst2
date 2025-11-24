@@ -13,6 +13,7 @@ const TAGALYST_DEFAULT_CONFIG = {
     overviewExpands: true,
     metaToolbarEnabled: true,
     sidebarLabelsEnabled: true,
+    navToolbarEnabled: true,
 };
 
 type TagalystConfig = typeof TAGALYST_DEFAULT_CONFIG;

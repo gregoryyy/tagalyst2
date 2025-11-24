@@ -84,12 +84,20 @@ configService.onChange(cfg => {
     } else {
         sidebarLabelController.stop();
     }
+    const container = threadDom.findTranscriptRoot();
+    const threadKey = Utils.getThreadKey();
+    if (cfg.navToolbarEnabled === false && container) {
+        document.getElementById('ext-page-controls')?.remove();
+        document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+    } else if (container) {
+        toolbarController.ensurePageControls(container, threadKey);
+    }
     requestRender();
     const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-    const container = threadDom.findTranscriptRoot();
+    const containerForMeta = threadDom.findTranscriptRoot();
     const threadId = deriveThreadId();
     if (showMeta) {
-        threadMetadataController.ensure(container, threadId);
+        threadMetadataController.ensure(containerForMeta, threadId);
         threadMetadataService.read(threadId).then(meta => {
             threadMetadataController.render(threadId, meta);
         });
@@ -152,10 +160,10 @@ class BootstrapOrchestrator {
     async run() {
         // Wait a moment for the app shell to mount
         await Utils.sleep(600);
-    await configService.load();
-    this.teardownUI();
-    this.threadAdapter = adapterRegistry.getAdapterForLocation(location);
-    activeThreadAdapter = this.threadAdapter;
+        await configService.load();
+        this.teardownUI();
+        this.threadAdapter = adapterRegistry.getAdapterForLocation(location);
+        activeThreadAdapter = this.threadAdapter;
         const container = threadDom.findTranscriptRoot();
         const pageKind = pageClassifier.classify(location.pathname);
         if (pageKind !== 'thread' && pageKind !== 'project-thread') {
@@ -193,7 +201,6 @@ class BootstrapOrchestrator {
         } else {
             document.getElementById('ext-thread-meta')?.remove();
         }
-        this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
         highlightController.init();
@@ -203,6 +210,13 @@ class BootstrapOrchestrator {
             overviewRulerController.setExpandable(configService.doesOverviewExpand());
         } else {
             overviewRulerController.reset();
+        }
+
+        if (configService.isNavToolbarEnabled()) {
+            this.toolbar.ensurePageControls(container, threadKey);
+        } else {
+            document.getElementById('ext-page-controls')?.remove();
+            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
         }
 
         this.renderService.attach({ container, threadId, threadKey, adapter: this.threadAdapter });
@@ -281,6 +295,7 @@ const threadRenderService = new ThreadRenderService(
     overviewRulerController,
     topPanelController,
     focusController,
+    focusService,
     configService,
     storageService,
     messageMetaRegistry,

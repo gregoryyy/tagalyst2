@@ -88,8 +88,16 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 
 ## Enhancements (Issue #30)
 1. Add per-thread search highlights to search mode as the foundation for cross-thread UX.
-2. Refine overview ruler marker layout for clearer alignment and readability.
+   - Plan: extend search mode to apply CSS highlights to matching messages and tags; surface counts in top panel and overview ruler.
+   - Steps: reuse FocusService search query to mark matches; integrate with HighlightController for visual marks; ensure render service updates overview markers and toolbar badges; add tests against Thread3 fixture to verify match counts and highlighting.
+   - Future: feed these highlights into cross-thread index once storage/indexing (step 10) lands.
+2. Refine overview ruler marker layout for clearer alignment and readability: light gray lanes.
+   - Plan: add subtle vertical lanes behind star/tag/search markers to improve alignment/readability and adjust spacing/hover clarity.
+   - Steps: update overview ruler DOM to include lane backgrounds per marker kind, tweak CSS widths/padding so markers sit within lanes, ensure no overlap with content.
 3. Add an options toggle for the navigation toolbar and wire live show/hide behavior.
+   - Plan: add a new option in Options UI to enable/disable the nav toolbar; persist in config and reactively show/hide without reload.
+   - Steps: update config schema/defaults, options page, and TopPanel/Toolbar controllers to respect the toggle; ensure render service detaches/tears down toolbar when disabled.
+   - Tests: options controller round-trip for the new flag and jsdom check that toolbar rows/page controls are mounted/unmounted when toggled.
 
 ## Fixes and Hardening (Issue #31)
 1. Stabilize bootstrap/render: audit `BootstrapOrchestrator` timing, ensure controllers mount after config load, and add logging/guards to catch render errors.
@@ -97,5 +105,3 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 3. Fix toolbar visibility load order so message/global toolbars render reliably.
 4. Fix sidebar/project marker visibility by adjusting observer timing and retry strategy.
 5. Fix unresponsive message toolbar buttons by hardening event wiring and DOM ownership checks.
-
-

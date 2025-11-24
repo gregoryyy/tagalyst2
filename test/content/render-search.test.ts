@@ -1,10 +1,22 @@
-import { ThreadRenderService, TranscriptService, ThreadDom, FakeThreadAdapter } from '../test-exports';
+import { ThreadRenderService, TranscriptService, ThreadDom, FakeThreadAdapter, FocusService } from '../test-exports';
 
 const noop = () => { /* noop */ };
 
-describe('ThreadRenderService tag/metadata flow', () => {
-    const makeService = (adapter: any, container: HTMLElement) => {
+describe('ThreadRenderService search highlights', () => {
+    it('marks search-hit messages with CSS class', async () => {
         const renderScheduler = new (global as any).RenderScheduler();
+        const configService: any = {
+            isSearchEnabled: () => true,
+            areTagsEnabled: () => true,
+            doesOverviewExpand: () => true,
+            isOverviewEnabled: () => false,
+            isMetaToolbarEnabled: () => false,
+        };
+        const focusService = new FocusService(configService);
+        focusService.setSearchQuery('Q1');
+        const focusController = {
+            refreshButtons: jest.fn(),
+        };
         const toolbar = {
             injectToolbar: jest.fn(),
             updatePairNumber: jest.fn(),
@@ -14,25 +26,16 @@ describe('ThreadRenderService tag/metadata flow', () => {
         const highlightController = { resetAll: jest.fn() };
         const overviewRulerController = { setExpandable: jest.fn(), update: jest.fn(), reset: jest.fn() };
         const topPanelController = { updateTagList: jest.fn(), updateSearchResultCount: jest.fn() };
-        const focusController = { refreshButtons: jest.fn() };
-        const configService = {
-            doesOverviewExpand: () => true,
-            isOverviewEnabled: () => false,
-            isMetaToolbarEnabled: () => false,
-            isSearchEnabled: () => true,
-        };
-        const storageService = {
-            read: async () => ({
-                'thread:a': { tags: ['x', 'y'] },
-                'thread:b': { tags: ['y'] },
-                'thread:c': {},
-            }),
-        };
-        const messageMetaRegistry = { clear: jest.fn(), update: jest.fn() };
+        const storageService = { read: async () => ({}) };
+        const messageMetaRegistry = { clear: jest.fn(), update: jest.fn(), getStore: () => new Map(), resolveAdapter: () => null };
         const threadMetadataService = { updateLength: jest.fn(), updateChars: jest.fn(), read: jest.fn(async () => ({})) };
         const threadMetadataController = { render: jest.fn(), ensure: noop };
+        const adapter = new FakeThreadAdapter([
+            { id: 'a', role: 'user', text: 'Q1 text' },
+            { id: 'b', role: 'assistant', text: 'A1' },
+        ]);
+        const container = adapter.getTranscriptRoot() as HTMLElement;
         const transcriptService = new TranscriptService(new ThreadDom(() => adapter));
-        const focusService = new (global as any).FocusService(configService);
         const service = new ThreadRenderService(
             renderScheduler,
             new ThreadDom(() => adapter),
@@ -50,21 +53,9 @@ describe('ThreadRenderService tag/metadata flow', () => {
             threadMetadataController as any,
         );
         service.attach({ container, threadId: 'thread', threadKey: 'thread', adapter });
-        return { service, topPanelController };
-    };
-
-    it('computes tag counts from storage metadata', async () => {
-        const adapter = new FakeThreadAdapter([
-            { id: 'a', role: 'user', text: 'Q1' },
-            { id: 'b', role: 'assistant', text: 'A1' },
-            { id: 'c', role: 'user', text: 'Q2' },
-        ]);
-        const container = adapter.getTranscriptRoot() as HTMLElement;
-        const { service, topPanelController } = makeService(adapter, container);
         await service.renderNow();
-        expect(topPanelController.updateTagList).toHaveBeenCalledWith([
-            { tag: 'y', count: 2 },
-            { tag: 'x', count: 1 },
-        ]);
+        const hits = Array.from(container.querySelectorAll('.ext-search-hit'));
+        expect(hits.length).toBe(1);
+        expect(hits[0].getAttribute('data-message-id')).toBe('a');
     });
 });

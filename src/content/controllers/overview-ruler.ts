@@ -34,6 +34,7 @@ class OverviewRulerController {
     private pendingContainer: HTMLElement | null = null;
     private scrollContainer: HTMLElement | null = null;
     private trackHandlersBound = false;
+    private laneRoot: HTMLElement | null = null;
     private trackDragActive = false;
     private suppressNextClick = false;
     private scrollEventTarget: EventTarget | null = null;
@@ -69,6 +70,13 @@ class OverviewRulerController {
         root.id = 'ext-overview-ruler';
         const track = document.createElement('div');
         track.className = 'ext-overview-ruler-track';
+        const lanes = document.createElement('div');
+        lanes.className = 'ext-overview-lanes';
+        ['message', 'star', 'tag', 'search'].forEach(kind => {
+            const lane = document.createElement('div');
+            lane.className = `ext-overview-lane ext-overview-lane--${kind}`;
+            lanes.appendChild(lane);
+        });
         const messageLayer = document.createElement('div');
         messageLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--messages';
         const highlightLayer = document.createElement('div');
@@ -77,6 +85,7 @@ class OverviewRulerController {
         focusLayer.className = 'ext-overview-marker-layer ext-overview-marker-layer--focus';
         const viewport = document.createElement('div');
         viewport.className = 'ext-ruler-viewport';
+        track.appendChild(lanes);
         track.appendChild(messageLayer);
         track.appendChild(highlightLayer);
         track.appendChild(focusLayer);
@@ -86,6 +95,7 @@ class OverviewRulerController {
         document.body.appendChild(root);
         this.root = root;
         this.trackEl = track;
+        this.laneRoot = lanes;
         this.messageMarkerLayer = messageLayer;
         this.highlightMarkerLayer = highlightLayer;
         this.focusMarkerLayer = focusLayer;
