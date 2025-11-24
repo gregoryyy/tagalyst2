@@ -15,6 +15,7 @@
 /// <reference path="./content/services/thread-renderer.ts" />
 /// <reference path="./content/services/transcript.ts" />
 /// <reference path="./content/adapters/registry.ts" />
+/// <reference path="./content/services/dom-watcher.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -241,6 +242,7 @@ class BootstrapOrchestrator {
         this.threadAdapter?.disconnect();
         this.renderService.reset();
         activeThreadAdapter = null;
+        domWatcher.watchContainer(null);
     }
 } // BootstrapOrchestrator
 
@@ -286,6 +288,10 @@ const threadRenderService = new ThreadRenderService(
     threadMetadataController,
 );
 threadRenderServiceRef = threadRenderService;
+const domWatcher = new DomWatcher({
+    onMutations: () => requestRender(),
+    onNav: () => handleSpaNavigation(),
+});
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
 async function bootstrap(): Promise<void> {
@@ -329,27 +335,14 @@ async function handleSpaNavigation(): Promise<void> {
         topPanelController.ensurePanels();
         threadRenderService.attach({ container, threadId, threadKey, adapter: activeThreadAdapter });
         await threadRenderService.renderNow();
+        domWatcher.watchContainer(container);
         return;
     }
     await bootstrap();
 }
 
 // Some pages use SPA routing; re-bootstrap on URL changes
-let lastHref = location.href;
-new MutationObserver(() => {
-    if (location.href !== lastHref) {
-        lastHref = location.href;
-       handleSpaNavigation();
-    }
-}).observe(document, { subtree: true, childList: true });
-
-// Also poll URL changes in case SPA navigation doesn't trigger mutations
-setInterval(() => {
-    if (location.href !== lastHref) {
-        lastHref = location.href;
-        handleSpaNavigation();
-    }
-}, 800);
+domWatcher.watchUrl();
 
 // Surface a minimal pairing API for scripts / devtools.
 window.__tagalyst = Object.assign(window.__tagalyst || {}, {

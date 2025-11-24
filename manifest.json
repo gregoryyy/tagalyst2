@@ -25,6 +25,7 @@
                 "content/content/services/storage.js",
                 "content/content/services/render-scheduler.js",
                 "content/content/services/transcript.js",
+                "content/content/services/dom-watcher.js",
                 "content/content/adapters/registry.js",
                 "content/content/adapters/api-shim.js",
                 "content/content/services/thread-renderer.js",

@@ -11,6 +11,7 @@ require('../src/content/adapters/api-shim');
 require('../src/content/services/render-scheduler');
 require('../src/content/services/thread-metadata');
 require('../src/content/services/transcript');
+require('../src/content/services/dom-watcher');
 require('../src/content/controllers/thread-metadata');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
@@ -44,6 +45,7 @@ export const ChatGptThreadAdapter = globals.ChatGptThreadAdapter;
 export const ThreadAdapterRegistry = globals.ThreadAdapterRegistry;
 export const TranscriptService = globals.TranscriptService;
 export const ApiThreadAdapter = globals.ApiThreadAdapter;
+export const DomWatcher = globals.DomWatcher;
 export const {
     sleep,
     hashString,

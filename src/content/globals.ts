@@ -41,4 +41,5 @@
     if (typeof TranscriptService !== 'undefined') g.TranscriptService = TranscriptService;
     if (typeof ThreadAdapterRegistry !== 'undefined') g.ThreadAdapterRegistry = ThreadAdapterRegistry;
     if (typeof ApiThreadAdapter !== 'undefined') g.ApiThreadAdapter = ApiThreadAdapter;
+    if (typeof DomWatcher !== 'undefined') g.DomWatcher = DomWatcher;
 })();
