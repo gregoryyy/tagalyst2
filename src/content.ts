@@ -281,6 +281,7 @@ const threadRenderService = new ThreadRenderService(
     overviewRulerController,
     topPanelController,
     focusController,
+    focusService,
     configService,
     storageService,
     messageMetaRegistry,

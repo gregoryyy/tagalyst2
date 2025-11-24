@@ -11,6 +11,7 @@
 /// <reference path="../controllers/overview-ruler.ts" />
 /// <reference path="../controllers/thread-metadata.ts" />
 /// <reference path="./config.ts" />
+/// <reference path="../state/focus.ts" />
 
 /**
  * Central render loop for thread UI. Coalesces refreshes through a single scheduler
@@ -34,6 +35,7 @@ class ThreadRenderService {
         private readonly overviewRulerController: any,
         private readonly topPanelController: any,
         private readonly focusController: any,
+        private readonly focusService: FocusService,
         private readonly configService: ConfigService,
         private readonly storageService: StorageService,
         private readonly messageMetaRegistry: MessageMetaRegistry,
@@ -107,6 +109,7 @@ class ThreadRenderService {
         const messageCount = transcript.messages.length;
         const promptCount = transcript.pairs.length;
         const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
+        const searchQuery = this.focusService.getSearchQuery();
         const entries = transcript.messages.map(message => ({
             adapter: message.adapter,
             el: message.adapter.element,
@@ -125,7 +128,10 @@ class ThreadRenderService {
             this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
             this.toolbar.updateMessageLength(messageAdapter);
             const value = store[key] || {};
-            this.messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
+            const meta = { key, value, pairIndex, adapter: messageAdapter };
+            this.messageMetaRegistry.update(el, meta);
+            const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
+            el.classList.toggle('ext-search-hit', isSearchHit);
             if (value && Array.isArray(value.tags)) {
                 for (const t of value.tags) {
                     if (!t) continue;

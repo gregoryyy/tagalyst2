@@ -269,6 +269,12 @@
     content: '■';
 }
 
+.ext-search-hit {
+    outline: 2px solid rgba(161, 91, 253, 0.55);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
 #ext-overview-ruler.ext-overview-expandable:hover .ext-overview-marker[data-kind="message"] {
     left: 6px;
     right: 0;

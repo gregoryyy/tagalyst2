@@ -50,6 +50,13 @@ class FocusService {
     }
 
     /**
+     * Returns true when a message matches the current search query.
+     */
+    isSearchHit(meta: MessageMeta, el: HTMLElement): boolean {
+        return this.matchesSearch(meta, el);
+    }
+
+    /**
      * Updates the normalized search query.
      */
     setSearchQuery(raw: string) {
