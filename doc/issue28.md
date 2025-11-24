@@ -94,8 +94,10 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 2. Refine overview ruler marker layout for clearer alignment and readability: light gray lanes.
    - Plan: add subtle vertical lanes behind star/tag/search markers to improve alignment/readability and adjust spacing/hover clarity.
    - Steps: update overview ruler DOM to include lane backgrounds per marker kind, tweak CSS widths/padding so markers sit within lanes, ensure no overlap with content.
-   - Tests: jsdom checks for lane elements; manual visual check recommended for alignment and hover.
 3. Add an options toggle for the navigation toolbar and wire live show/hide behavior.
+   - Plan: add a new option in Options UI to enable/disable the nav toolbar; persist in config and reactively show/hide without reload.
+   - Steps: update config schema/defaults, options page, and TopPanel/Toolbar controllers to respect the toggle; ensure render service detaches/tears down toolbar when disabled.
+   - Tests: options controller round-trip for the new flag and jsdom check that toolbar rows/page controls are mounted/unmounted when toggled.
 
 ## Fixes and Hardening (Issue #31)
 1. Stabilize bootstrap/render: audit `BootstrapOrchestrator` timing, ensure controllers mount after config load, and add logging/guards to catch render errors.

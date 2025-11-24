@@ -124,10 +124,17 @@ class ThreadRenderService {
         const tagCounts = new Map<string, number>();
         this.highlightController.resetAll();
         this.messageMetaRegistry.clear();
+        const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
+        if (!navEnabled) {
+            document.getElementById('ext-page-controls')?.remove();
+            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        }
         for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-            this.toolbar.injectToolbar(el, this.threadKey!);
-            this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-            this.toolbar.updateMessageLength(messageAdapter);
+            if (navEnabled) {
+                this.toolbar.injectToolbar(el, this.threadKey!);
+                this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                this.toolbar.updateMessageLength(messageAdapter);
+            }
             const value = store[key] || {};
             const meta = { key, value, pairIndex, adapter: messageAdapter };
             this.messageMetaRegistry.update(el, meta);

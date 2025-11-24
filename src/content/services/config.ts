@@ -97,6 +97,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when the nav toolbar should be shown.
+     */
+    isNavToolbarEnabled() {
+        return config.navToolbarEnabled !== false;
+    }
+
+    /**
      * Returns true when sidebar labels should be shown.
      */
     isSidebarLabelsEnabled() {

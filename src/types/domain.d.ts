@@ -73,6 +73,7 @@ declare global {
         tagsEnabled: boolean;
         metaToolbarEnabled?: boolean;
         sidebarLabelsEnabled?: boolean;
+        navToolbarEnabled?: boolean;
         [key: string]: unknown;
     }
 
