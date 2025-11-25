@@ -108,9 +108,21 @@ focusController.attachSelectionSync(() => {
 });
 configService.onChange(cfg => {
     enforceFocusConstraints(cfg);
+    const container = threadDom.findTranscriptRoot();
+    const hasContainer = !!container;
+    const threadKey = Utils.getThreadKey();
+    const threadId = deriveThreadId();
+    if (cfg.searchEnabled || cfg.tagsEnabled) {
+        topPanelController.ensurePanels();
+    } else {
+        topPanelController.getElement()?.remove();
+        topPanelController.reset();
+    }
     topPanelController.updateConfigUI();
     overviewRulerController.setExpandable(!!cfg.overviewExpands);
-    if (!cfg.overviewEnabled) {
+    if (cfg.overviewEnabled && hasContainer && threadDom.enumerateMessages(container!).length) {
+        overviewRulerController.ensure(container!);
+    } else {
         overviewRulerController.reset();
     }
     if (configService.isSidebarLabelsEnabled()) {
@@ -118,8 +130,6 @@ configService.onChange(cfg => {
     } else {
         sidebarLabelController.stop();
     }
-    const container = threadDom.findTranscriptRoot();
-    const threadKey = Utils.getThreadKey();
     if (cfg.navToolbarEnabled === false && container) {
         document.getElementById('ext-page-controls')?.remove();
         document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
@@ -128,10 +138,8 @@ configService.onChange(cfg => {
     }
     requestRender();
     const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-    const containerForMeta = threadDom.findTranscriptRoot();
-    const threadId = deriveThreadId();
-    if (showMeta) {
-        threadMetadataController.ensure(containerForMeta, threadId);
+    if (showMeta && container) {
+        threadMetadataController.ensure(container, threadId);
         threadMetadataService.read(threadId).then(meta => {
             threadMetadataController.render(threadId, meta);
         });

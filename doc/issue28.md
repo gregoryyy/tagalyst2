@@ -124,3 +124,20 @@ This last chapter can be complex, therefore let's give it its own chapter
 - Enable timing logs: set `window.__tagalystDebugBootstrap = true` in DevTools before reload; expect `[tagalyst][bootstrap]` lines for `run:start`, `config:load:*`, `adapter:selected`, `transcript:root`, `render:attach`, and `render:first` on initial load and after SPA navigation.
 - Toggle config flags: via Options, flip nav toolbar/overview toggles, then reload a thread page; verify toolbar/top panel/overview mount on the first render after config loads (no extra manual refresh).
 - Stress nav/search: rapidly switch chats (SPA) while typing in search; ensure no uncaught console errors and UI stays responsive. If errors occur, note thread id/path from log payloads.
+
+## Step 2 Plan — Options Reactivity
+Observation: Options writes to `chrome.storage.local` immediately and the content script already listens via `chrome.storage.onChanged → configService.apply`, so most toggles propagate without reload. Risks: partial writes that skip defaults, controllers that only mount on bootstrap, and stale UI when toggles flip quickly.
+1. Verify live propagation: with a thread open, flip nav toolbar/overview/meta toolbar/sidebar labels/search/tags in Options; confirm content reacts without reload (toolbars/overview/panels appear/disappear, focus constraints enforced).
+2. Harden `ConfigService.apply`: ensure it always merges defaults, tolerates being called before `load()`, and triggers necessary side effects (enforce focus constraints, remove toolbars when disabled) even for partial updates.
+3. Force UI refresh on config change: after apply, re-run controller ensure/teardown paths (top panel, toolbars, overview, metadata) and schedule render; keep DOM operations idempotent to avoid duplicates.
+4. Add regression tests: jsdom test to simulate `chrome.storage.onChanged` while a thread is mounted, asserting nav toolbar/overview/top panel state updates immediately; integration smoke to flip Options flags and observe DOM changes without page reload.
+5. Document the live-update flow in `doc/DEV.md`: Options writes → storage change event → `ConfigService.apply` → controller updates + render; include a QA note on toggling flags live.
+
+### Step 2.1 Verification — Are Options Already Reactive?
+- Current behavior: Options toggles write immediately to `chrome.storage.local`; content script listens via `chrome.storage.onChanged` and calls `configService.apply`, which already merges defaults and triggers controller updates/render. In practice, nav toolbar/overview/sidebar/meta panels respond without a page reload.
+- Gap to address in later steps: Options `saveConfig` writes the raw partial, so a single toggle can overwrite other settings with defaults; fix by merging with the stored snapshot before writing (tracked in Step 2.2).
+- QA note: Keep a thread open, flip nav toolbar/overview/sidebar/meta toggles, and observe the UI updating live (no manual reload needed). This confirms the baseline reactivity path.
+
+### Step 2.5 Docs — Live Update Flow
+- Flow: Options page writes merged config → Chrome fires `storage.onChanged` (area `local`) → content script `configService.apply` merges defaults and marks loaded → controllers respond (top panel ensure/remove, overview ensure/reset, nav toolbar ensure/remove, metadata ensure/remove) → render is requested.
+- QA toggle recipe: Open a thread, then in Options flip nav toolbar/overview/sidebar/meta/search/tags flags one at a time; expect toolbars/panels/overview/meta to appear/disappear within the same page session without reloading.

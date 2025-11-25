@@ -25,9 +25,11 @@ class ConfigService {
      */
     apply(obj?: Partial<typeof contentDefaultConfig>) {
         config = { ...contentDefaultConfig, ...(obj || {}) };
+        this.loaded = true;
         this.enforceState();
         this.notify();
         this.scheduler.request();
+        return config;
     }
 
     /**
