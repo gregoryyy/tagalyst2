@@ -8,6 +8,17 @@
 class SidebarLabelController {
     private observer: MutationObserver | null = null;
     private visibilityHandler: (() => void) | null = null;
+    private retryTimer: number | null = null;
+    private retryAttempts = 0;
+    private readonly retryDelayMs = 250;
+    private readonly debugFlag = '__tagalystDebugSidebar';
+    private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
+    private log(label: string, data?: Record<string, unknown>) {
+        if (!this.isDebugEnabled()) return;
+        const payload = data ? ['[tagalyst][sidebar]', label, data] : ['[tagalyst][sidebar]', label];
+        // eslint-disable-next-line no-console
+        console.info(...payload);
+    }
 
     constructor(private readonly metadata: ThreadMetadataService, private readonly config: ConfigService) { }
 
@@ -17,7 +28,13 @@ class SidebarLabelController {
             return;
         }
         const nav = document.querySelector('nav');
-        if (!nav) return;
+        if (!nav) {
+            this.log('start:retry', { attempts: this.retryAttempts });
+            this.scheduleRetry();
+            return;
+        }
+        this.retryAttempts = 0;
+        this.log('start', { hasNav: !!nav });
         this.renderAll(nav);
         this.observe(nav);
     }
@@ -29,7 +46,13 @@ class SidebarLabelController {
             document.removeEventListener('visibilitychange', this.visibilityHandler);
             this.visibilityHandler = null;
         }
+        if (this.retryTimer) {
+            clearTimeout(this.retryTimer);
+            this.retryTimer = null;
+        }
+        this.retryAttempts = 0;
         document.querySelectorAll('[data-ext="labels"]').forEach(el => el.remove());
+        this.log('stop');
     }
 
     private observe(nav: Element) {
@@ -42,6 +65,7 @@ class SidebarLabelController {
                 return false;
             });
             if (!external) return;
+            this.log('mutations');
             this.renderAll(nav);
         }, 150));
         this.observer.observe(nav, { childList: true, subtree: true });
@@ -63,6 +87,11 @@ class SidebarLabelController {
         const threadId = threadIdMatch[1];
         const meta = await this.metadata.read(threadId);
 
+        // Remove stray duplicates before injecting.
+        const existing = link.querySelectorAll<HTMLElement>('[data-ext="labels"]');
+        if (existing.length > 1) {
+            existing.forEach((node, idx) => { if (idx > 0) node.remove(); });
+        }
         let badge = link.querySelector<HTMLElement>('[data-ext="labels"]');
         if (!badge) {
             badge = document.createElement('span');
@@ -103,6 +132,15 @@ class SidebarLabelController {
             length.textContent = `(${meta.length})`;
             badge.appendChild(length);
         }
+    }
+
+    private scheduleRetry() {
+        if (this.retryTimer || this.retryAttempts >= 3) return;
+        this.retryAttempts += 1;
+        this.retryTimer = window.setTimeout(() => {
+            this.retryTimer = null;
+            this.start();
+        }, this.retryDelayMs);
     }
 }
 

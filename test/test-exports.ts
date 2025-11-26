@@ -3,14 +3,25 @@ require('../src/shared/config');
 require('../src/shared/storage');
 require('../src/content/constants');
 require('../src/content/utils');
+require('../src/content/dom/message-adapters');
+require('../src/content/dom/thread-dom');
+require('../src/content/dom/chatgpt-adapter');
+require('../src/content/adapters/registry');
+require('../src/content/adapters/api-shim');
+require('../src/content/adapters/fakes');
 require('../src/content/services/render-scheduler');
 require('../src/content/services/thread-metadata');
+require('../src/content/services/transcript');
+require('../src/content/services/thread-renderer');
+require('../src/content/services/dom-watcher');
 require('../src/content/controllers/thread-metadata');
 require('../src/content/state/focus');
 require('../src/content/controllers/top-panel');
 require('../src/content/controllers/keyboard');
 require('../src/content/controllers/sidebar-labels');
 require('../src/content/controllers/project-list-labels');
+require('../src/shared/globals');
+require('../src/content/globals');
 
 // Extract from globals set by the modules.
 const globals = globalThis as any;
@@ -29,6 +40,18 @@ export const tagalystStorage = globals.tagalystStorage;
 export const ThreadMetadataService = globals.ThreadMetadataService;
 export const deriveThreadId = globals.deriveThreadId;
 export const ThreadMetadataController = globals.ThreadMetadataController;
+export const DomMessageAdapter = globals.DomMessageAdapter;
+export const DomPairAdapter = globals.DomPairAdapter;
+export const ThreadDom = globals.ThreadDom;
+export const ChatGptThreadAdapter = globals.ChatGptThreadAdapter;
+export const ThreadAdapterRegistry = globals.ThreadAdapterRegistry;
+export const TranscriptService = globals.TranscriptService;
+export const ApiThreadAdapter = globals.ApiThreadAdapter;
+export const DomWatcher = globals.DomWatcher;
+export const FakeThreadAdapter = globals.FakeThreadAdapter;
+export const FakeMessageAdapter = globals.FakeMessageAdapter;
+export const ThreadRenderService = globals.ThreadRenderService;
+export const ToolbarController = globals.ToolbarController;
 export const {
     sleep,
     hashString,

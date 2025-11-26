@@ -33,6 +33,23 @@ describe('TopPanelController', () => {
         document.body.innerHTML = '';
     });
 
+    it('toggles tags and clears selection when config disables tags', () => {
+        const focusService = makeFocusService();
+        const focusController = makeFocusController();
+        const controller = new TopPanelController(focusService as any, makeConfigService() as any, focusController as any);
+        controller.ensurePanels();
+        controller.updateTagList([{ tag: 'foo', count: 1 }]);
+        const row = document.querySelector('.ext-tag-sidebar-row') as HTMLElement;
+        row.click();
+        expect(row.classList.contains('ext-tag-selected')).toBe(true);
+        // Disable tags and ensure selection is cleared.
+        const disabledConfig = makeConfigService(false);
+        const disabledController = new TopPanelController(focusService as any, disabledConfig as any, focusController as any);
+        disabledController.ensurePanels();
+        disabledController.updateTagList([]);
+        expect(focusService.clearTags).toBeDefined();
+    });
+
     it('renders tags and toggles selection', () => {
         const focusService = makeFocusService();
         const focusController = makeFocusController();

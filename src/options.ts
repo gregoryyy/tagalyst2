@@ -20,7 +20,10 @@ function getConfig(): Promise<TagalystConfig> {
  * Persists config overrides for the Search/Tag panels.
  */
 function saveConfig(partial: Partial<TagalystConfig>): Promise<void> {
-    return tagalystStorage.write({ [TAGALYST_CONFIG_STORAGE_KEY]: partial });
+    return getConfig().then(current => {
+        const merged = { ...current, ...(partial || {}) };
+        return tagalystStorage.write({ [TAGALYST_CONFIG_STORAGE_KEY]: merged });
+    });
 }
 
 /**
@@ -93,6 +96,7 @@ class OptionsController {
     private overviewEnable!: HTMLInputElement;
     private overviewExpand!: HTMLInputElement;
     private metaToolbarEnable!: HTMLInputElement;
+    private navToolbarEnable!: HTMLInputElement;
     private sidebarLabelsEnable!: HTMLInputElement;
     private statusEl!: HTMLElement;
     private storageSizeEl!: HTMLElement;
@@ -120,6 +124,7 @@ class OptionsController {
         this.overviewEnable = document.getElementById('overview-enable') as HTMLInputElement;
         this.overviewExpand = document.getElementById('overview-expand') as HTMLInputElement;
         this.metaToolbarEnable = document.getElementById('meta-toolbar-enable') as HTMLInputElement;
+        this.navToolbarEnable = document.getElementById('nav-toolbar-enable') as HTMLInputElement;
         this.sidebarLabelsEnable = document.getElementById('sidebar-labels-enable') as HTMLInputElement;
         this.statusEl = document.getElementById('status') as HTMLElement;
         this.storageSizeEl = document.getElementById('storage-size') as HTMLElement;
@@ -145,6 +150,7 @@ class OptionsController {
                 overviewEnabled: !!this.overviewEnable?.checked,
                 overviewExpands: !!this.overviewExpand?.checked,
                 metaToolbarEnabled: !!this.metaToolbarEnable?.checked,
+                navToolbarEnabled: !!this.navToolbarEnable?.checked,
                 sidebarLabelsEnabled: !!this.sidebarLabelsEnable?.checked,
             };
             await saveConfig(next);
@@ -159,6 +165,7 @@ class OptionsController {
             this.overviewEnable,
             this.overviewExpand,
             this.metaToolbarEnable,
+            this.navToolbarEnable,
             this.sidebarLabelsEnable,
         ].filter(Boolean).forEach(el => el?.addEventListener('change', onChange));
 
@@ -260,6 +267,7 @@ class OptionsController {
         if (this.overviewEnable) this.overviewEnable.checked = !!cfg.overviewEnabled;
         if (this.overviewExpand) this.overviewExpand.checked = !!cfg.overviewExpands;
         if (this.metaToolbarEnable) this.metaToolbarEnable.checked = cfg.metaToolbarEnabled !== false;
+        if (this.navToolbarEnable) this.navToolbarEnable.checked = cfg.navToolbarEnabled !== false;
         if (this.sidebarLabelsEnable) this.sidebarLabelsEnable.checked = cfg.sidebarLabelsEnabled !== false;
     }
 

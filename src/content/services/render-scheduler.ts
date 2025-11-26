@@ -4,6 +4,8 @@
 class RenderScheduler {
     private rafId: number | null = null;
     private renderer: (() => Promise<void>) | null = null;
+    private inflight = false;
+    private pending = false;
 
     /**
      * Sets the current renderer callback.
@@ -19,12 +21,46 @@ class RenderScheduler {
         if (renderer) this.renderer = renderer;
         const target = renderer ?? this.renderer;
         if (!target) return;
+        if (this.inflight) {
+            this.pending = true;
+            return;
+        }
         if (this.rafId) cancelAnimationFrame(this.rafId);
         this.rafId = requestAnimationFrame(() => {
             this.rafId = null;
-            target();
+            const start = performance.now();
+            this.inflight = true;
+            try {
+                const res = target();
+                if (res && typeof (res as any).then === 'function') {
+                    (res as Promise<void>).catch(err => {
+                        // eslint-disable-next-line no-console
+                        console.error('RenderScheduler error', err);
+                    }).finally(() => this.finish(start));
+                } else {
+                    this.finish(start);
+                }
+            } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('RenderScheduler error', err);
+                this.finish(start);
+            }
         });
     }
+
+    private finish(start: number) {
+        this.inflight = false;
+        if (this.pending) {
+            this.pending = false;
+            this.request();
+        }
+        const duration = performance.now() - start;
+        if (duration > 50) {
+            // eslint-disable-next-line no-console
+            console.warn(`RenderScheduler: slow render ${duration.toFixed(1)}ms`);
+        }
+    }
 } // RenderScheduler
-// Expose globally for export wrapper.
+
+// Expose globally for tests/debug helpers.
 (globalThis as any).RenderScheduler = RenderScheduler;

@@ -9,6 +9,7 @@ BootstrapOrchestrator
  ├─ RenderScheduler (debounced refresh loop)
  ├─ ThreadDom + ChatGptThreadAdapter (discovery + fallback heuristics)
  ├─ StorageService / ConfigService (chrome.storage glue)
+ ├─ ThreadMetadataService + ThreadMetadataController (thread header toolbar)
  ├─ MessageMetaRegistry (per-message cache shared by services)
  ├─ FocusService + FocusController (state machine + UI syncing)
  ├─ TopPanelController (Search/Tags panels)
@@ -16,8 +17,15 @@ BootstrapOrchestrator
  ├─ ThreadActions / ExportController (batch ops & Markdown)
  ├─ EditorController (tag + note editors)
  ├─ HighlightController (CSS Highlight API orchestration)
- └─ OverviewRulerController (conversation minimap + viewport sync)
+ ├─ OverviewRulerController (conversation minimap + viewport sync)
+ ├─ SidebarLabelController (labels in chat sidebar)
+ └─ ProjectListLabelController (labels in project lists)
 ```
+
+## Build & Globals
+- TypeScript, no bundler; `npm run build` runs `tsc -b` to emit 1:1 JS/CSS into `content/` and `options/`.
+- Globals come from script files (`src/shared/config.ts`, `src/shared/storage.ts`, `src/types/globals.d.ts`) and triple-slash references rather than ES modules; content code is classic script style.
+- Ambient constants include `TAGALYST_DEFAULT_CONFIG`/`TAGALYST_CONFIG_STORAGE_KEY`, `tagalystStorage`, `EXT_ATTR`, and the `Utils` namespace. Runtime helpers such as `ThreadMetadataService` and `deriveThreadId` are attached to `globalThis`.
 
 ### ThreadDom, Adapters, and Scheduler
 - `ChatGptThreadAdapter` still owns MutationObserver wiring and produces `MessageAdapter` / `PairAdapter` instances, but `ThreadDom` now provides the shared fallback heuristics (enumerating messages, building pairs, finding navigation nodes). Controllers never touch `default*` helpers directly anymore.
@@ -87,3 +95,12 @@ The content script is modular; `content.ts` orchestrates services/controllers/ad
 
 4. **Performance & UX**  
    - Smooth overview ruler interactions; keyboard shortcut robustness across SPA changes; highlight rendering under large threads.
+
+## Known Risks / Quality Focus
+- Globals/imports are fragile and scattered; plan to centralize ambient attachments and consider a future MV3-safe module strategy without breaking classic content scripts.
+- Controllers sometimes carry state and DOM knowledge; push state into services with clear contracts and keep controllers thin.
+- Render scheduling is ad hoc despite `RenderScheduler`; enforce a single render loop for refresh requests to avoid races.
+- DOM coupling: `ChatGptThreadAdapter`/`ThreadDom` bake selectors; introduce a firmer adapter boundary (harvest + render) and a normalized transcript model so UI and indexing can swap data sources (DOM/API).
+- Storage/search limits: only `chrome.storage.local` is used; no transcript cache or index. IndexedDB-backed indexing plus hash-based incremental updates is the intended path.
+- Reactivity gaps: config/options should apply immediately; bootstrap/observer timing currently causes missing toolbars/markers and occasional unresponsive buttons.
+- Testing gaps: increase coverage for render/focus/search flows, bootstrap timing, and adapter heuristics; add real DOM fixtures (sanitized ChatGPT HTML) to exercise adapters and controllers against real layouts.

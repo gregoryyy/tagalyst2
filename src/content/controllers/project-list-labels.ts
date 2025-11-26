@@ -7,6 +7,17 @@
  */
 class ProjectListLabelController {
     private observer: MutationObserver | null = null;
+    private retryTimer: number | null = null;
+    private retryAttempts = 0;
+    private readonly retryDelayMs = 250;
+    private readonly debugFlag = '__tagalystDebugSidebar';
+    private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
+    private log(label: string, data?: Record<string, unknown>) {
+        if (!this.isDebugEnabled()) return;
+        const payload = data ? ['[tagalyst][projects]', label, data] : ['[tagalyst][projects]', label];
+        // eslint-disable-next-line no-console
+        console.info(...payload);
+    }
 
     constructor(private readonly metadata: ThreadMetadataService, private readonly config: ConfigService) { }
 
@@ -14,7 +25,13 @@ class ProjectListLabelController {
         this.stop();
         if (!this.config.isSidebarLabelsEnabled()) return;
         const root = document.querySelector('main') || document.body;
-        if (!root) return;
+        if (!root) {
+            this.log('start:retry', { attempts: this.retryAttempts });
+            this.scheduleRetry();
+            return;
+        }
+        this.retryAttempts = 0;
+        this.log('start', { hasRoot: !!root });
         this.renderAll(root);
         // Handle late-loaded project lists.
         setTimeout(() => this.renderAll(root), 500);
@@ -25,13 +42,20 @@ class ProjectListLabelController {
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        if (this.retryTimer) {
+            clearTimeout(this.retryTimer);
+            this.retryTimer = null;
+        }
+        this.retryAttempts = 0;
         document.querySelectorAll('[data-ext="project-labels"]').forEach(el => el.remove());
+        this.log('stop');
     }
 
     private observe(root: Element) {
         this.observer = new MutationObserver(Utils.debounce((records: MutationRecord[]) => {
             const external = records.some(rec => Utils.mutationTouchesExternal(rec));
             if (!external) return;
+            this.log('mutations');
             this.renderAll(root);
         }, 150));
         this.observer.observe(root, { childList: true, subtree: true });
@@ -50,6 +74,10 @@ class ProjectListLabelController {
         const threadId = match[1];
         const meta = await this.metadata.read(threadId);
 
+        const existing = link.querySelectorAll<HTMLElement>('[data-ext="project-labels"]');
+        if (existing.length > 1) {
+            existing.forEach((node, idx) => { if (idx > 0) node.remove(); });
+        }
         let badge = link.querySelector<HTMLElement>('[data-ext="project-labels"]');
         if (!badge) {
             badge = document.createElement('div');
@@ -83,6 +111,15 @@ class ProjectListLabelController {
             badge.style.display = 'flex';
             badge.textContent = fragments.join(' · ');
         }
+    }
+
+    private scheduleRetry() {
+        if (this.retryTimer || this.retryAttempts >= 3) return;
+        this.retryAttempts += 1;
+        this.retryTimer = window.setTimeout(() => {
+            this.retryTimer = null;
+            this.start();
+        }, this.retryDelayMs);
     }
 }
 

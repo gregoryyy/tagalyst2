@@ -1,0 +1,14 @@
+{
+  "fixture": "../../test-data/Thread3.html",
+  "url": "https://chatgpt.com/g/g-p-69230202d1888191953b2cd78cbdb39f-tagalyst2/c/6923021c-66f0-832d-bdec-b2184f14e304",
+  "userIds": [
+    "2d1b5195-9d3e-4ec6-91c0-25b61f9d7e07",
+    "86f100a8-15fa-4608-86ff-75d35228c6e7",
+    "2abde0f7-2dbe-4157-be97-9df90ea76e35"
+  ],
+  "assistantIds": [
+    "25758ec2-2f1c-4123-8b13-41a4b82812b6",
+    "72b10e53-cec0-42a2-b300-8c6faf38c866",
+    "78ea54e2-8034-437b-a7cb-7cc14a9055ed"
+  ]
+}

@@ -81,4 +81,16 @@ describe('FocusService', () => {
         focus.syncMode();
         expect(focus.isMessageFocused(noteMeta, el)).toBe(true);
     });
+
+    it('prefers adapter text when evaluating search', () => {
+        const el = document.createElement('div');
+        el.innerText = 'dom text';
+        const meta: any = { value: {}, adapter: { getText: () => 'adapter text', element: el } };
+        focus.setSearchQuery('adapter');
+        focus.syncMode();
+        expect(focus.isMessageFocused(meta, el)).toBe(true);
+        focus.setSearchQuery('dom');
+        focus.syncMode();
+        expect(focus.isMessageFocused(meta, el)).toBe(false);
+    });
 });

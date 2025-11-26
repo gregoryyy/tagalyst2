@@ -1,3 +1,6 @@
+/// <reference path="../utils.ts" />
+/// <reference path="../constants.ts" />
+/// <reference path="../../types/domain.d.ts" />
 /**
  * Default MessageAdapter implementation built around raw ChatGPT DOM nodes.
  */
@@ -57,6 +60,5 @@ class DomPairAdapter implements PairAdapter {
     }
 } // DomPairAdapter
 
-/**
- * Provides DOM traversal helpers abstracted behind the ThreadAdapter interface.
- */
+(globalThis as any).DomMessageAdapter = DomMessageAdapter;
+(globalThis as any).DomPairAdapter = DomPairAdapter;

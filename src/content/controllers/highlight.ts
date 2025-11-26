@@ -2,7 +2,11 @@
  * Handles CSS highlighter interactions, selection menus, and hover annotations.
  */
 class HighlightController {
-    constructor(private readonly storage: StorageService, private readonly overviewRuler: OverviewRulerController) { }
+    constructor(
+        private readonly storage: StorageService,
+        private readonly overviewRuler: OverviewRulerController,
+        private readonly requestRender: () => void = () => { },
+    ) { }
     private selectionMenu: HTMLElement | null = null;
     private selectionButton: HTMLButtonElement | null = null;
     private annotateButton: HTMLButtonElement | null = null;
@@ -57,7 +61,7 @@ class HighlightController {
         this.highlightMeta.clear();
         this.syncHighlightStyle();
         this.hideHoverTooltip();
-        this.overviewRuler.refreshMarkers();
+        this.requestRender();
     }
 
     /**
@@ -90,7 +94,7 @@ class HighlightController {
             this.highlightIdsByMessage.set(messageKey, ids);
         }
         this.syncHighlightStyle();
-        this.overviewRuler.refreshMarkers();
+        this.requestRender();
     }
 
     private clearMessageHighlights(messageKey: string) {
@@ -108,7 +112,7 @@ class HighlightController {
             this.highlightMeta.delete(id);
         }
         this.syncHighlightStyle();
-        this.overviewRuler.refreshMarkers();
+        this.requestRender();
     }
 
     /**

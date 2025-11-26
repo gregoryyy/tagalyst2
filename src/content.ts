@@ -12,6 +12,10 @@
 /// <reference path="./content/controllers/thread-metadata.ts" />
 /// <reference path="./content/controllers/sidebar-labels.ts" />
 /// <reference path="./content/controllers/project-list-labels.ts" />
+/// <reference path="./content/services/thread-renderer.ts" />
+/// <reference path="./content/services/transcript.ts" />
+/// <reference path="./content/adapters/registry.ts" />
+/// <reference path="./content/services/dom-watcher.ts" />
 
 /**
  * Tagalyst 2: ChatGPT DOM Tools — content script (MV3)
@@ -19,6 +23,40 @@
  * - Non-destructive overlays (no reparenting site nodes)
  * - Local persistence via chrome.storage
  */
+const BOOTSTRAP_DEBUG_FLAG = '__tagalystDebugBootstrap';
+const isBootstrapTimingEnabled = () => (globalThis as any)[BOOTSTRAP_DEBUG_FLAG] === true;
+const logBootstrapTiming = (label: string, startedAt: number, data?: Record<string, unknown>) => {
+    if (!isBootstrapTimingEnabled()) return;
+    const elapsed = Math.round(performance.now() - startedAt);
+    const parts: any[] = ['[tagalyst][bootstrap]', label, `+${elapsed}ms`];
+    if (data) parts.push(data);
+    console.info(...parts);
+};
+const BOOTSTRAP_NOTICE_ID = 'ext-bootstrap-error';
+const showBootstrapError = (message: string) => {
+    try {
+        document.getElementById(BOOTSTRAP_NOTICE_ID)?.remove();
+        const box = document.createElement('div');
+        box.id = BOOTSTRAP_NOTICE_ID;
+        box.setAttribute('role', 'alert');
+        box.textContent = message;
+        box.style.position = 'fixed';
+        box.style.top = '10px';
+        box.style.right = '10px';
+        box.style.zIndex = '2147483647';
+        box.style.background = 'rgba(187, 0, 0, 0.9)';
+        box.style.color = '#fff';
+        box.style.padding = '8px 12px';
+        box.style.borderRadius = '6px';
+        box.style.fontSize = '12px';
+        box.style.fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        box.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.25)';
+        box.style.pointerEvents = 'auto';
+        document.body?.appendChild(box);
+    } catch (err) {
+        console.error('Tagalyst bootstrap error', err);
+    }
+};
 
 const storageService = new StorageService();
 const pageClassifier = new PageClassifier();
@@ -26,21 +64,18 @@ const pageClassifier = new PageClassifier();
  * Manages extension configuration toggles and notifies listeners on change.
  */
 let activeThreadAdapter: ThreadAdapter | null = null;
+const adapterRegistry = new ThreadAdapterRegistry();
+adapterRegistry.register({
+    name: 'chatgpt-dom',
+    supports: (loc: Location) => /chatgpt\.com|chat\.openai\.com/i.test(loc.host || ''),
+    create: () => new ChatGptThreadAdapter(),
+});
 
 const messageMetaRegistry = new MessageMetaRegistry();
 
 type ActiveEditor = {
     message: HTMLElement;
     cleanup: () => void;
-};
-
-type PageControls = {
-    root: HTMLElement;
-    focusPrev: HTMLButtonElement | null;
-    focusNext: HTMLButtonElement | null;
-    collapseNonFocus: HTMLButtonElement | null;
-    expandFocus: HTMLButtonElement | null;
-    exportFocus: HTMLButtonElement | null;
 };
 
 /**
@@ -59,36 +94,51 @@ const focusService = new FocusService(configService);
  */
 const focusController = new FocusController(focusService, messageMetaRegistry);
 
+let threadRenderServiceRef: ThreadRenderService | null = null;
+const requestRender = () => { threadRenderServiceRef?.requestRender(); };
 /**
  * Manages the floating search/tag control panel at the top of the page.
  */
-const topPanelController = new TopPanelController(focusService, configService, focusController);
+const topPanelController = new TopPanelController(focusService, configService, focusController, requestRender);
 const overviewRulerController = new OverviewRulerController();
 focusController.attachSelectionSync(() => {
     topPanelController.syncSelectionUI();
     topPanelController.updateSearchResultCount();
-    if (configService.isOverviewEnabled()) {
-        overviewRulerController.refreshMarkers();
-    }
+    requestRender();
 });
 configService.onChange(cfg => {
     enforceFocusConstraints(cfg);
+    const container = threadDom.findTranscriptRoot();
+    const hasContainer = !!container;
+    const threadKey = Utils.getThreadKey();
+    const threadId = deriveThreadId();
+    if (cfg.searchEnabled || cfg.tagsEnabled) {
+        topPanelController.ensurePanels();
+    } else {
+        topPanelController.getElement()?.remove();
+        topPanelController.reset();
+    }
     topPanelController.updateConfigUI();
     overviewRulerController.setExpandable(!!cfg.overviewExpands);
-    if (!cfg.overviewEnabled) {
-        overviewRulerController.reset();
+    if (cfg.overviewEnabled && hasContainer && threadDom.enumerateMessages(container!).length) {
+        overviewRulerController.ensure(container!);
     } else {
-        overviewRulerController.refreshMarkers();
+        overviewRulerController.reset();
     }
     if (configService.isSidebarLabelsEnabled()) {
         sidebarLabelController.start();
     } else {
         sidebarLabelController.stop();
     }
+    if (cfg.navToolbarEnabled === false && container) {
+        document.getElementById('ext-page-controls')?.remove();
+        document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+    } else if (container) {
+        toolbarController.ensurePageControls(container, threadKey);
+    }
+    requestRender();
     const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-    const container = threadDom.findTranscriptRoot();
-    const threadId = deriveThreadId();
-    if (showMeta) {
+    if (showMeta && container) {
         threadMetadataController.ensure(container, threadId);
         threadMetadataService.read(threadId).then(meta => {
             threadMetadataController.render(threadId, meta);
@@ -96,6 +146,7 @@ configService.onChange(cfg => {
     } else {
         document.getElementById('ext-thread-meta')?.remove();
     }
+    requestRender();
 });
 
 const enforceFocusConstraints = (cfg: typeof contentDefaultConfig) => {
@@ -137,25 +188,58 @@ const projectListLabelController = new ProjectListLabelController(threadMetadata
 const exportController = new ExportController();
 
 class BootstrapOrchestrator {
-    private refreshRunning = false;
-    private refreshQueued = false;
     private threadAdapter: ThreadAdapter | null = null;
 
-    constructor(private readonly toolbar: ToolbarController, private readonly storage: StorageService) { }
+    constructor(
+        private readonly toolbar: ToolbarController,
+        private readonly storage: StorageService,
+        private readonly renderService: ThreadRenderService,
+    ) { }
 
     /**
      * Bootstraps the UI when a transcript is detected.
      */
     async run() {
+        const startedAt = performance.now();
+        const initialPath = location.pathname;
+        logBootstrapTiming('run:start', startedAt, { path: location.pathname });
         // Wait a moment for the app shell to mount
         await Utils.sleep(600);
-        await configService.load();
+        if (location.pathname !== initialPath) {
+            logBootstrapTiming('run:nav-abort', startedAt, { from: initialPath, to: location.pathname });
+            return;
+        }
+        logBootstrapTiming('config:load:start', startedAt);
+        try {
+            const cfg = await configService.load();
+            logBootstrapTiming('config:load:done', startedAt, { navToolbar: cfg?.navToolbarEnabled, overview: cfg?.overviewEnabled });
+        } catch (err) {
+            logBootstrapTiming('config:load:failed', startedAt, { error: (err as any)?.message || String(err) });
+            console.error('Tagalyst failed to load config', err);
+            showBootstrapError('Tagalyst failed to load settings. Reload the page or re-enable the extension.');
+            return;
+        }
+        if (location.pathname !== initialPath) {
+            logBootstrapTiming('run:nav-abort', startedAt, { from: initialPath, to: location.pathname });
+            return;
+        }
         this.teardownUI();
-        this.threadAdapter = new ChatGptThreadAdapter();
+        this.threadAdapter = adapterRegistry.getAdapterForLocation(location);
+        logBootstrapTiming('adapter:selected', startedAt, {
+            adapter: (this.threadAdapter as any)?.name || (this.threadAdapter as any)?.constructor?.name || 'none',
+        });
         activeThreadAdapter = this.threadAdapter;
-        const container = threadDom.findTranscriptRoot();
+        const container = await this.findTranscriptRootWithRetry();
+        logBootstrapTiming('transcript:root', startedAt, { found: !!container });
         const pageKind = pageClassifier.classify(location.pathname);
         if (pageKind !== 'thread' && pageKind !== 'project-thread') {
+            this.teardownUI();
+            this.threadAdapter?.disconnect();
+            activeThreadAdapter = null;
+            return;
+        }
+        if (!container) {
+            logBootstrapTiming('transcript:root:missing', startedAt);
             this.teardownUI();
             this.threadAdapter?.disconnect();
             activeThreadAdapter = null;
@@ -190,7 +274,6 @@ class BootstrapOrchestrator {
         } else {
             document.getElementById('ext-thread-meta')?.remove();
         }
-        this.toolbar.ensurePageControls(container, threadKey);
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
         highlightController.init();
@@ -202,111 +285,21 @@ class BootstrapOrchestrator {
             overviewRulerController.reset();
         }
 
-        const render = async () => {
-            if (this.refreshRunning) {
-                this.refreshQueued = true;
-                return;
-            }
-            this.refreshRunning = true;
-            try {
-                do {
-                    this.refreshQueued = false;
-                    const messageAdapters = this.resolveMessages(container);
-                    const pairAdapters = threadDom.buildPairAdaptersFromMessages(messageAdapters);
-                    const pairMap = this.buildPairMap(pairAdapters);
-                    const messageCount = messageAdapters.length;
-                    const promptCount = pairAdapters.length;
-                    const charCount = messageAdapters.reduce((sum, adapter) => {
-                        try {
-                            return sum + (adapter.getText()?.length || 0);
-                        } catch {
-                            return sum;
-                        }
-                    }, 0);
-                    const entries = messageAdapters.map(messageAdapter => ({
-                        adapter: messageAdapter,
-                        el: messageAdapter.element,
-                        key: messageAdapter.storageKey(threadKey),
-                        pairIndex: pairMap.get(messageAdapter) ?? null,
-                    }));
-                    await this.syncThreadMetadata(threadId, promptCount, charCount);
-                    if (!entries.length) break;
-                    const keys = entries.map(e => e.key);
-                    const store = await this.storage.read(keys);
-                    const tagCounts = new Map<string, number>();
-                    highlightController.resetAll();
-                    messageMetaRegistry.clear();
-                    for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-                        this.toolbar.injectToolbar(el, threadKey);
-                        this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-                        this.toolbar.updateMessageLength(messageAdapter);
-                        const value = store[key] || {};
-                        messageMetaRegistry.update(el, { key, value, pairIndex, adapter: messageAdapter });
-                        if (value && Array.isArray(value.tags)) {
-                            for (const t of value.tags) {
-                                if (!t) continue;
-                                tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
-                            }
-                        }
-                        this.toolbar.updateBadges(el, threadKey, value, messageAdapter);
-                    }
-                const sortedTags = Array.from(tagCounts.entries())
-                    .map(([tag, count]) => ({ tag, count }))
-                    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-                topPanelController.updateTagList(sortedTags);
-                focusController.refreshButtons();
-                if (configService.isOverviewEnabled() && entries.length) {
-                    overviewRulerController.update(container, entries);
-                } else {
-                    overviewRulerController.reset();
-                }
-                topPanelController.updateSearchResultCount();
-                } while (this.refreshQueued);
-            } finally {
-                this.refreshRunning = false;
-            }
-        };
+        if (configService.isNavToolbarEnabled()) {
+            this.toolbar.ensurePageControls(container, threadKey);
+        } else {
+            document.getElementById('ext-page-controls')?.remove();
+            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        }
 
-        renderScheduler.setRenderer(render);
-        await render();
+        this.renderService.setBootstrapStart(startedAt);
+        logBootstrapTiming('render:attach', startedAt, { threadId, threadKey });
+        this.renderService.attach({ container, threadId, threadKey, adapter: this.threadAdapter });
+        await this.renderService.renderNow();
         this.threadAdapter.observe(container, (records) => {
             if (!records.some(Utils.mutationTouchesExternal)) return;
-            renderScheduler.request(render);
+            this.renderService.requestRender();
         });
-    }
-
-    /**
-     * Resolves MessageAdapters for the container via thread adapters or defaults.
-     */
-    private resolveMessages(container: HTMLElement): MessageAdapter[] {
-        const threadAdapter = this.threadAdapter;
-        return (threadAdapter
-            ? threadAdapter.getMessages(container)
-            : ThreadDom.defaultEnumerateMessages(container).map(el => new DomMessageAdapter(el)));
-    }
-
-    /**
-     * Builds a lookup from MessageAdapter to pair index.
-     */
-    private buildPairMap(pairAdapters: PairAdapter[]): Map<MessageAdapter, number> {
-        const pairMap = new Map<MessageAdapter, number>();
-        pairAdapters.forEach((pair, idx) => {
-            pair.getMessages().forEach(msg => pairMap.set(msg, idx));
-        });
-        return pairMap;
-    }
-
-    /**
-     * Updates thread-level metadata (length) and re-renders the header UI.
-     */
-    private async syncThreadMetadata(threadId: string, promptCount: number, charCount: number) {
-        if (!threadId) return;
-        const desiredLength = typeof promptCount === 'number' && promptCount >= 0 ? promptCount : 0;
-        const desiredChars = typeof charCount === 'number' && charCount >= 0 ? charCount : 0;
-        await threadMetadataService.updateLength(threadId, desiredLength);
-        await threadMetadataService.updateChars(threadId, desiredChars);
-        const meta = await threadMetadataService.read(threadId);
-        threadMetadataController.render(threadId, meta);
     }
 
     /**
@@ -336,13 +329,26 @@ class BootstrapOrchestrator {
         overviewRulerController.reset();
         focusController.reset();
         this.threadAdapter?.disconnect();
+        this.renderService.reset();
         activeThreadAdapter = null;
+        domWatcher.watchContainer(null);
+    }
+
+    /**
+     * Attempts to find the transcript root with a short retry to handle late mounts.
+     */
+    private async findTranscriptRootWithRetry(): Promise<HTMLElement | null> {
+        const first = threadDom.findTranscriptRoot();
+        if (first) return first;
+        await Utils.sleep(250);
+        return threadDom.findTranscriptRoot();
     }
 } // BootstrapOrchestrator
 
 const threadDom = new ThreadDom(() => activeThreadAdapter);
-const highlightController = new HighlightController(storageService, overviewRulerController);
-const threadActions = new ThreadActions(threadDom, messageMetaRegistry);
+const highlightController = new HighlightController(storageService, overviewRulerController, requestRender);
+const threadActions = new ThreadActions(threadDom, messageMetaRegistry, requestRender);
+const transcriptService = new TranscriptService(threadDom);
 
 const toolbarController = new ToolbarController({
     focusService,
@@ -363,8 +369,44 @@ const keyboardController = new KeyboardController({
     storageService,
     messageMetaRegistry,
     topPanelController,
+    requestRender,
 });
-const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService);
+const threadRenderService = new ThreadRenderService(
+    renderScheduler,
+    threadDom,
+    transcriptService,
+    toolbarController,
+    highlightController,
+    overviewRulerController,
+    topPanelController,
+    focusController,
+    focusService,
+    configService,
+    storageService,
+    messageMetaRegistry,
+    threadMetadataService,
+    threadMetadataController,
+);
+threadRenderServiceRef = threadRenderService;
+const domWatcher = new DomWatcher({
+    onMutations: () => {
+        if (!threadRenderService.hasActiveContainer()) return;
+        requestRender();
+    },
+    onNav: () => handleSpaNavigation(),
+    onRootChange: (prev, next) => {
+        if (prev && prev !== next) {
+            threadRenderService.reset();
+            sidebarLabelController.stop();
+            projectListLabelController.stop();
+        }
+        if (next) {
+            sidebarLabelController.start();
+            projectListLabelController.start();
+        }
+    },
+});
+const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
 async function bootstrap(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
@@ -382,22 +424,44 @@ async function bootstrap(): Promise<void> {
     await bootstrapOrchestrator.run();
 }
 
-// Some pages use SPA routing; re-bootstrap on URL changes
-let lastHref = location.href;
-new MutationObserver(() => {
-    if (location.href !== lastHref) {
-        lastHref = location.href;
-       bootstrap();
+async function handleSpaNavigation(): Promise<void> {
+    const pageKind = pageClassifier.classify(location.pathname);
+    const isThreadPage = pageKind === 'thread' || pageKind === 'project-thread';
+    if (isThreadPage && activeThreadAdapter) {
+        const container = threadDom.findTranscriptRoot();
+        if (!container) {
+            await bootstrap();
+            return;
+        }
+        const threadKey = Utils.getThreadKey();
+        const threadId = deriveThreadId();
+        sidebarLabelController.start();
+        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+        if (showMeta) {
+            threadMetadataController.ensure(container, threadId);
+            threadMetadataService.read(threadId).then(meta => {
+                threadMetadataController.render(threadId, meta);
+            });
+        } else {
+            document.getElementById('ext-thread-meta')?.remove();
+        }
+        if (configService.isNavToolbarEnabled()) {
+            toolbarController.ensurePageControls(container, threadKey);
+        } else {
+            document.getElementById('ext-page-controls')?.remove();
+            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        }
+        topPanelController.ensurePanels();
+        threadRenderService.attach({ container, threadId, threadKey, adapter: activeThreadAdapter });
+        domWatcher.watchContainer(container);
+        await threadRenderService.renderNow();
+        return;
     }
-}).observe(document, { subtree: true, childList: true });
+    await bootstrap();
+}
 
-// Also poll URL changes in case SPA navigation doesn't trigger mutations
-setInterval(() => {
-    if (location.href !== lastHref) {
-        lastHref = location.href;
-        bootstrap();
-    }
-}, 800);
+// Some pages use SPA routing; re-bootstrap on URL changes
+domWatcher.watchUrl();
 
 // Surface a minimal pairing API for scripts / devtools.
 window.__tagalyst = Object.assign(window.__tagalyst || {}, {
@@ -412,7 +476,7 @@ window.__tagalyst = Object.assign(window.__tagalyst || {}, {
 }) as TagalystApi;
 
 // First boot
-bootstrap();
+handleSpaNavigation();
 
 if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
