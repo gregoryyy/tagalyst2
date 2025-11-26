@@ -439,11 +439,16 @@ async function handleSpaNavigation(): Promise<void> {
         } else {
             document.getElementById('ext-thread-meta')?.remove();
         }
-        toolbarController.ensurePageControls(container, threadKey);
+        if (configService.isNavToolbarEnabled()) {
+            toolbarController.ensurePageControls(container, threadKey);
+        } else {
+            document.getElementById('ext-page-controls')?.remove();
+            document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+        }
         topPanelController.ensurePanels();
         threadRenderService.attach({ container, threadId, threadKey, adapter: activeThreadAdapter });
-        await threadRenderService.renderNow();
         domWatcher.watchContainer(container);
+        await threadRenderService.renderNow();
         return;
     }
     await bootstrap();

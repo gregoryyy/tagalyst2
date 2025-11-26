@@ -141,3 +141,11 @@ Observation: Options writes to `chrome.storage.local` immediately and the conten
 ### Step 2.5 Docs — Live Update Flow
 - Flow: Options page writes merged config → Chrome fires `storage.onChanged` (area `local`) → content script `configService.apply` merges defaults and marks loaded → controllers respond (top panel ensure/remove, overview ensure/reset, nav toolbar ensure/remove, metadata ensure/remove) → render is requested.
 - QA toggle recipe: Open a thread, then in Options flip nav toolbar/overview/sidebar/meta/search/tags flags one at a time; expect toolbars/panels/overview/meta to appear/disappear within the same page session without reloading.
+
+## Step 3 Plan — Toolbar Visibility Load Order
+Goal: ensure message/global toolbars mount reliably and do not disappear during load or SPA nav.
+1. Reproduce: instrument logs around toolbar ensure/teardown; observe scenarios where toolbars miss (slow load, SPA nav, toggling nav toolbar).
+2. Guard injection order: only inject toolbars after config load and transcript root discovery; add idempotent ensure that removes stray duplicates and no-ops if already present.
+3. Handle SPA/nav: on root swaps, reset toolbar controller and re-ensure page controls + per-message toolbars once render service attaches.
+4. Add DOM ownership checks: ensure toolbar event handlers verify the target still belongs to the current container before acting; drop handlers on teardown.
+5. Tests/QA: jsdom test that toggles nav toolbar + reruns render to confirm toolbars mount once; integration smoke that navigates (simulated root change) and checks toolbars persist; manual check on slow-load page.
