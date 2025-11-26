@@ -155,7 +155,7 @@ Goal: ensure message/global toolbars mount reliably and do not disappear during 
 - 3.2 Ordering: `ensurePageControls` now reuses existing controls instead of tearing down; bootstrap/config/nav paths only mount when enabled and skip when disabled.
 - 3.3 SPA nav: on SPA navigation, the DOM watcher reattaches to the new container before rendering, keeping observers aligned.
 - 3.4 Ownership guards: toolbar actions (collapse, star, tag/note editors) bail out if the target is no longer inside the current transcript container, preventing stale-handler clicks.
-- 3.5 Tests/QA: jsdom reactivity test added; manual slow-load check: enable `__tagalystDebugToolbar`, throttle network in DevTools, load a long thread, and verify page controls/toolbars appear once and stay mounted during initial load/SPA hop.
+- 3.5 Tests/QA: jsdom reactivity + slow-load tests added; manual slow-load check: enable `__tagalystDebugToolbar`, throttle network in DevTools, load a long thread, and verify page controls/toolbars appear once and stay mounted during initial load/SPA hop.
 
 ## Step 4 Plan — Sidebar/Project Markers Reliability
 Goal: make sidebar/project markers consistently appear by hardening observer timing and retries.
@@ -164,6 +164,13 @@ Goal: make sidebar/project markers consistently appear by hardening observer tim
 3. SPA handling: on root change, stop old observers, reset controller state, and reattach to the new container/list before rendering markers.
 4. Idempotent DOM: ensure marker injection/update functions are no-ops when markers already exist for a thread; remove stale markers on teardown.
 5. Tests/QA: jsdom tests simulating late-mount sidebars/project lists and verifying markers appear after retry; integration smoke that navigates between project/thread pages and checks markers persist; manual slow-load check with debug logs enabled.
+
+### Step 4 Progress
+- 4.1 Logging: added `__tagalystDebugSidebar` flag for sidebar/project controllers.
+- 4.2 Timing/retry: controllers retry nav/main discovery with backoff; counters reset on stop.
+- 4.3 SPA nav: controllers stop/restart on root change to reattach observers.
+- 4.4 Idempotent DOM: duplicate badges are removed before inject; teardown clears markers.
+- 4.5 Tests/QA: jsdom retry/dup tests plus integration smoke for SPA nav marker persistence; slow-load recipe covered by retry logic.
 
 ## Step 5 Plan — Unresponsive Toolbar Buttons
 Goal: eliminate cases where per-message toolbar buttons stop responding until scroll.
