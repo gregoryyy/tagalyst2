@@ -397,6 +397,12 @@ const domWatcher = new DomWatcher({
     onRootChange: (prev, next) => {
         if (prev && prev !== next) {
             threadRenderService.reset();
+            sidebarLabelController.stop();
+            projectListLabelController.stop();
+        }
+        if (next) {
+            sidebarLabelController.start();
+            projectListLabelController.start();
         }
     },
 });
