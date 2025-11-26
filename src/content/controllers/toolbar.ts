@@ -21,14 +21,35 @@ class ToolbarController {
     private get threadActions() { return this.deps.threadActions; }
     private get highlighter() { return this.deps.highlightController; }
     private get overview() { return this.deps.overviewRulerController; }
+    private readonly debugFlag = '__tagalystDebugToolbar';
+    private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
+    private log(label: string, data?: Record<string, unknown>) {
+        if (!this.isDebugEnabled()) return;
+        const payload = data ? ['[tagalyst][toolbar]', label, data] : ['[tagalyst][toolbar]', label];
+        // eslint-disable-next-line no-console
+        console.info(...payload);
+    }
+    /**
+     * Ensures the target still belongs to the current transcript container.
+     */
+    private hasOwnership(target: HTMLElement | null): boolean {
+        if (!target) return false;
+        const container = this.threadDom.findTranscriptRoot();
+        if (!container || !container.isConnected) return false;
+        return container.contains(target);
+    }
 
 
     /**
      * Creates the page-level navigation/collapse/export controls.
      */
     ensurePageControls(container: HTMLElement, threadKey: string) {
+        this.log('page-controls:ensure', { threadKey });
         const existing = document.getElementById('ext-page-controls');
-        if (existing) existing.remove();
+        if (existing) {
+            this.log('page-controls:reuse', { threadKey });
+            return existing;
+        }
         const box = document.createElement('div');
         box.id = 'ext-page-controls';
         Utils.markExtNode(box);
@@ -134,7 +155,7 @@ class ToolbarController {
 
     private scrollAdjacentMessage(delta: number) {
         const container = this.threadDom.findTranscriptRoot();
-        if (!container) return;
+        if (!container || !container.isConnected) return;
         const nodes = this.threadDom.getNavigationNodes(container);
         if (!nodes.length) return;
         const currentIdx = this.findClosestMessageIndex(nodes);
@@ -173,12 +194,15 @@ class ToolbarController {
      * Injects (or refreshes) a per-message toolbar with actions and badges.
      */
     injectToolbar(el: HTMLElement, threadKey: string) {
+        this.log('toolbar:inject', { threadKey, hasExisting: !!el.querySelector('.ext-toolbar') });
         let toolbar = el.querySelector<HTMLElement>('.ext-toolbar');
         if (toolbar) {
             if (toolbar.dataset.threadKey !== threadKey) {
+                this.log('toolbar:stale-remove', { prevKey: toolbar.dataset.threadKey, nextKey: threadKey });
                 toolbar.closest('.ext-toolbar-row')?.remove();
                 toolbar = null;
             } else {
+                this.log('toolbar:reuse', { threadKey });
                 this.threadActions.updateCollapseVisibility(el);
                 return;
             }
@@ -205,10 +229,15 @@ class ToolbarController {
         const noteBtn = wrap.querySelector<HTMLButtonElement>('.ext-note');
 
         if (collapseBtn) {
-            collapseBtn.onclick = () => this.threadActions.collapse(el, !el.classList.contains('ext-collapsed'), false);
+            collapseBtn.onclick = () => {
+                if (!this.hasOwnership(el)) return;
+                this.threadActions.collapse(el, !el.classList.contains('ext-collapsed'), false);
+                this.threadActions.syncCollapseButton(el);
+            };
         }
         if (focusBtn) {
             focusBtn.onclick = async () => {
+                if (!this.hasOwnership(el)) return;
                 if (this.focus.getMode() !== FOCUS_MODES.STARS) return;
                 const adapter = messageMetaRegistry.resolveAdapter(el);
                 const cur = await this.storage.readMessage(threadKey, adapter);
@@ -219,8 +248,8 @@ class ToolbarController {
                 this.overview.refreshMarkers();
             };
         }
-        if (tagBtn) tagBtn.onclick = () => this.editor.openTagEditor(el, threadKey);
-        if (noteBtn) noteBtn.onclick = () => this.editor.openNoteEditor(el, threadKey);
+        if (tagBtn) tagBtn.onclick = () => { if (this.hasOwnership(el)) this.editor.openTagEditor(el, threadKey); };
+        if (noteBtn) noteBtn.onclick = () => { if (this.hasOwnership(el)) this.editor.openNoteEditor(el, threadKey); };
 
         wrap.dataset.threadKey = threadKey;
         el.prepend(row);
@@ -331,6 +360,8 @@ class ToolbarController {
         focusController.updateMessageButton(el, meta);
     }
 } // ToolbarController
+
+(globalThis as any).ToolbarController = ToolbarController;
 
 
 /**

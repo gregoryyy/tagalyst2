@@ -98,6 +98,7 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
    - Plan: add a new option in Options UI to enable/disable the nav toolbar; persist in config and reactively show/hide without reload.
    - Steps: update config schema/defaults, options page, and TopPanel/Toolbar controllers to respect the toggle; ensure render service detaches/tears down toolbar when disabled.
    - Tests: options controller round-trip for the new flag and jsdom check that toolbar rows/page controls are mounted/unmounted when toggled.
+   - Status: implemented nav toggle; options saves; render/UI honors enable/disable and removes toolbars when off.
 
 ## Fixes and Hardening (Issue #31)
 1. Stabilize bootstrap/render: audit `BootstrapOrchestrator` timing, ensure controllers mount after config load, and add logging/guards to catch render errors.
@@ -105,3 +106,76 @@ Architecture and flow are documented in `doc/ARCH.md`; this section focuses on q
 3. Fix toolbar visibility load order so message/global toolbars render reliably.
 4. Fix sidebar/project marker visibility by adjusting observer timing and retry strategy.
 5. Fix unresponsive message toolbar buttons by hardening event wiring and DOM ownership checks.
+6. Add regression checks for highlights/metadata/tagging to prevent selector drift.
+
+# Fixes and Hardening
+
+This last chapter can be complex, therefore let's give it its own chapter
+
+## Step 1 Plan — Bootstrap/Render Stabilization
+1. Instrument the bootstrap timeline: `configService.load` start/end, adapter selection, transcript root discovery, render attach, first render. Use guarded `console.info` with elapsed timings so noisy logs can be toggled.
+2. Gate all controller mounting on a loaded config snapshot; fail fast if config load rejects and surface a lightweight banner/log so we do not partially mount.
+3. Clarify the sequence inside `BootstrapOrchestrator.run`: teardown → adapter selection → container discovery (with retry if null) → config-aware UI mount (top panel, toolbars, overview) → render service attach → dom watcher attach. Add an early-return guard if SPA nav changed the path during the delay.
+4. Wrap render entrypoints (`renderNow`/scheduler callback) in try/catch with a single error reporter that tags the current thread id/key; ensure we reset `running/queued` flags on error to avoid render deadlocks and optionally schedule a safe retry.
+5. Harden DOM watcher/nav handling: ignore mutation batches while no container is attached; on root change, detach render/watchers before reattaching to the new root.
+6. Add verification notes: (a) log timeline on first load and on SPA hop, (b) confirm toolbar/top panel/overview appear on first render after toggling config, (c) verify no uncaught errors in console during rapid nav + search typing.
+
+### Step 1.6 Verification Notes
+- Enable timing logs: set `window.__tagalystDebugBootstrap = true` in DevTools before reload; expect `[tagalyst][bootstrap]` lines for `run:start`, `config:load:*`, `adapter:selected`, `transcript:root`, `render:attach`, and `render:first` on initial load and after SPA navigation.
+- Toggle config flags: via Options, flip nav toolbar/overview toggles, then reload a thread page; verify toolbar/top panel/overview mount on the first render after config loads (no extra manual refresh).
+- Stress nav/search: rapidly switch chats (SPA) while typing in search; ensure no uncaught console errors and UI stays responsive. If errors occur, note thread id/path from log payloads.
+
+## Step 2 Plan — Options Reactivity
+Observation: Options writes to `chrome.storage.local` immediately and the content script already listens via `chrome.storage.onChanged → configService.apply`, so most toggles propagate without reload. Risks: partial writes that skip defaults, controllers that only mount on bootstrap, and stale UI when toggles flip quickly.
+1. Verify live propagation: with a thread open, flip nav toolbar/overview/meta toolbar/sidebar labels/search/tags in Options; confirm content reacts without reload (toolbars/overview/panels appear/disappear, focus constraints enforced).
+2. Harden `ConfigService.apply`: ensure it always merges defaults, tolerates being called before `load()`, and triggers necessary side effects (enforce focus constraints, remove toolbars when disabled) even for partial updates.
+3. Force UI refresh on config change: after apply, re-run controller ensure/teardown paths (top panel, toolbars, overview, metadata) and schedule render; keep DOM operations idempotent to avoid duplicates.
+4. Add regression tests: jsdom test to simulate `chrome.storage.onChanged` while a thread is mounted, asserting nav toolbar/overview/top panel state updates immediately; integration smoke to flip Options flags and observe DOM changes without page reload.
+5. Document the live-update flow in `doc/DEV.md`: Options writes → storage change event → `ConfigService.apply` → controller updates + render; include a QA note on toggling flags live.
+
+### Step 2.1 Verification — Are Options Already Reactive?
+- Current behavior: Options toggles write immediately to `chrome.storage.local`; content script listens via `chrome.storage.onChanged` and calls `configService.apply`, which already merges defaults and triggers controller updates/render. In practice, nav toolbar/overview/sidebar/meta panels respond without a page reload.
+- Gap to address in later steps: Options `saveConfig` writes the raw partial, so a single toggle can overwrite other settings with defaults; fix by merging with the stored snapshot before writing (tracked in Step 2.2).
+- QA note: Keep a thread open, flip nav toolbar/overview/sidebar/meta toggles, and observe the UI updating live (no manual reload needed). This confirms the baseline reactivity path.
+
+### Step 2.5 Docs — Live Update Flow
+- Flow: Options page writes merged config → Chrome fires `storage.onChanged` (area `local`) → content script `configService.apply` merges defaults and marks loaded → controllers respond (top panel ensure/remove, overview ensure/reset, nav toolbar ensure/remove, metadata ensure/remove) → render is requested.
+- QA toggle recipe: Open a thread, then in Options flip nav toolbar/overview/sidebar/meta/search/tags flags one at a time; expect toolbars/panels/overview/meta to appear/disappear within the same page session without reloading.
+
+## Step 3 Plan — Toolbar Visibility Load Order
+Goal: ensure message/global toolbars mount reliably and do not disappear during load or SPA nav.
+1. Reproduce: instrument logs around toolbar ensure/teardown; observe scenarios where toolbars miss (slow load, SPA nav, toggling nav toolbar).
+2. Guard injection order: only inject toolbars after config load and transcript root discovery; add idempotent ensure that removes stray duplicates and no-ops if already present.
+3. Handle SPA/nav: on root swaps, reset toolbar controller and re-ensure page controls + per-message toolbars once render service attaches.
+4. Add DOM ownership checks: ensure toolbar event handlers verify the target still belongs to the current container before acting; drop handlers on teardown.
+5. Tests/QA: jsdom test that toggles nav toolbar + reruns render to confirm toolbars mount once; integration smoke that navigates (simulated root change) and checks toolbars persist; manual check on slow-load page.
+
+### Step 3 Progress
+- 3.1 Logging: added `__tagalystDebugToolbar` flag + lifecycle logs for page controls/toolbar inject/reuse/stale removal.
+- 3.2 Ordering: `ensurePageControls` now reuses existing controls instead of tearing down; bootstrap/config/nav paths only mount when enabled and skip when disabled.
+- 3.3 SPA nav: on SPA navigation, the DOM watcher reattaches to the new container before rendering, keeping observers aligned.
+- 3.4 Ownership guards: toolbar actions (collapse, star, tag/note editors) bail out if the target is no longer inside the current transcript container, preventing stale-handler clicks.
+- 3.5 Tests/QA: jsdom reactivity + slow-load tests added; manual slow-load check: enable `__tagalystDebugToolbar`, throttle network in DevTools, load a long thread, and verify page controls/toolbars appear once and stay mounted during initial load/SPA hop.
+
+## Step 4 Plan — Sidebar/Project Markers Reliability
+Goal: make sidebar/project markers consistently appear by hardening observer timing and retries.
+1. Reproduce and instrument: add debug flag to log sidebar/project marker ensure/teardown and observer triggers; capture when markers are missing on slow loads or SPA nav.
+2. Observer timing: ensure sidebar/project controllers start only after config load and transcript root detection; add a short retry/backoff if container or list nodes are missing.
+3. SPA handling: on root change, stop old observers, reset controller state, and reattach to the new container/list before rendering markers.
+4. Idempotent DOM: ensure marker injection/update functions are no-ops when markers already exist for a thread; remove stale markers on teardown.
+5. Tests/QA: jsdom tests simulating late-mount sidebars/project lists and verifying markers appear after retry; integration smoke that navigates between project/thread pages and checks markers persist; manual slow-load check with debug logs enabled.
+
+### Step 4 Progress
+- 4.1 Logging: added `__tagalystDebugSidebar` flag for sidebar/project controllers.
+- 4.2 Timing/retry: controllers retry nav/main discovery with backoff; counters reset on stop.
+- 4.3 SPA nav: controllers stop/restart on root change to reattach observers.
+- 4.4 Idempotent DOM: duplicate badges are removed before inject; teardown clears markers.
+- 4.5 Tests/QA: jsdom retry/dup tests plus integration smoke for SPA nav marker persistence; slow-load recipe covered by retry logic.
+
+## Step 5 Plan — Unresponsive Toolbar Buttons
+Goal: eliminate cases where per-message toolbar buttons stop responding until scroll.
+1. Reproduce/log: enable `__tagalystDebugToolbar`, click focus/star/collapse/tag buttons rapidly and after SPA nav; capture when clicks are ignored.
+2. Event wiring audit: ensure handlers bail if not connected but always rebind after inject; remove any passive/once flags that prevent repeated clicks.
+3. Hit-target/containment: verify toolbar row isn’t covered by overlays and isn’t detached; consider setting `pointer-events:auto` on toolbar and `z-index` guard if needed.
+4. Sync state: after click, force toolbar badge/UI refresh (focusController update, collapse visibility) to reflect the action immediately.
+5. Tests/QA: jsdom test that clicks focus/collapse twice in a row without scrolling; integration/manual check with debug flag on SPA nav and while editing tags/notes to ensure buttons stay responsive.

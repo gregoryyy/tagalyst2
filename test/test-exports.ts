@@ -51,6 +51,7 @@ export const DomWatcher = globals.DomWatcher;
 export const FakeThreadAdapter = globals.FakeThreadAdapter;
 export const FakeMessageAdapter = globals.FakeMessageAdapter;
 export const ThreadRenderService = globals.ThreadRenderService;
+export const ToolbarController = globals.ToolbarController;
 export const {
     sleep,
     hashString,

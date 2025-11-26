@@ -51,8 +51,32 @@ describe('OptionsController', () => {
         const searchEnable = document.getElementById('search-enable') as HTMLInputElement;
         searchEnable.checked = !searchEnable.checked;
         searchEnable.dispatchEvent(new Event('change'));
+        await new Promise(resolve => setTimeout(resolve, 0));
         const data = await new Promise(resolve => chrome.storage.local.get([TAGALYST_CONFIG_STORAGE_KEY], resolve as any));
         expect((data as any)[TAGALYST_CONFIG_STORAGE_KEY].searchEnabled).toBe(searchEnable.checked);
+    });
+
+    it('merges updates without dropping other flags', async () => {
+        // Rebuild with a preloaded non-default config
+        document.body.innerHTML = '';
+        chrome.storage.local.clear(() => undefined);
+        await new Promise(resolve => chrome.storage.local.set({
+            [TAGALYST_CONFIG_STORAGE_KEY]: { ...TAGALYST_DEFAULT_CONFIG, tagsEnabled: false },
+        }, () => resolve(null)));
+        buildDom();
+        const Controller = getController();
+        const controller = new Controller();
+        jest.spyOn(window, 'getComputedStyle').mockReturnValue({ font: '16px Arial' } as any);
+        await controller.init();
+
+        const searchEnable = document.getElementById('search-enable') as HTMLInputElement;
+        searchEnable.checked = !searchEnable.checked;
+        searchEnable.dispatchEvent(new Event('change'));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const data = await new Promise(resolve => chrome.storage.local.get([TAGALYST_CONFIG_STORAGE_KEY], resolve as any));
+        const stored = (data as any)[TAGALYST_CONFIG_STORAGE_KEY];
+        expect(stored.searchEnabled).toBe(searchEnable.checked);
+        expect(stored.tagsEnabled).toBe(false);
     });
 
     it('renders storage usage', async () => {

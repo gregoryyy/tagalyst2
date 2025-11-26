@@ -4,7 +4,7 @@
 type DomWatcherHandlers = {
     onMutations: () => void;
     onNav: () => void;
-    onRootChange?: (next: HTMLElement | null) => void;
+    onRootChange?: (prev: HTMLElement | null, next: HTMLElement | null) => void;
 };
 
 /**
@@ -23,12 +23,14 @@ class DomWatcher {
      */
     watchContainer(container: HTMLElement | null) {
         this.stopMutationObserver();
+        const prev = this.currentRoot;
         if (this.currentRoot !== container) {
+            this.handlers.onRootChange?.(prev, container);
             this.currentRoot = container;
-            this.handlers.onRootChange?.(container);
         }
         if (!container) return;
         this.mutationObserver = new MutationObserver(records => {
+            if (!this.currentRoot) return;
             if (records.some(Utils.mutationTouchesExternal)) {
                 this.handlers.onMutations();
             }

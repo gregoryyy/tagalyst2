@@ -20,7 +20,10 @@ function getConfig(): Promise<TagalystConfig> {
  * Persists config overrides for the Search/Tag panels.
  */
 function saveConfig(partial: Partial<TagalystConfig>): Promise<void> {
-    return tagalystStorage.write({ [TAGALYST_CONFIG_STORAGE_KEY]: partial });
+    return getConfig().then(current => {
+        const merged = { ...current, ...(partial || {}) };
+        return tagalystStorage.write({ [TAGALYST_CONFIG_STORAGE_KEY]: merged });
+    });
 }
 
 /**
