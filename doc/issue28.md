@@ -164,3 +164,11 @@ Goal: make sidebar/project markers consistently appear by hardening observer tim
 3. SPA handling: on root change, stop old observers, reset controller state, and reattach to the new container/list before rendering markers.
 4. Idempotent DOM: ensure marker injection/update functions are no-ops when markers already exist for a thread; remove stale markers on teardown.
 5. Tests/QA: jsdom tests simulating late-mount sidebars/project lists and verifying markers appear after retry; integration smoke that navigates between project/thread pages and checks markers persist; manual slow-load check with debug logs enabled.
+
+## Step 5 Plan — Unresponsive Toolbar Buttons
+Goal: eliminate cases where per-message toolbar buttons stop responding until scroll.
+1. Reproduce/log: enable `__tagalystDebugToolbar`, click focus/star/collapse/tag buttons rapidly and after SPA nav; capture when clicks are ignored.
+2. Event wiring audit: ensure handlers bail if not connected but always rebind after inject; remove any passive/once flags that prevent repeated clicks.
+3. Hit-target/containment: verify toolbar row isn’t covered by overlays and isn’t detached; consider setting `pointer-events:auto` on toolbar and `z-index` guard if needed.
+4. Sync state: after click, force toolbar badge/UI refresh (focusController update, collapse visibility) to reflect the action immediately.
+5. Tests/QA: jsdom test that clicks focus/collapse twice in a row without scrolling; integration/manual check with debug flag on SPA nav and while editing tags/notes to ensure buttons stay responsive.

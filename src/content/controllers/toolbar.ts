@@ -232,6 +232,7 @@ class ToolbarController {
             collapseBtn.onclick = () => {
                 if (!this.hasOwnership(el)) return;
                 this.threadActions.collapse(el, !el.classList.contains('ext-collapsed'), false);
+                this.threadActions.syncCollapseButton(el);
             };
         }
         if (focusBtn) {

@@ -89,7 +89,7 @@ describe('Toolbar reactivity', () => {
         expect(document.querySelectorAll('#ext-page-controls').length).toBe(1);
     });
 
-    it('injects toolbars without duplicates across renders', async () => {
+    it('injects toolbars without duplicates and keeps buttons responsive across renders', async () => {
         const container = document.createElement('div');
         container.id = 'thread-root';
         document.body.appendChild(container);
@@ -101,5 +101,11 @@ describe('Toolbar reactivity', () => {
         deps.toolbar.injectToolbar(msg, 'thread-1');
         expect(msg.querySelectorAll('.ext-toolbar').length).toBe(1);
         expect(msg.querySelectorAll('.ext-toolbar-row').length).toBe(1);
+
+        const focusBtn = msg.querySelector<HTMLButtonElement>('.ext-focus-button');
+        expect(focusBtn).not.toBeNull();
+        await focusBtn?.onclick?.(new Event('click') as any);
+        await focusBtn?.onclick?.(new Event('click') as any);
+        expect(deps.storageService.writeMessage).toHaveBeenCalled();
     });
 });
