@@ -360,6 +360,8 @@ class ToolbarController {
     }
 } // ToolbarController
 
+(globalThis as any).ToolbarController = ToolbarController;
+
 
 /**
  * Provides DOM mutations for collapsing/expanding message rows.

@@ -149,3 +149,10 @@ Goal: ensure message/global toolbars mount reliably and do not disappear during 
 3. Handle SPA/nav: on root swaps, reset toolbar controller and re-ensure page controls + per-message toolbars once render service attaches.
 4. Add DOM ownership checks: ensure toolbar event handlers verify the target still belongs to the current container before acting; drop handlers on teardown.
 5. Tests/QA: jsdom test that toggles nav toolbar + reruns render to confirm toolbars mount once; integration smoke that navigates (simulated root change) and checks toolbars persist; manual check on slow-load page.
+
+### Step 3 Progress
+- 3.1 Logging: added `__tagalystDebugToolbar` flag + lifecycle logs for page controls/toolbar inject/reuse/stale removal.
+- 3.2 Ordering: `ensurePageControls` now reuses existing controls instead of tearing down; bootstrap/config/nav paths only mount when enabled and skip when disabled.
+- 3.3 SPA nav: on SPA navigation, the DOM watcher reattaches to the new container before rendering, keeping observers aligned.
+- 3.4 Ownership guards: toolbar actions (collapse, star, tag/note editors) bail out if the target is no longer inside the current transcript container, preventing stale-handler clicks.
+- 3.5 Tests/QA: pending — add jsdom test to toggle nav toolbar and assert single mount; add integration smoke for simulated root change and manual slow-load check.
