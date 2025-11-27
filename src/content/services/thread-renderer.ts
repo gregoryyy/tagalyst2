@@ -58,6 +58,15 @@ class ThreadRenderService {
         private readonly threadMetadataController: ThreadMetadataController,
     ) { }
 
+    private shouldLogPerf() {
+        return !!(this.configService.isPerfDebugEnabled && this.configService.isPerfDebugEnabled());
+    }
+
+    private logPerf(label: string, data: Record<string, unknown>) {
+        if (!this.shouldLogPerf()) return;
+        console.info('[tagalyst][perf]', label, data);
+    }
+
     /**
     * Establishes the current render context and primes the scheduler.
     */
@@ -149,8 +158,28 @@ class ThreadRenderService {
             logRenderTiming('render:first', this.bootstrapStartedAt, { threadId: this.threadId, threadKey: this.threadKey });
             this.loggedFirstRender = true;
         }
+        const perfEnabled = this.shouldLogPerf();
+        const perfBuckets: Record<string, number> = {};
+        const addPerf = perfEnabled ? (label: string, deltaMs: number) => {
+            perfBuckets[label] = (perfBuckets[label] || 0) + deltaMs;
+        } : (_label: string, _delta: number) => { /* noop */ };
+        const measureSync = <T>(label: string, fn: () => T): T => {
+            if (!perfEnabled) return fn();
+            const started = performance.now();
+            const result = fn();
+            addPerf(label, performance.now() - started);
+            return result;
+        };
+        const measureAsync = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+            if (!perfEnabled) return fn();
+            const started = performance.now();
+            const result = await fn();
+            addPerf(label, performance.now() - started);
+            return result;
+        };
+        const renderStarted = perfEnabled ? performance.now() : 0;
         try {
-            const transcript = this.transcriptService.buildTranscript(this.container, this.threadAdapter);
+            const transcript = measureSync('transcript', () => this.transcriptService.buildTranscript(this.container!, this.threadAdapter));
             const messageCount = transcript.messages.length;
             const promptCount = transcript.pairs.length;
             const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
@@ -161,10 +190,10 @@ class ThreadRenderService {
                 key: message.adapter.storageKey(this.threadKey!),
                 pairIndex: transcript.pairIndexByMessage.get(message.adapter) ?? null,
             }));
-            await this.syncThreadMetadata(promptCount, charCount);
+            await measureAsync('metadata', () => this.syncThreadMetadata(promptCount, charCount));
             if (!entries.length) return;
             const keys = entries.map(e => e.key);
-            const store = await this.storageService.read(keys);
+            const store = await measureAsync('storage', () => this.storageService.read(keys));
             const tagCounts = new Map<string, number>();
             this.highlightController.resetAll();
             this.messageMetaRegistry.clear();
@@ -173,25 +202,31 @@ class ThreadRenderService {
                 document.getElementById('ext-page-controls')?.remove();
                 document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
             }
+            let toolbarOps = 0;
+            let highlightOps = 0;
             for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
                 if (navEnabled) {
-                    this.toolbar.injectToolbar(el, this.threadKey!);
-                    this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
-                    this.toolbar.updateMessageLength(messageAdapter);
+                    toolbarOps += 1;
+                    measureSync('toolbar', () => {
+                        this.toolbar.injectToolbar(el, this.threadKey!);
+                        this.toolbar.updatePairNumber(messageAdapter, typeof pairIndex === 'number' ? pairIndex : null);
+                        this.toolbar.updateMessageLength(messageAdapter);
+                    });
                 }
                 const value = store[key] || {};
                 const meta = { key, value, pairIndex, adapter: messageAdapter };
                 this.messageMetaRegistry.update(el, meta);
                 const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
                 el.classList.toggle('ext-search-hit', isSearchHit);
-                this.applySearchHighlight(el, isSearchHit ? searchQuery : '');
+                if (isSearchHit) highlightOps += 1;
+                measureSync('searchHighlight', () => this.applySearchHighlight(el, isSearchHit ? searchQuery : ''));
                 if (value && Array.isArray(value.tags)) {
                     for (const t of value.tags) {
                         if (!t) continue;
                         tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
                     }
                 }
-                this.toolbar.updateBadges(el, this.threadKey!, value, messageAdapter);
+                measureSync('toolbarBadges', () => this.toolbar.updateBadges(el, this.threadKey!, value, messageAdapter));
             }
             const sortedTags = Array.from(tagCounts.entries())
                 .map(([tag, count]) => ({ tag, count }))
@@ -199,13 +234,37 @@ class ThreadRenderService {
             this.topPanelController.updateTagList(sortedTags);
             this.focusController.refreshButtons();
             this.overviewRulerController.setExpandable(this.configService.doesOverviewExpand());
+            let overviewMounted = !!document.getElementById('ext-overview-ruler');
+            const overviewStart = perfEnabled ? performance.now() : 0;
             if (this.configService.isOverviewEnabled() && entries.length) {
-                this.overviewRulerController.update(this.container, entries);
+                measureSync('overviewEnsure', () => this.overviewRulerController.ensure(this.container!));
+                measureSync('overviewLayout', () => this.overviewRulerController.update(this.container!, entries));
             } else {
                 this.overviewRulerController.reset();
             }
+            if (perfEnabled) {
+                addPerf('overview', performance.now() - overviewStart);
+                overviewMounted = !!document.getElementById('ext-overview-ruler');
+            }
             this.topPanelController.updateSearchResultCount();
             this.currentSearchQuery = searchQuery;
+            if (perfEnabled) {
+                addPerf('renderTotal', performance.now() - renderStarted);
+                this.logPerf('render', {
+                    threadKey: this.threadKey,
+                    threadId: this.threadId,
+                    generation: this.generation,
+                    messages: messageCount,
+                    prompts: promptCount,
+                    chars: charCount,
+                    navEnabled,
+                    search: searchQuery ? searchQuery.length : 0,
+                    toolbarOps,
+                    highlightOps,
+                    overviewMounted,
+                    ...Object.fromEntries(Object.entries(perfBuckets).map(([k, v]) => [k, Math.round(v)])),
+                });
+            }
         } catch (err) {
             this.reportRenderError(err, 'renderOnce');
             this.queued = false;

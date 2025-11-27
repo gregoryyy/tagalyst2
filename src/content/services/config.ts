@@ -113,6 +113,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when perf debug logging is enabled.
+     */
+    isPerfDebugEnabled() {
+        return config.debugPerf === true;
+    }
+
+    /**
      * Notifies subscribed listeners about a config change.
      */
     private notify() {

@@ -17,6 +17,11 @@ The human engineer acts as:
 - planner (defining and adjusting goals/steps),
 - systems integrator (wiring, dependencies, release readiness).
 
+Compare this to a compiler:
+- Human understands need, writes requirements and design --> same, assisted by machine knowledge
+- Human writes code, defining the behavior of the application --> LLM writes code, human checks whether it corresponds to the desired design and behavior
+- Compiler transforms to machine logic
+
 ## Hypothesis
 The difference between vibe coding and AI-assisted engineering is the human-led understanding of objectives, engineering methods, constraints and context.
 
