@@ -40,6 +40,12 @@ class ThreadRenderService {
     private bootstrapStartedAt: number | null = null;
     private loggedFirstRender = false;
     private retryScheduled = false;
+    private lastPerfLogKey = '';
+    private lastPerfLogAt = 0;
+    private suppressedPerfRepeats = 0;
+    private suppressedPerfSkips = 0;
+    private readonly perfRepeatFlushMs = 5000;
+    private readonly perfLogMinIntervalMs = 2000;
 
     constructor(
         private readonly scheduler: RenderScheduler,
@@ -64,7 +70,41 @@ class ThreadRenderService {
 
     private logPerf(label: string, data: Record<string, unknown>) {
         if (!this.shouldLogPerf()) return;
-        console.info('[tagalyst][perf]', label, data);
+        const now = Date.now();
+        const key = `${label}:${JSON.stringify(data)}`;
+        const deltaMs = this.lastPerfLogAt ? now - this.lastPerfLogAt : 0;
+        const basePayload: Record<string, unknown> = {
+            timestamp: new Date(now).toISOString(),
+            deltaMs,
+            ...data,
+        };
+
+        // Throttle new payloads if they arrive too frequently; aggregate skips.
+        const tooSoon = this.lastPerfLogAt > 0 && deltaMs < this.perfLogMinIntervalMs;
+        if (tooSoon && key !== this.lastPerfLogKey) {
+            this.suppressedPerfSkips += 1;
+            return;
+        }
+
+        // If nothing has changed, aggregate repeats and optionally flush a summary.
+        if (key === this.lastPerfLogKey) {
+            this.suppressedPerfRepeats += 1;
+            if (deltaMs < this.perfRepeatFlushMs) return;
+            console.info('[tagalyst][perf]', label, { ...basePayload, repeats: this.suppressedPerfRepeats, repeatSummary: true });
+            this.suppressedPerfRepeats = 0;
+            this.suppressedPerfSkips = 0;
+            this.lastPerfLogAt = now;
+            return;
+        }
+
+        // If payload changed, include how many repeats were suppressed for the prior payload.
+        const repeats = this.suppressedPerfRepeats;
+        const throttled = this.suppressedPerfSkips;
+        this.suppressedPerfRepeats = 0;
+        this.suppressedPerfSkips = 0;
+        this.lastPerfLogKey = key;
+        this.lastPerfLogAt = now;
+        console.info('[tagalyst][perf]', label, { ...basePayload, repeats, throttled });
     }
 
     /**
@@ -266,6 +306,11 @@ class ThreadRenderService {
                 });
             }
         } catch (err) {
+            if (this.isExtensionContextInvalid(err)) {
+                console.info('[tagalyst][render] stopped: extension context invalidated');
+                this.reset();
+                return;
+            }
             this.reportRenderError(err, 'renderOnce');
             this.queued = false;
             this.scheduleRetry();
@@ -332,6 +377,11 @@ class ThreadRenderService {
             }
             textNode.parentNode?.replaceChild(frag, textNode);
         });
+    }
+
+    private isExtensionContextInvalid(err: any) {
+        const msg = (err as any)?.message ? String((err as any).message) : '';
+        return msg.toLowerCase().includes('extension context invalidated');
     }
 
     /**
