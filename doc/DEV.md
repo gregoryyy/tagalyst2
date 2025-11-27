@@ -17,10 +17,11 @@ The human engineer acts as:
 - planner (defining and adjusting goals/steps),
 - systems integrator (wiring, dependencies, release readiness).
 
-Compare this to a compiler:
-- Human understands need, writes requirements and design --> same, assisted by machine knowledge
-- Human writes code, defining the behavior of the application --> LLM writes code, human checks whether it corresponds to the desired design and behavior
-- Compiler transforms to machine logic
+## Natural-language compiler
+
+In a way, an LLM becomes a compiler for natural language, extending the classic toolchain toward the level where software concepts are conceived: A traditional compiler automates only the final step from a rigorously structured programming language to machine code. With LLMs, automation moves higher up the abstraction ladder: Specifications now come from humans and from domain-specific language that may be conceptual rather than technical. The human architect defines intent, constraints, and UX; the LLM—acting as encyclopedic assistant, reviewer, and junior developer—translates this intent into code; and the human guides and corrects the result. 
+
+One of the reasons why product managers and developers exist is translation between knowledge domains. When the users know what they want -- due to their own domain experience, they cannot specify it to the machine, not even to developers because they tend to have a different mindset. Product managers help translate the user needs and requirements (often elicit the true needs), and developers need to formalize this into actual design and code (often elicit the true architecture). LLMs excel at bridging a large part of the gap between users and machine.
 
 ## Hypothesis
 The difference between vibe coding and AI-assisted engineering is the human-led understanding of objectives, engineering methods, constraints and context.
@@ -105,4 +106,3 @@ Grand total: LLMs revolutionize software engineering, but they don't replace (ye
 In practical terms for you as developers: Keep AI on a short leash: Do the thinking, especially about purpose and larger context of your work that the LLM cannot know, use plans/fixtures/tests as explainable ground truth. Question results, never trust totally.
 
 LLM-copiloted code can absolutely be maintainable, even for non-UI use cases.
-

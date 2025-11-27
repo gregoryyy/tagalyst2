@@ -43,10 +43,12 @@
    2. Lazy-create per-message toolbars via IntersectionObserver/viewport queue to avoid injecting all 200 at once; keep update paths for already-mounted rows.
    3. Ensure page controls mount once per container/threadKey and survive SPA root swaps; revalidate ownership before removal.
    4. Cache message lengths from transcript harvest so `updateMessageLength` is O(1); keep title toolbar bound to current thread title source.
+   5. Keyboard shortcuts for navigation (arrows) now only work after clicking the thread text. This should also work after opening the page and interacting with the toolbars.
 
-6. **Navigation Toolbar Responsiveness**
+6. **Navigation Toolbar Quirks**
    1. Debounce star toggles with optimistic UI and coalesced storage writes; surface hover immediately and disable while pending to avoid lag.
    2. Ensure expand/collapse button toggles reinflate the nav container (not only shortcut); revalidate state after SPA swaps.
+   3. Export does not currently work.
 
 7. **Storage & Metadata**
    1. Add per-thread read-through cache for message metadata; avoid full `chrome.storage` reads on every render unless dirty keys changed.

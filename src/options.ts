@@ -99,6 +99,7 @@ class OptionsController {
     private navToolbarEnable!: HTMLInputElement;
     private sidebarLabelsEnable!: HTMLInputElement;
     private debugPerfEnable!: HTMLInputElement;
+    private debugVerboseEnable!: HTMLInputElement;
     private statusEl!: HTMLElement;
     private storageSizeEl!: HTMLElement;
     private viewBtn!: HTMLButtonElement;
@@ -128,6 +129,7 @@ class OptionsController {
         this.navToolbarEnable = document.getElementById('nav-toolbar-enable') as HTMLInputElement;
         this.sidebarLabelsEnable = document.getElementById('sidebar-labels-enable') as HTMLInputElement;
         this.debugPerfEnable = document.getElementById('debug-perf-enable') as HTMLInputElement;
+        this.debugVerboseEnable = document.getElementById('debug-verbose-enable') as HTMLInputElement;
         this.statusEl = document.getElementById('status') as HTMLElement;
         this.storageSizeEl = document.getElementById('storage-size') as HTMLElement;
         this.viewBtn = document.getElementById('view-storage') as HTMLButtonElement;
@@ -155,6 +157,7 @@ class OptionsController {
                 navToolbarEnabled: !!this.navToolbarEnable?.checked,
                 sidebarLabelsEnabled: !!this.sidebarLabelsEnable?.checked,
                 debugPerf: !!this.debugPerfEnable?.checked,
+                debugVerbose: !!this.debugVerboseEnable?.checked,
             };
             await saveConfig(next);
             setStatus(this.statusEl, 'Saved');
@@ -171,6 +174,7 @@ class OptionsController {
             this.navToolbarEnable,
             this.sidebarLabelsEnable,
             this.debugPerfEnable,
+            this.debugVerboseEnable,
         ].filter(Boolean).forEach(el => el?.addEventListener('change', onChange));
 
         this.viewBtn.addEventListener('click', async () => {
@@ -274,6 +278,7 @@ class OptionsController {
         if (this.navToolbarEnable) this.navToolbarEnable.checked = cfg.navToolbarEnabled !== false;
         if (this.sidebarLabelsEnable) this.sidebarLabelsEnable.checked = cfg.sidebarLabelsEnabled !== false;
         if (this.debugPerfEnable) this.debugPerfEnable.checked = cfg.debugPerf === true;
+        if (this.debugVerboseEnable) this.debugVerboseEnable.checked = cfg.debugVerbose === true;
     }
 
     private resetDeleteButton() {

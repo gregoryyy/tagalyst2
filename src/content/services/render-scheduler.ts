@@ -6,6 +6,7 @@ class RenderScheduler {
     private renderer: (() => Promise<void>) | null = null;
     private inflight = false;
     private pending = false;
+    private warningsEnabled = false;
 
     /**
      * Sets the current renderer callback.
@@ -48,6 +49,10 @@ class RenderScheduler {
         });
     }
 
+    setWarningsEnabled(enabled: boolean) {
+        this.warningsEnabled = !!enabled;
+    }
+
     private finish(start: number) {
         this.inflight = false;
         if (this.pending) {
@@ -55,7 +60,7 @@ class RenderScheduler {
             this.request();
         }
         const duration = performance.now() - start;
-        if (duration > 50) {
+        if (this.warningsEnabled && duration > 50) {
             // eslint-disable-next-line no-console
             console.warn(`RenderScheduler: slow render ${duration.toFixed(1)}ms`);
         }

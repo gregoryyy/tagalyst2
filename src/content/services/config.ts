@@ -26,6 +26,9 @@ class ConfigService {
     apply(obj?: Partial<typeof contentDefaultConfig>) {
         config = { ...contentDefaultConfig, ...(obj || {}) };
         this.loaded = true;
+        if (typeof (this.scheduler as any).setWarningsEnabled === 'function') {
+            (this.scheduler as any).setWarningsEnabled(!!config.debugVerbose);
+        }
         this.enforceState();
         this.notify();
         this.scheduler.request();
@@ -117,6 +120,13 @@ class ConfigService {
      */
     isPerfDebugEnabled() {
         return config.debugPerf === true;
+    }
+
+    /**
+     * Returns true when verbose debug/warning logs should be shown.
+     */
+    isVerboseDebugEnabled() {
+        return config.debugVerbose === true;
     }
 
     /**

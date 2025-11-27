@@ -62,4 +62,26 @@ describe('RenderScheduler', () => {
         scheduler.request();
         expect(rafSpy).toHaveBeenCalledTimes(0);
     });
+
+    it('only logs slow renders when warnings are enabled', async () => {
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined as any);
+        const perfSpy = jest.spyOn(performance, 'now');
+        const values = [0, 120]; // start, finish
+        perfSpy.mockImplementation(() => (values.length ? values.shift()! : 200));
+
+        const fn = jest.fn<() => void>().mockImplementation(() => undefined as void);
+        scheduler.setRenderer(fn as unknown as any);
+        scheduler.request();
+        rafHandlers.forEach(cb => cb(performance.now()));
+        expect(warnSpy).not.toHaveBeenCalled();
+
+        warnSpy.mockClear();
+        perfSpy.mockRestore();
+        const timedValues = [0, 120];
+        jest.spyOn(performance, 'now').mockImplementation(() => (timedValues.length ? timedValues.shift()! : 200));
+        scheduler.setWarningsEnabled(true);
+        scheduler.request();
+        rafHandlers.slice(-1).forEach(cb => cb(performance.now()));
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
 });

@@ -15,6 +15,7 @@ const TAGALYST_DEFAULT_CONFIG = {
     sidebarLabelsEnabled: true,
     navToolbarEnabled: true,
     debugPerf: false,
+    debugVerbose: false,
 };
 
 type TagalystConfig = typeof TAGALYST_DEFAULT_CONFIG;
