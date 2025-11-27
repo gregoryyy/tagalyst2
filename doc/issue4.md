@@ -22,7 +22,7 @@
 ## Plan
 1. **Instrumentation & Baseline**
    1. Add optional perf traces (counts, render duration, search highlight time, toolbar inject time, overview-ruler mount/layout) gated by a debug flag.
-   2. Capture a 200-message fixture run to establish current render time and jank points; add a budget note (e.g., <40ms cold render, <20ms steady-state) and log toolbar/ruler presence per load.
+   2. Capture a 200-message fixture run to establish current render time and jank points; add a budget note (e.g., <40ms cold render, <20ms steady-state) and log toolbar/ruler presence per load. Test added: `test/content/render-baseline.test.ts` (fixture-driven), logs `[tagalyst][perf-baseline]` with message/prompt counts, cold/steady render duration, toolbar injections, and overview ensure/update counts.
 
 2. **Render Loop Efficiency**
    1. Cache transcript harvests per generation: memoize adapter list + message text/length hashes; reuse when DOM unchanged to avoid repeated `getText()`.
