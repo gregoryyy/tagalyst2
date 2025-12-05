@@ -6,6 +6,7 @@
 /// <reference path="../controllers/export.ts" />
 /// <reference path="../state/message-meta.ts" />
 /// <reference path="./top-panel.ts" />
+/// <reference path="../markdown.ts" />
 
 type Shortcut = {
     function: keyof KeyboardController['actionHandlers'];
@@ -130,7 +131,9 @@ class KeyboardController {
             wrapper.appendChild(range);
             this.stripExtensionNodes(wrapper);
             const content = wrapper.querySelector<HTMLElement>('.markdown') || wrapper;
-            const md = new MarkdownSerializer().toMarkdown(content).trim();
+            const md = typeof MarkdownSerializer !== 'undefined'
+                ? new MarkdownSerializer().toMarkdown(content).trim()
+                : (content.textContent || '').trim();
             const plain = content.textContent?.trim() || md;
             if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
                 const item = new ClipboardItem({

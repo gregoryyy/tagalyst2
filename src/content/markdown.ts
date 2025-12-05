@@ -177,15 +177,15 @@ class MarkdownSerializer {
                 insideListItem: true,
             };
             const body = this.renderListItem(child as HTMLElement, nextCtx);
-            if (!body) {
+            const clean = body.replace(/^\s+|\s+$/g, '');
+            if (!clean) {
                 if (type === 'ol') order++;
                 return;
             }
-            const formatted = body
-                .split('\n')
-                .map((line, i) => (i === 0 ? line : `${indent}  ${line}`))
-                .join('\n');
-            items.push(`${indent}${marker} ${formatted}`);
+            const lines = clean.split('\n');
+            const first = lines.shift() || '';
+            const rest = lines.map(line => `${indent}  ${line}`);
+            items.push([`${indent}${marker} ${first}`, ...rest].join('\n'));
             if (type === 'ol') order++;
         });
         if (!items.length) return '';
