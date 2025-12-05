@@ -121,6 +121,14 @@ class KeyboardController {
         this.deps.exportController.copyThread(container, includeAll ? false : true);
     }
 
+    private handleCopySelection() {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        const text = selection.toString() || '';
+        const markdown = text; // TODO: optional markdown conversion could be added here.
+        navigator.clipboard?.writeText(markdown).catch(err => console.error('Selection copy failed', err));
+    }
+
     private focusSearchInput() {
         const panel = this.deps.topPanelController.getElement() || this.deps.topPanelController.ensurePanels();
         const input = panel ? panel.querySelector('.ext-search-input') as HTMLInputElement | null : null;
@@ -281,6 +289,7 @@ class KeyboardController {
         expandAll: (container, mods) => this.handleHorizontal(container, 'ArrowRight', mods.has('ctrl'), mods.has('meta')),
         copyMarked: (container, mods) => this.handleCopy(container, mods.has('meta')),
         copyAll: (container, mods) => this.handleCopy(container, true),
+        copySelectionAsMarkdown: () => this.handleCopySelection(),
         focusSearch: (_container, _mods) => this.focusSearchInput(),
         toggleStar: (container, _mods) => this.toggleStarOnCurrent(container),
     };
