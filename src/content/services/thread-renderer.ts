@@ -37,6 +37,8 @@ class ThreadRenderService {
     private queued = false;
     private generation = 0;
     private currentSearchQuery = '';
+    private lastSearchQuery = '';
+    private lastSearchHits = new Set<string>();
     private bootstrapStartedAt: number | null = null;
     private loggedFirstRender = false;
     private retryScheduled = false;
@@ -224,6 +226,7 @@ class ThreadRenderService {
             const promptCount = transcript.pairs.length;
             const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
             const searchQuery = this.focusService.getSearchQuery();
+            const searchChanged = searchQuery !== this.lastSearchQuery;
             const entries = transcript.messages.map(message => ({
                 adapter: message.adapter,
                 el: message.adapter.element,
@@ -235,7 +238,7 @@ class ThreadRenderService {
             const keys = entries.map(e => e.key);
             const store = await measureAsync('storage', () => this.storageService.read(keys));
             const tagCounts = new Map<string, number>();
-            this.highlightController.resetAll();
+            if (searchChanged) this.highlightController.resetAll();
             this.messageMetaRegistry.clear();
             const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
             if (!navEnabled) {
@@ -244,6 +247,7 @@ class ThreadRenderService {
             }
             let toolbarOps = 0;
             let highlightOps = 0;
+            const nextSearchHits = new Set<string>();
             for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
                 if (navEnabled) {
                     toolbarOps += 1;
@@ -258,8 +262,15 @@ class ThreadRenderService {
                 this.messageMetaRegistry.update(el, meta);
                 const isSearchHit = !!searchQuery && this.focusService.isSearchHit(meta as any, el);
                 el.classList.toggle('ext-search-hit', isSearchHit);
-                if (isSearchHit) highlightOps += 1;
-                measureSync('searchHighlight', () => this.applySearchHighlight(el, isSearchHit ? searchQuery : ''));
+                if (isSearchHit) {
+                    nextSearchHits.add(key);
+                }
+                const wasHit = this.lastSearchHits.has(key);
+                const shouldUpdateHighlight = searchChanged || isSearchHit !== wasHit;
+                if (shouldUpdateHighlight) {
+                    if (isSearchHit) highlightOps += 1;
+                    measureSync('searchHighlight', () => this.applySearchHighlight(el, isSearchHit ? searchQuery : ''));
+                }
                 if (value && Array.isArray(value.tags)) {
                     for (const t of value.tags) {
                         if (!t) continue;
@@ -273,6 +284,8 @@ class ThreadRenderService {
                 .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
             this.topPanelController.updateTagList(sortedTags);
             this.focusController.refreshButtons();
+            this.lastSearchHits = searchQuery ? nextSearchHits : new Set<string>();
+            this.lastSearchQuery = searchQuery;
             this.overviewRulerController.setExpandable(this.configService.doesOverviewExpand());
             let overviewMounted = !!document.getElementById('ext-overview-ruler');
             const overviewStart = perfEnabled ? performance.now() : 0;

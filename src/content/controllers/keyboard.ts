@@ -172,15 +172,15 @@ class KeyboardController {
         const arr = Array.isArray(expected) ? expected : String(expected).split(',').map(s => s.trim()).filter(Boolean);
         if (!arr.length) return actual.size === 0;
         const normalized = arr.map(m => m.toLowerCase());
+        if (normalized.length !== actual.size) return false;
         return normalized.every(m => actual.has(m));
     }
 
     private modifierSet(evt: KeyboardEvent) {
         const set = new Set<string>();
-        const metaPressed = !!evt.metaKey;
-        if (evt.ctrlKey || metaPressed) set.add('ctrl');
-        if (evt.altKey || metaPressed) set.add('alt');
-        if (metaPressed) set.add('meta');
+        if (evt.ctrlKey) set.add('ctrl');
+        if (evt.altKey) set.add('alt');
+        if (evt.metaKey) set.add('meta');
         if (evt.shiftKey) set.add('shift');
         return set;
     }
