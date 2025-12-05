@@ -124,9 +124,36 @@ class KeyboardController {
     private handleCopySelection() {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) return;
-        const text = selection.toString() || '';
-        const markdown = text; // TODO: optional markdown conversion could be added here.
-        navigator.clipboard?.writeText(markdown).catch(err => console.error('Selection copy failed', err));
+        try {
+            const range = selection.getRangeAt(0).cloneContents();
+            const wrapper = document.createElement('div');
+            wrapper.appendChild(range);
+            this.stripExtensionNodes(wrapper);
+            const content = wrapper.querySelector<HTMLElement>('.markdown') || wrapper;
+            const md = new MarkdownSerializer().toMarkdown(content).trim();
+            const plain = content.textContent?.trim() || md;
+            if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+                const item = new ClipboardItem({
+                    'text/plain': new Blob([plain], { type: 'text/plain' }),
+                    'text/markdown': new Blob([md], { type: 'text/markdown' }),
+                });
+                navigator.clipboard.write([item]).catch(err => {
+                    console.error('Selection copy failed', err);
+                    navigator.clipboard.writeText(md).catch(fallbackErr => console.error('Selection copy fallback failed', fallbackErr));
+                });
+                return;
+            }
+            navigator.clipboard?.writeText(md).catch(err => console.error('Selection copy failed', err));
+        } catch (err) {
+            console.error('Selection copy failed', err);
+        }
+    }
+
+    private stripExtensionNodes(root: HTMLElement) {
+        root.querySelectorAll(`[${EXT_ATTR}]`).forEach(node => node.remove());
+        root.querySelectorAll('.ext-toolbar-row').forEach(node => node.remove());
+        root.querySelectorAll('button').forEach(node => node.remove());
+        root.querySelectorAll('svg').forEach(node => node.remove());
     }
 
     private focusSearchInput() {
