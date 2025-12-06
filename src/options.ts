@@ -96,6 +96,7 @@ class OptionsController {
     private overviewEnable!: HTMLInputElement;
     private overviewExpand!: HTMLInputElement;
     private metaToolbarEnable!: HTMLInputElement;
+    private messageToolbarEnable!: HTMLInputElement;
     private navToolbarEnable!: HTMLInputElement;
     private sidebarLabelsEnable!: HTMLInputElement;
     private debugPerfEnable!: HTMLInputElement;
@@ -126,6 +127,7 @@ class OptionsController {
         this.overviewEnable = document.getElementById('overview-enable') as HTMLInputElement;
         this.overviewExpand = document.getElementById('overview-expand') as HTMLInputElement;
         this.metaToolbarEnable = document.getElementById('meta-toolbar-enable') as HTMLInputElement;
+        this.messageToolbarEnable = document.getElementById('message-toolbar-enable') as HTMLInputElement;
         this.navToolbarEnable = document.getElementById('nav-toolbar-enable') as HTMLInputElement;
         this.sidebarLabelsEnable = document.getElementById('sidebar-labels-enable') as HTMLInputElement;
         this.debugPerfEnable = document.getElementById('debug-perf-enable') as HTMLInputElement;
@@ -154,6 +156,7 @@ class OptionsController {
                 overviewEnabled: !!this.overviewEnable?.checked,
                 overviewExpands: !!this.overviewExpand?.checked,
                 metaToolbarEnabled: !!this.metaToolbarEnable?.checked,
+                messageToolbarEnabled: !!this.messageToolbarEnable?.checked,
                 navToolbarEnabled: !!this.navToolbarEnable?.checked,
                 sidebarLabelsEnabled: !!this.sidebarLabelsEnable?.checked,
                 debugPerf: !!this.debugPerfEnable?.checked,
@@ -171,6 +174,7 @@ class OptionsController {
             this.overviewEnable,
             this.overviewExpand,
             this.metaToolbarEnable,
+            this.messageToolbarEnable,
             this.navToolbarEnable,
             this.sidebarLabelsEnable,
             this.debugPerfEnable,
@@ -275,6 +279,7 @@ class OptionsController {
         if (this.overviewEnable) this.overviewEnable.checked = !!cfg.overviewEnabled;
         if (this.overviewExpand) this.overviewExpand.checked = !!cfg.overviewExpands;
         if (this.metaToolbarEnable) this.metaToolbarEnable.checked = cfg.metaToolbarEnabled !== false;
+        if (this.messageToolbarEnable) this.messageToolbarEnable.checked = cfg.messageToolbarEnabled !== false;
         if (this.navToolbarEnable) this.navToolbarEnable.checked = cfg.navToolbarEnabled !== false;
         if (this.sidebarLabelsEnable) this.sidebarLabelsEnable.checked = cfg.sidebarLabelsEnabled !== false;
         if (this.debugPerfEnable) this.debugPerfEnable.checked = cfg.debugPerf === true;

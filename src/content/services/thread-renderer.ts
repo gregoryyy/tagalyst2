@@ -227,6 +227,7 @@ class ThreadRenderService {
             const charCount = transcript.messages.reduce((sum, msg) => sum + (msg.text?.length || 0), 0);
             const searchQuery = this.focusService.getSearchQuery();
             const searchChanged = searchQuery !== this.lastSearchQuery;
+            const messageToolbarOn = this.configService.isMessageToolbarEnabled ? this.configService.isMessageToolbarEnabled() : true;
             const entries = transcript.messages.map(message => ({
                 adapter: message.adapter,
                 el: message.adapter.element,
@@ -243,13 +244,12 @@ class ThreadRenderService {
             const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
             if (!navEnabled) {
                 document.getElementById('ext-page-controls')?.remove();
-                document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
             }
             let toolbarOps = 0;
             let highlightOps = 0;
             const nextSearchHits = new Set<string>();
             for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {
-                if (navEnabled) {
+                if (messageToolbarOn) {
                     toolbarOps += 1;
                     measureSync('toolbar', () => {
                         this.toolbar.injectToolbar(el, this.threadKey!);

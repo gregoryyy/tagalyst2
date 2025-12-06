@@ -130,9 +130,12 @@ configService.onChange(cfg => {
     } else {
         sidebarLabelController.stop();
     }
+    const messageToolbarOn = configService.isMessageToolbarEnabled ? configService.isMessageToolbarEnabled() : true;
+    if (!messageToolbarOn && container) {
+        document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
+    }
     if (cfg.navToolbarEnabled === false && container) {
         document.getElementById('ext-page-controls')?.remove();
-        document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
     } else if (container) {
         toolbarController.ensurePageControls(container, threadKey);
     }

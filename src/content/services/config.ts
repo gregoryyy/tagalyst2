@@ -109,6 +109,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when per-message toolbars should be shown.
+     */
+    isMessageToolbarEnabled() {
+        return config.messageToolbarEnabled !== false;
+    }
+
+    /**
      * Returns true when sidebar labels should be shown.
      */
     isSidebarLabelsEnabled() {
