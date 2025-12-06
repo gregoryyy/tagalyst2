@@ -10,6 +10,8 @@ class ProjectListLabelController {
     private retryTimer: number | null = null;
     private retryAttempts = 0;
     private readonly retryDelayMs = 250;
+    private isStopped = false;
+    private delayedRenderTimers: number[] = [];
     private readonly debugFlag = '__tagalystDebugSidebar';
     private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
     private log(label: string, data?: Record<string, unknown>) {
@@ -23,7 +25,9 @@ class ProjectListLabelController {
 
     start() {
         this.stop();
-        if (!this.config.isSidebarLabelsEnabled()) return;
+        this.isStopped = false;
+        const enabled = this.config.isProjectLabelsEnabled ? this.config.isProjectLabelsEnabled() : true;
+        if (!enabled) return;
         const root = document.querySelector('main') || document.body;
         if (!root) {
             this.log('start:retry', { attempts: this.retryAttempts });
@@ -34,18 +38,21 @@ class ProjectListLabelController {
         this.log('start', { hasRoot: !!root });
         this.renderAll(root);
         // Handle late-loaded project lists.
-        setTimeout(() => this.renderAll(root), 500);
-        setTimeout(() => this.renderAll(root), 1500);
+        this.delayedRenderTimers.push(window.setTimeout(() => this.renderAll(root), 500));
+        this.delayedRenderTimers.push(window.setTimeout(() => this.renderAll(root), 1500));
         this.observe(root);
     }
 
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        this.isStopped = true;
         if (this.retryTimer) {
             clearTimeout(this.retryTimer);
             this.retryTimer = null;
         }
+        this.delayedRenderTimers.forEach(id => clearTimeout(id));
+        this.delayedRenderTimers = [];
         this.retryAttempts = 0;
         document.querySelectorAll('[data-ext="project-labels"]').forEach(el => el.remove());
         this.log('stop');
@@ -62,17 +69,25 @@ class ProjectListLabelController {
     }
 
     private async renderAll(root?: Element) {
+        if (this.isStopped) return;
+        const enabled = this.config.isProjectLabelsEnabled ? this.config.isProjectLabelsEnabled() : true;
+        if (!enabled) {
+            this.stop();
+            return;
+        }
         const scope = root || document;
         const items = Array.from(scope.querySelectorAll<HTMLAnchorElement>('li[class*="project-item"] a[href*="/c/"]'));
         await Promise.all(items.map(item => this.renderItem(item)));
     }
 
     private async renderItem(link: HTMLAnchorElement) {
+        if (this.isStopped || !(this.config.isProjectLabelsEnabled ? this.config.isProjectLabelsEnabled() : true)) return;
         const href = link.getAttribute('href') || '';
         const match = href.match(/\/c\/([^/?#]+)/);
         if (!match) return;
         const threadId = match[1];
         const meta = await this.metadata.read(threadId);
+        if (this.isStopped || !(this.config.isProjectLabelsEnabled ? this.config.isProjectLabelsEnabled() : true)) return;
 
         const existing = link.querySelectorAll<HTMLElement>('[data-ext="project-labels"]');
         if (existing.length > 1) {

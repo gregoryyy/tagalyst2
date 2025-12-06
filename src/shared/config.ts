@@ -13,6 +13,7 @@ const TAGALYST_DEFAULT_CONFIG = {
     overviewExpands: true,
     metaToolbarEnabled: true,
     sidebarLabelsEnabled: true,
+    projectLabelsEnabled: true,
     navToolbarEnabled: true,
     messageToolbarEnabled: true,
     debugPerf: false,

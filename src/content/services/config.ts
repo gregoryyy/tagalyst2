@@ -123,6 +123,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when project labels should be shown.
+     */
+    isProjectLabelsEnabled() {
+        return config.projectLabelsEnabled !== false;
+    }
+
+    /**
      * Returns true when perf debug logging is enabled.
      */
     isPerfDebugEnabled() {

@@ -99,6 +99,7 @@ class OptionsController {
     private messageToolbarEnable!: HTMLInputElement;
     private navToolbarEnable!: HTMLInputElement;
     private sidebarLabelsEnable!: HTMLInputElement;
+    private projectLabelsEnable!: HTMLInputElement;
     private debugPerfEnable!: HTMLInputElement;
     private debugVerboseEnable!: HTMLInputElement;
     private statusEl!: HTMLElement;
@@ -130,6 +131,7 @@ class OptionsController {
         this.messageToolbarEnable = document.getElementById('message-toolbar-enable') as HTMLInputElement;
         this.navToolbarEnable = document.getElementById('nav-toolbar-enable') as HTMLInputElement;
         this.sidebarLabelsEnable = document.getElementById('sidebar-labels-enable') as HTMLInputElement;
+        this.projectLabelsEnable = document.getElementById('project-labels-enable') as HTMLInputElement;
         this.debugPerfEnable = document.getElementById('debug-perf-enable') as HTMLInputElement;
         this.debugVerboseEnable = document.getElementById('debug-verbose-enable') as HTMLInputElement;
         this.statusEl = document.getElementById('status') as HTMLElement;
@@ -159,6 +161,7 @@ class OptionsController {
                 messageToolbarEnabled: !!this.messageToolbarEnable?.checked,
                 navToolbarEnabled: !!this.navToolbarEnable?.checked,
                 sidebarLabelsEnabled: !!this.sidebarLabelsEnable?.checked,
+                projectLabelsEnabled: !!this.projectLabelsEnable?.checked,
                 debugPerf: !!this.debugPerfEnable?.checked,
                 debugVerbose: !!this.debugVerboseEnable?.checked,
             };
@@ -177,6 +180,7 @@ class OptionsController {
             this.messageToolbarEnable,
             this.navToolbarEnable,
             this.sidebarLabelsEnable,
+            this.projectLabelsEnable,
             this.debugPerfEnable,
             this.debugVerboseEnable,
         ].filter(Boolean).forEach(el => el?.addEventListener('change', onChange));
@@ -282,6 +286,7 @@ class OptionsController {
         if (this.messageToolbarEnable) this.messageToolbarEnable.checked = cfg.messageToolbarEnabled !== false;
         if (this.navToolbarEnable) this.navToolbarEnable.checked = cfg.navToolbarEnabled !== false;
         if (this.sidebarLabelsEnable) this.sidebarLabelsEnable.checked = cfg.sidebarLabelsEnabled !== false;
+        if (this.projectLabelsEnable) this.projectLabelsEnable.checked = cfg.projectLabelsEnabled !== false;
         if (this.debugPerfEnable) this.debugPerfEnable.checked = cfg.debugPerf === true;
         if (this.debugVerboseEnable) this.debugVerboseEnable.checked = cfg.debugVerbose === true;
     }

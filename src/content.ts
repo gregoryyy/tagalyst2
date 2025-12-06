@@ -125,11 +125,8 @@ configService.onChange(cfg => {
     } else {
         overviewRulerController.reset();
     }
-    if (configService.isSidebarLabelsEnabled()) {
-        sidebarLabelController.start();
-    } else {
-        sidebarLabelController.stop();
-    }
+    ensureSidebarLabels();
+    ensureProjectLabels();
     const messageToolbarOn = configService.isMessageToolbarEnabled ? configService.isMessageToolbarEnabled() : true;
     if (!messageToolbarOn && container) {
         document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
@@ -189,6 +186,24 @@ const projectListLabelController = new ProjectListLabelController(threadMetadata
 
 
 const exportController = new ExportController();
+
+const ensureSidebarLabels = () => {
+    const enabled = configService.isSidebarLabelsEnabled ? configService.isSidebarLabelsEnabled() : true;
+    if (enabled) {
+        sidebarLabelController.start();
+    } else {
+        sidebarLabelController.stop();
+    }
+};
+
+const ensureProjectLabels = () => {
+    const enabled = configService.isProjectLabelsEnabled ? configService.isProjectLabelsEnabled() : true;
+    if (enabled) {
+        projectListLabelController.start();
+    } else {
+        projectListLabelController.stop();
+    }
+};
 
 class BootstrapOrchestrator {
     private threadAdapter: ThreadAdapter | null = null;
@@ -398,24 +413,24 @@ const domWatcher = new DomWatcher({
     },
     onNav: () => handleSpaNavigation(),
     onRootChange: (prev, next) => {
-        if (prev && prev !== next) {
-            threadRenderService.reset();
-            sidebarLabelController.stop();
-            projectListLabelController.stop();
-        }
-        if (next) {
-            sidebarLabelController.start();
-            projectListLabelController.start();
-        }
-    },
-});
+            if (prev && prev !== next) {
+                threadRenderService.reset();
+                sidebarLabelController.stop();
+                projectListLabelController.stop();
+            }
+            if (next) {
+                ensureSidebarLabels();
+                ensureProjectLabels();
+            }
+        },
+    });
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
 async function bootstrap(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
-    sidebarLabelController.start();
+    ensureSidebarLabels();
     if (pageKind === 'project') {
-        projectListLabelController.start();
+        ensureProjectLabels();
         bootstrapOrchestrator['teardownUI']?.();
         return;
     }
@@ -438,7 +453,8 @@ async function handleSpaNavigation(): Promise<void> {
         }
         const threadKey = Utils.getThreadKey();
         const threadId = deriveThreadId();
-        sidebarLabelController.start();
+        ensureSidebarLabels();
+        ensureProjectLabels();
         const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
         if (showMeta) {
             threadMetadataController.ensure(container, threadId);

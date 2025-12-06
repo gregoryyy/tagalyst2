@@ -19,6 +19,7 @@
 - Title toolbar: sometimes absent on load (~30%); new chats can show wrong titles; rename flow is brittle—remove inline rename and rely on ChatGPT titles only.
 - Navigation toolbar: star buttons feel laggy on long chats and sometimes ignore clicks even while hover state updates; expand-after-collapse fails when using the button (keyboard shortcut still works).
 - More economic copy option: Ctrl/Cmd+C should only copy the current selection; if nothing is selected, nothing is copied. Copying complete/focused threads should only occur via the dedicated shortcut.
+- Toolbar options: Navigation toolbar toggle also governs message toolbars; update settings to “Message + navigation toolbars” with separate enable (message toolbar) and extend (nav toolbar) controls. Sidebar labels row becomes “Sidebar and project labels” with enable controlling sidebar labels and extend controlling project labels.
 
 ## Plan
 1. **Instrumentation & Baseline**

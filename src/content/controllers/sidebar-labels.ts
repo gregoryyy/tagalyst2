@@ -10,6 +10,7 @@ class SidebarLabelController {
     private visibilityHandler: (() => void) | null = null;
     private retryTimer: number | null = null;
     private retryAttempts = 0;
+    private isStopped = false;
     private readonly retryDelayMs = 250;
     private readonly debugFlag = '__tagalystDebugSidebar';
     private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
@@ -24,6 +25,7 @@ class SidebarLabelController {
 
     start() {
         this.stop(); // prevent duplicate observers/handlers
+        this.isStopped = false;
         if (!this.config.isSidebarLabelsEnabled()) {
             return;
         }
@@ -42,6 +44,7 @@ class SidebarLabelController {
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        this.isStopped = true;
         if (this.visibilityHandler) {
             document.removeEventListener('visibilitychange', this.visibilityHandler);
             this.visibilityHandler = null;
@@ -76,16 +79,22 @@ class SidebarLabelController {
     }
 
     private async renderAll(nav: Element) {
+        if (this.isStopped || !this.config.isSidebarLabelsEnabled()) {
+            this.stop();
+            return;
+        }
         const anchors = Array.from(nav.querySelectorAll<HTMLAnchorElement>('a[href*="/c/"]'));
         await Promise.all(anchors.map(anchor => this.renderItem(anchor)));
     }
 
     private async renderItem(link: HTMLAnchorElement) {
+        if (this.isStopped || !this.config.isSidebarLabelsEnabled()) return;
         if (!link || !link.href) return;
         const threadIdMatch = link.href.match(/\/c\/([^/?#]+)/);
         if (!threadIdMatch || !threadIdMatch[1]) return;
         const threadId = threadIdMatch[1];
         const meta = await this.metadata.read(threadId);
+        if (this.isStopped || !this.config.isSidebarLabelsEnabled()) return;
 
         // Remove stray duplicates before injecting.
         const existing = link.querySelectorAll<HTMLElement>('[data-ext="labels"]');
