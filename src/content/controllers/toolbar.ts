@@ -33,10 +33,7 @@ class ToolbarController {
      * Ensures the target still belongs to the current transcript container.
      */
     private hasOwnership(target: HTMLElement | null): boolean {
-        if (!target) return false;
-        const container = this.threadDom.findTranscriptRoot();
-        if (!container || !container.isConnected) return false;
-        return container.contains(target);
+        return !!(target && target.isConnected);
     }
 
 
@@ -47,11 +44,17 @@ class ToolbarController {
         this.log('page-controls:ensure', { threadKey });
         const existing = document.getElementById('ext-page-controls');
         if (existing) {
-            this.log('page-controls:reuse', { threadKey });
-            return existing;
+            const prevKey = existing.getAttribute('data-thread-key');
+            if (prevKey === threadKey && existing.isConnected) {
+                this.log('page-controls:reuse', { threadKey });
+                return existing;
+            }
+            this.log('page-controls:rebuild', { prevKey, threadKey });
+            existing.remove();
         }
         const box = document.createElement('div');
         box.id = 'ext-page-controls';
+        box.dataset.threadKey = threadKey;
         Utils.markExtNode(box);
         box.innerHTML = `
         <div class="ext-nav-frame">
@@ -214,6 +217,9 @@ class ToolbarController {
         const wrap = document.createElement('div');
         wrap.className = 'ext-toolbar';
         Utils.markExtNode(wrap);
+        // Prevent host page handlers from swallowing our clicks.
+        row.addEventListener('click', evt => evt.stopPropagation());
+        row.addEventListener('mousedown', evt => evt.stopPropagation());
         wrap.innerHTML = `
         <span class="ext-badges"></span>
         <button class="ext-tag" title="Edit tags" aria-label="Edit tags"><span class="ext-btn-icon">✎<small>T</small></span></button>
