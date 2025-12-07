@@ -137,15 +137,7 @@ configService.onChange(cfg => {
         toolbarController.ensurePageControls(container, threadKey);
     }
     requestRender();
-    const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-    if (showMeta && container) {
-        threadMetadataController.ensure(container, threadId);
-        threadMetadataService.read(threadId).then(meta => {
-            threadMetadataController.render(threadId, meta);
-        });
-    } else {
-        document.getElementById('ext-thread-meta')?.remove();
-    }
+    ensureThreadMeta();
     requestRender();
 });
 
@@ -184,6 +176,45 @@ const threadMetadataController = new ThreadMetadataController(threadMetadataServ
 const sidebarLabelController = new SidebarLabelController(threadMetadataService, configService);
 const projectListLabelController = new ProjectListLabelController(threadMetadataService, configService);
 
+let threadMetaObserver: MutationObserver | null = null;
+let threadMetaObservedTarget: Element | null = null;
+const ensureThreadMeta = () => {
+    const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
+    if (!showMeta) {
+        document.getElementById('ext-thread-meta')?.remove();
+        threadMetaObserver?.disconnect();
+        threadMetaObserver = null;
+        threadMetaObservedTarget = null;
+        return;
+    }
+    const container = threadDom.findTranscriptRoot();
+    if (!container) return;
+    const threadId = deriveThreadId();
+    const header = document.getElementById('ext-thread-meta');
+    if (header?.getAttribute('data-thread-id') === threadId) return;
+    try {
+        const el = threadMetadataController.ensure(container, threadId);
+        el?.setAttribute('data-thread-id', threadId);
+        threadMetadataService.read(threadId).then(meta => {
+            threadMetadataController.render(threadId, meta);
+        }).catch(err => {
+            console.error('[tagalyst][meta] render failed', err);
+        });
+    } catch (err) {
+        console.error('[tagalyst][meta] ensure failed', err);
+        return;
+    }
+
+    // Watch the header area for reflows that could drop the meta bar.
+    const heading = document.querySelector<HTMLElement>('main h1, main header h1, header h1');
+    const headerContainer = heading?.closest('header') || heading?.parentElement || document.querySelector<HTMLElement>('header') || document.querySelector('main');
+    if (headerContainer && headerContainer !== threadMetaObservedTarget) {
+        threadMetaObserver?.disconnect();
+        threadMetaObserver = new MutationObserver(() => ensureThreadMeta());
+        threadMetaObserver.observe(headerContainer, { childList: true, subtree: true, characterData: true });
+        threadMetaObservedTarget = headerContainer;
+    }
+};
 
 const exportController = new ExportController();
 
@@ -267,31 +298,6 @@ class BootstrapOrchestrator {
         const threadKey = Utils.getThreadKey();
         const threadId = deriveThreadId();
         sidebarLabelController.start();
-        const ensureMeta = async () => {
-            if (configService.isMetaToolbarEnabled()) {
-                threadMetadataController.ensure(container, threadId);
-                threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
-            } else {
-                document.getElementById('ext-thread-meta')?.remove();
-            }
-        };
-        // Initial and delayed retry to handle late header mounts.
-        await ensureMeta();
-        setTimeout(ensureMeta, 700);
-        const header = document.querySelector('#conversation-header-actions') || document.querySelector('main');
-        if (header) {
-            const metaObserver = new MutationObserver(() => {
-                ensureMeta();
-            });
-            metaObserver.observe(header, { childList: true, subtree: true, characterData: true });
-        }
-        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-        if (showMeta) {
-            threadMetadataController.ensure(container, threadId);
-            threadMetadataController.render(threadId, await threadMetadataService.read(threadId));
-        } else {
-            document.getElementById('ext-thread-meta')?.remove();
-        }
         topPanelController.ensurePanels();
         topPanelController.updateConfigUI();
         highlightController.init();
@@ -314,6 +320,12 @@ class BootstrapOrchestrator {
         logBootstrapTiming('render:attach', startedAt, { threadId, threadKey });
         this.renderService.attach({ container, threadId, threadKey, adapter: this.threadAdapter });
         await this.renderService.renderNow();
+        try {
+            ensureThreadMeta();
+            setTimeout(ensureThreadMeta, 700);
+        } catch (err) {
+            console.error('[tagalyst][meta] bootstrap failed', err);
+        }
         this.threadAdapter.observe(container, (records) => {
             if (!records.some(Utils.mutationTouchesExternal)) return;
             this.renderService.requestRender();
@@ -410,6 +422,7 @@ const domWatcher = new DomWatcher({
     onMutations: () => {
         if (!threadRenderService.hasActiveContainer()) return;
         requestRender();
+        ensureThreadMeta();
     },
     onNav: () => handleSpaNavigation(),
     onRootChange: (prev, next) => {
@@ -455,15 +468,6 @@ async function handleSpaNavigation(): Promise<void> {
         const threadId = deriveThreadId();
         ensureSidebarLabels();
         ensureProjectLabels();
-        const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
-        if (showMeta) {
-            threadMetadataController.ensure(container, threadId);
-            threadMetadataService.read(threadId).then(meta => {
-                threadMetadataController.render(threadId, meta);
-            });
-        } else {
-            document.getElementById('ext-thread-meta')?.remove();
-        }
         if (configService.isNavToolbarEnabled()) {
             toolbarController.ensurePageControls(container, threadKey);
         } else {
@@ -474,6 +478,12 @@ async function handleSpaNavigation(): Promise<void> {
         threadRenderService.attach({ container, threadId, threadKey, adapter: activeThreadAdapter });
         domWatcher.watchContainer(container);
         await threadRenderService.renderNow();
+        try {
+            ensureThreadMeta();
+            setTimeout(ensureThreadMeta, 700);
+        } catch (err) {
+            console.error('[tagalyst][meta] nav failed', err);
+        }
         return;
     }
     await bootstrap();

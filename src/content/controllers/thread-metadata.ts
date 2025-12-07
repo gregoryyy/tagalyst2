@@ -103,6 +103,7 @@ class ThreadMetadataController {
         this.projectEl = header.querySelector('.ext-thread-meta-project');
         this.starButton = header.querySelector('.ext-thread-meta-star');
         this.currentThreadId = threadId;
+        header.setAttribute('data-thread-id', threadId);
         this.bindEditors(threadId);
         return header;
     }
