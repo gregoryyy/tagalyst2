@@ -102,6 +102,7 @@ class OptionsController {
     private projectLabelsEnable!: HTMLInputElement;
     private debugPerfEnable!: HTMLInputElement;
     private debugVerboseEnable!: HTMLInputElement;
+    private debugOverviewEnable!: HTMLInputElement;
     private statusEl!: HTMLElement;
     private storageSizeEl!: HTMLElement;
     private viewBtn!: HTMLButtonElement;
@@ -134,6 +135,7 @@ class OptionsController {
         this.projectLabelsEnable = document.getElementById('project-labels-enable') as HTMLInputElement;
         this.debugPerfEnable = document.getElementById('debug-perf-enable') as HTMLInputElement;
         this.debugVerboseEnable = document.getElementById('debug-verbose-enable') as HTMLInputElement;
+        this.debugOverviewEnable = document.getElementById('debug-overview-enable') as HTMLInputElement;
         this.statusEl = document.getElementById('status') as HTMLElement;
         this.storageSizeEl = document.getElementById('storage-size') as HTMLElement;
         this.viewBtn = document.getElementById('view-storage') as HTMLButtonElement;
@@ -164,6 +166,7 @@ class OptionsController {
                 projectLabelsEnabled: !!this.projectLabelsEnable?.checked,
                 debugPerf: !!this.debugPerfEnable?.checked,
                 debugVerbose: !!this.debugVerboseEnable?.checked,
+                debugOverview: !!this.debugOverviewEnable?.checked,
             };
             await saveConfig(next);
             setStatus(this.statusEl, 'Saved');
@@ -183,6 +186,7 @@ class OptionsController {
             this.projectLabelsEnable,
             this.debugPerfEnable,
             this.debugVerboseEnable,
+            this.debugOverviewEnable,
         ].filter(Boolean).forEach(el => el?.addEventListener('change', onChange));
 
         this.viewBtn.addEventListener('click', async () => {
@@ -289,6 +293,7 @@ class OptionsController {
         if (this.projectLabelsEnable) this.projectLabelsEnable.checked = cfg.projectLabelsEnabled !== false;
         if (this.debugPerfEnable) this.debugPerfEnable.checked = cfg.debugPerf === true;
         if (this.debugVerboseEnable) this.debugVerboseEnable.checked = cfg.debugVerbose === true;
+        if (this.debugOverviewEnable) this.debugOverviewEnable.checked = cfg.debugOverview === true;
     }
 
     private resetDeleteButton() {

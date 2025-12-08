@@ -144,6 +144,13 @@ class ConfigService {
     }
 
     /**
+     * Returns true when overview ruler debug logging is enabled.
+     */
+    isOverviewDebugEnabled() {
+        return config.debugOverview === true;
+    }
+
+    /**
      * Notifies subscribed listeners about a config change.
      */
     private notify() {

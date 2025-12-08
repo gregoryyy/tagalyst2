@@ -18,6 +18,7 @@ const TAGALYST_DEFAULT_CONFIG = {
     messageToolbarEnabled: true,
     debugPerf: false,
     debugVerbose: false,
+    debugOverview: false,
 };
 
 type TagalystConfig = typeof TAGALYST_DEFAULT_CONFIG;

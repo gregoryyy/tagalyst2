@@ -38,6 +38,19 @@ class OverviewRulerController {
     private trackDragActive = false;
     private suppressNextClick = false;
     private scrollEventTarget: EventTarget | null = null;
+    private readonly debugFlag = '__tagalystDebugOverview';
+    private isDebugEnabled() {
+        const cfgEnabled = typeof configService?.isOverviewDebugEnabled === 'function'
+            ? configService.isOverviewDebugEnabled()
+            : false;
+        return cfgEnabled || (globalThis as any)[this.debugFlag] === true;
+    }
+    private log(label: string, data?: Record<string, unknown>) {
+        if (!this.isDebugEnabled()) return;
+        const payload = data ? ['[tagalyst][overview]', label, data] : ['[tagalyst][overview]', label];
+        // eslint-disable-next-line no-console
+        console.info(...payload);
+    }
     private readonly handleTrackClick = (evt: MouseEvent) => this.onTrackClick(evt);
     private readonly handleTrackMouseDown = (evt: MouseEvent) => this.onTrackMouseDown(evt);
     private readonly handleTrackMouseMove = (evt: MouseEvent) => this.onTrackMouseMove(evt);
@@ -116,6 +129,7 @@ class OverviewRulerController {
         if (!entries.length) return;
         this.ensure(container);
         if (!this.root) return;
+        this.log('update:start', { entries: entries.length });
         this.pendingContainer = container;
         this.pendingEntries = entries;
         this.requestDeferredLayout();
@@ -160,6 +174,11 @@ class OverviewRulerController {
         }
         this.updateViewportIndicator(scrollRange);
         this.layoutAllMarkers(scrollRange);
+        this.log('update:done', {
+            entries: entries.length,
+            scrollRange,
+            bounds
+        });
     }
 
     /**
@@ -236,6 +255,7 @@ class OverviewRulerController {
     private updatePosition(container: HTMLElement) {
         const bounds = this.computeBounds(container);
         const scrollRange = this.computeScrollRange(container);
+        this.log('layout', { bounds, scrollRange });
         this.applyFrame(container, bounds);
         this.updateViewportIndicator(scrollRange);
         this.layoutAllMarkers(scrollRange);
@@ -490,6 +510,14 @@ class OverviewRulerController {
         const el = adapter?.element;
         if (!el || !document.contains(el)) return { docCenter: null, visualCenter: null };
         const messageRect = el.getBoundingClientRect();
+        this.log('measure:message', {
+            key: (adapter as any)?.key,
+            rect: {
+                top: Math.round(messageRect.top),
+                height: Math.round(messageRect.height),
+                bottom: Math.round(messageRect.bottom),
+            },
+        });
         const messageCenter = this.measureScrollSpaceCenter(messageRect);
         const toolbar =
             el.querySelector<HTMLElement>('.ext-toolbar-row') ||
@@ -497,6 +525,14 @@ class OverviewRulerController {
         let docCenter = messageCenter;
         if (toolbar) {
             const toolbarRect = toolbar.getBoundingClientRect();
+            this.log('measure:toolbar', {
+                key: (adapter as any)?.key,
+                rect: {
+                    top: Math.round(toolbarRect.top),
+                    height: Math.round(toolbarRect.height),
+                    bottom: Math.round(toolbarRect.bottom),
+                },
+            });
             if (toolbarRect) {
                 docCenter = this.measureScrollSpaceCenter(toolbarRect);
             }

@@ -1,7 +1,7 @@
 {
     "name": "Tagalyst 2",
     "description": "ChatGPT content management and search, branch ruler nav",
-    "version": "0.7.0",
+    "version": "0.7.1",
     "manifest_version": 3,
     "minimum_chrome_version": "114",
     "permissions": [
