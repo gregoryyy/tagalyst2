@@ -40,6 +40,7 @@ class ThreadRenderService {
     private bootstrapStartedAt: number | null = null;
     private loggedFirstRender = false;
     private retryScheduled = false;
+    private readonly searchHighlightState = new WeakMap<HTMLElement, string>();
 
     constructor(
         private readonly scheduler: RenderScheduler,
@@ -166,7 +167,6 @@ class ThreadRenderService {
             const keys = entries.map(e => e.key);
             const store = await this.storageService.read(keys);
             const tagCounts = new Map<string, number>();
-            this.highlightController.resetAll();
             this.messageMetaRegistry.clear();
             const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
             if (!navEnabled) {
@@ -227,6 +227,9 @@ class ThreadRenderService {
      * Adds/removes inline search highlights within a message element.
      */
     private applySearchHighlight(el: HTMLElement, query: string) {
+        const normalized = (query || '').trim();
+        const signature = `${normalized}|${el.textContent?.length ?? 0}`;
+        if (this.searchHighlightState.get(el) === signature) return;
         // Clear prior marks
         el.querySelectorAll('.ext-search-mark').forEach(mark => {
             const parent = mark.parentNode;
@@ -235,7 +238,7 @@ class ThreadRenderService {
                 parent.normalize();
             }
         });
-        const normalized = (query || '').trim();
+        this.searchHighlightState.set(el, signature);
         if (!normalized) return;
         const regex = new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {

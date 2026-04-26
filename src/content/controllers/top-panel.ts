@@ -23,7 +23,11 @@ class TopPanelController {
     ) { }
 
     ensurePanels(): HTMLElement {
-        if (this.topPanelsEl) return this.topPanelsEl;
+        if (this.topPanelsEl && this.topPanelsEl.isConnected) return this.topPanelsEl;
+        if (this.topPanelsEl && !this.topPanelsEl.isConnected) {
+            // Stale reference; recreate.
+            this.reset();
+        }
         const wrap = document.createElement('div');
         wrap.id = 'ext-top-panels';
         wrap.innerHTML = `

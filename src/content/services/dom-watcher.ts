@@ -15,6 +15,8 @@ class DomWatcher {
     private lastHref: string = location.href;
     private urlTimer: number | null = null;
     private currentRoot: HTMLElement | null = null;
+    private historyPatched = false;
+    private readonly handleHistoryEvent = () => this.checkUrl();
 
     constructor(private readonly handlers: DomWatcherHandlers) { }
 
@@ -44,12 +46,38 @@ class DomWatcher {
     watchUrl() {
         this.lastHref = location.href;
         this.stopUrlWatch();
-        this.urlTimer = window.setInterval(() => {
-            if (location.href !== this.lastHref) {
-                this.lastHref = location.href;
-                this.handlers.onNav();
-            }
-        }, 800);
+        this.patchHistory();
+        window.addEventListener('popstate', this.handleHistoryEvent);
+        window.addEventListener('tagalyst:locationchange', this.handleHistoryEvent);
+        this.urlTimer = window.setInterval(() => this.checkUrl(), 800);
+    }
+
+    private checkUrl() {
+        if (location.href === this.lastHref) return;
+        this.lastHref = location.href;
+        this.handlers.onNav();
+    }
+
+    private patchHistory() {
+        if (this.historyPatched) return;
+        const w = window as any;
+        if (w.__tagalystHistoryPatched) {
+            this.historyPatched = true;
+            return;
+        }
+        const dispatch = () => window.dispatchEvent(new Event('tagalyst:locationchange'));
+        const wrap = (key: 'pushState' | 'replaceState') => {
+            const original = history[key];
+            history[key] = function (this: History, ...args: any[]) {
+                const result = (original as any).apply(this, args);
+                dispatch();
+                return result;
+            } as any;
+        };
+        wrap('pushState');
+        wrap('replaceState');
+        w.__tagalystHistoryPatched = true;
+        this.historyPatched = true;
     }
 
     stopMutationObserver() {
@@ -64,6 +92,8 @@ class DomWatcher {
             clearInterval(this.urlTimer);
             this.urlTimer = null;
         }
+        window.removeEventListener('popstate', this.handleHistoryEvent);
+        window.removeEventListener('tagalyst:locationchange', this.handleHistoryEvent);
     }
 
     teardown() {

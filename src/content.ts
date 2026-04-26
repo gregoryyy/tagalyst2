@@ -262,9 +262,8 @@ class BootstrapOrchestrator {
         setTimeout(ensureMeta, 700);
         const header = document.querySelector('#conversation-header-actions') || document.querySelector('main');
         if (header) {
-            const metaObserver = new MutationObserver(() => {
-                ensureMeta();
-            });
+            const debouncedEnsureMeta = Utils.debounce(() => { ensureMeta(); }, 200);
+            const metaObserver = new MutationObserver(debouncedEnsureMeta);
             metaObserver.observe(header, { childList: true, subtree: true, characterData: true });
         }
         const showMeta = configService.isMetaToolbarEnabled ? configService.isMetaToolbarEnabled() : true;
@@ -327,6 +326,7 @@ class BootstrapOrchestrator {
         topPanelController.reset();
         keyboardController.detach();
         overviewRulerController.reset();
+        highlightController.resetAll();
         focusController.reset();
         this.threadAdapter?.disconnect();
         this.renderService.reset();
@@ -408,7 +408,25 @@ const domWatcher = new DomWatcher({
 });
 const bootstrapOrchestrator = new BootstrapOrchestrator(toolbarController, storageService, threadRenderService);
 
+let bootstrapInFlight: Promise<void> | null = null;
+let bootstrapPending = false;
+
 async function bootstrap(): Promise<void> {
+    if (bootstrapInFlight) {
+        bootstrapPending = true;
+        return bootstrapInFlight;
+    }
+    bootstrapInFlight = runBootstrapOnce().finally(() => {
+        bootstrapInFlight = null;
+        if (bootstrapPending) {
+            bootstrapPending = false;
+            bootstrap();
+        }
+    });
+    return bootstrapInFlight;
+}
+
+async function runBootstrapOnce(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
     sidebarLabelController.start();
     if (pageKind === 'project') {
@@ -424,7 +442,25 @@ async function bootstrap(): Promise<void> {
     await bootstrapOrchestrator.run();
 }
 
+let navInFlight: Promise<void> | null = null;
+let navPending = false;
+
 async function handleSpaNavigation(): Promise<void> {
+    if (navInFlight) {
+        navPending = true;
+        return navInFlight;
+    }
+    navInFlight = runSpaNavigationOnce().finally(() => {
+        navInFlight = null;
+        if (navPending) {
+            navPending = false;
+            handleSpaNavigation();
+        }
+    });
+    return navInFlight;
+}
+
+async function runSpaNavigationOnce(): Promise<void> {
     const pageKind = pageClassifier.classify(location.pathname);
     const isThreadPage = pageKind === 'thread' || pageKind === 'project-thread';
     if (isThreadPage && activeThreadAdapter) {
@@ -452,6 +488,12 @@ async function handleSpaNavigation(): Promise<void> {
             document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
         }
         topPanelController.ensurePanels();
+        if (configService.isOverviewEnabled() && threadDom.enumerateMessages(container).length) {
+            overviewRulerController.ensure(container);
+            overviewRulerController.setExpandable(configService.doesOverviewExpand());
+        } else {
+            overviewRulerController.reset();
+        }
         threadRenderService.attach({ container, threadId, threadKey, adapter: activeThreadAdapter });
         domWatcher.watchContainer(container);
         await threadRenderService.renderNow();
