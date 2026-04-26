@@ -1,5 +1,6 @@
 /// <reference path="../state/focus.ts" />
 /// <reference path="../services/config.ts" />
+/// <reference path="../services/shadow-host.ts" />
 
 /**
  * Manages the floating search/tag control panel at the top of the page.
@@ -42,7 +43,7 @@ class TopPanelController {
             </div>
         `;
         Utils.markExtNode(wrap);
-        document.body.appendChild(wrap);
+        shadowHostService.append(wrap);
         this.topPanelsEl = wrap;
         this.tagListEl = wrap.querySelector<HTMLElement>('#ext-tag-list');
         this.searchInputEl = wrap.querySelector<HTMLInputElement>('.ext-search-input');
@@ -155,7 +156,7 @@ class TopPanelController {
 
     syncWidth() {
         if (!this.topPanelsEl) return;
-        const controls = document.getElementById('ext-page-controls');
+        const controls = shadowHostService.getById('ext-page-controls');
         const refWidth = controls ? controls.getBoundingClientRect().width : null;
         const width = refWidth && refWidth > 0 ? refWidth : 220;
         this.topPanelsEl.style.minWidth = `${Math.max(220, Math.round(width))}px`;

@@ -22,6 +22,7 @@
                 "content/shared/storage.js",
                 "content/content/constants.js",
                 "content/content/utils.js",
+                "content/content/services/shadow-host.js",
                 "content/content/services/storage.js",
                 "content/content/services/render-scheduler.js",
                 "content/content/services/transcript.js",
@@ -72,7 +73,8 @@
     ,"web_accessible_resources": [
         {
             "resources": [
-                "content/keymap.yaml"
+                "content/keymap.yaml",
+                "content/content.css"
             ],
             "matches": [
                 "https://chat.openai.com/*",

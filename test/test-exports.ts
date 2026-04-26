@@ -3,6 +3,7 @@ require('../src/shared/config');
 require('../src/shared/storage');
 require('../src/content/constants');
 require('../src/content/utils');
+require('../src/content/services/shadow-host');
 require('../src/content/dom/message-adapters');
 require('../src/content/dom/thread-dom');
 require('../src/content/dom/chatgpt-adapter');

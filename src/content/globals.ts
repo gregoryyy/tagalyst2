@@ -16,6 +16,7 @@
 /// <reference path="./adapters/api-shim.ts" />
 /// <reference path="./adapters/fakes.ts" />
 /// <reference path="./services/dom-watcher.ts" />
+/// <reference path="./services/shadow-host.ts" />
 
 /**
  * Centralized global attachments for content scripts.
@@ -46,4 +47,5 @@
     if (typeof DomWatcher !== 'undefined') g.DomWatcher = DomWatcher;
     if (typeof FakeThreadAdapter !== 'undefined') g.FakeThreadAdapter = FakeThreadAdapter;
     if (typeof FakeMessageAdapter !== 'undefined') g.FakeMessageAdapter = FakeMessageAdapter;
+    if (typeof ShadowHostService !== 'undefined') g.ShadowHostService = ShadowHostService;
 })();
