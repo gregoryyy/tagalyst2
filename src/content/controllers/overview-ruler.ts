@@ -22,17 +22,19 @@ class OverviewRulerController {
     private rulerCanExpand = true;
     private readonly handleMarkerClick = (evt: MouseEvent) => {
         const target = evt.currentTarget as HTMLElement | null;
-        if (!target) return;
+        if (!target || !this.container) return;
         const value = Number(target.dataset.docCenter);
         if (!Number.isFinite(value)) return;
-        const viewport = this.getViewportHeight();
-        const top = Math.max(0, value - viewport / 2);
-        this.scrollContainerTo(top, 'smooth');
+        const scrollRange = this.computeScrollRange(this.container);
+        const span = Math.max(1, scrollRange.bottom - scrollRange.top);
+        const ratio = Math.min(1, Math.max(0, (value - scrollRange.top) / span));
+        this.scrollToRatio(ratio, 'smooth');
     };
     private pendingLayoutFrame: number | null = null;
     private pendingEntries: OverviewEntry[] | null = null;
     private pendingContainer: HTMLElement | null = null;
     private scrollContainer: HTMLElement | null = null;
+    private resizeObserver: ResizeObserver | null = null;
     private trackHandlersBound = false;
     private laneRoot: HTMLElement | null = null;
     private trackDragActive = false;
@@ -61,6 +63,7 @@ class OverviewRulerController {
         if (this.root) {
             this.container = container;
             this.attachScrollContainer(container);
+            this.attachResizeObserver(container);
             this.updatePosition(container);
             this.applyExpandState();
             this.bindTrackHandlers();
@@ -102,6 +105,7 @@ class OverviewRulerController {
         this.viewportEl = viewport;
         this.container = container;
         this.attachScrollContainer(container);
+        this.attachResizeObserver(container);
         window.addEventListener('resize', this.handleViewportChange);
         this.applyExpandState();
         this.bindTrackHandlers();
@@ -209,6 +213,10 @@ class OverviewRulerController {
             this.scrollEventTarget = null;
         }
         this.scrollContainer = null;
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
         this.endTrackDrag(true);
         this.rulerCanExpand = true;
         if (this.pendingLayoutFrame !== null) {
@@ -244,10 +252,9 @@ class OverviewRulerController {
     private applyFrame(container: HTMLElement, bounds: { top: number; bottom: number }) {
         if (!this.root) return;
         const rect = container.getBoundingClientRect();
-        const docTop = window.scrollY + bounds.top;
-        const docLeft = window.scrollX + rect.left;
-        this.root.style.top = `${docTop}px`;
-        this.root.style.left = `${docLeft + 8}px`;
+        this.root.style.position = 'fixed';
+        this.root.style.top = `${bounds.top}px`;
+        this.root.style.left = `${rect.left + 8}px`;
         const height = Math.max(1, bounds.bottom - bounds.top);
         this.root.style.height = `${height}px`;
     }
@@ -518,6 +525,18 @@ class OverviewRulerController {
         return scrollOffset + (rect.top - originOffset) + height / 2;
     }
 
+    private attachResizeObserver(container: HTMLElement) {
+        if (typeof ResizeObserver === 'undefined') return;
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
+        this.resizeObserver = new ResizeObserver(() => this.handleViewportChange());
+        this.resizeObserver.observe(container);
+        if (this.scrollContainer && this.scrollContainer !== container) {
+            this.resizeObserver.observe(this.scrollContainer);
+        }
+    }
+
     private attachScrollContainer(container: HTMLElement) {
         const candidate = this.findScrollContainer(container);
         const target: EventTarget = candidate ?? window;
@@ -532,16 +551,16 @@ class OverviewRulerController {
     }
 
     private findScrollContainer(container: HTMLElement): HTMLElement | null {
+        if (this.isScrollable(container) && !this.isInsideNav(container)) return container;
         const dedicated = this.locateTranscriptScroller(container);
         if (dedicated) return dedicated;
-        let current: HTMLElement | null = container;
+        let current: HTMLElement | null = container.parentElement;
         while (current) {
-            const parent = current.parentElement as HTMLElement | null;
-            if (this.isScrollable(current)) return current;
-            current = parent;
+            if (this.isScrollable(current) && !this.isInsideNav(current)) return current;
+            current = current.parentElement;
         }
         const main = container.closest<HTMLElement>('main');
-        if (this.isScrollable(main)) return main;
+        if (this.isScrollable(main) && !this.isInsideNav(main!)) return main;
         const docScroll = document.scrollingElement as HTMLElement | null;
         if (this.isScrollable(docScroll)) return docScroll;
         return null;
@@ -549,8 +568,6 @@ class OverviewRulerController {
 
     private locateTranscriptScroller(container: HTMLElement): HTMLElement | null {
         if (!container) return null;
-        const directParent = container.parentElement as HTMLElement | null;
-        if (this.isScrollable(directParent)) return directParent;
         const scope = container.closest('main') || document.body;
         const selectors = [
             'div.flex.h-full.flex-col.overflow-y-auto',
@@ -558,10 +575,21 @@ class OverviewRulerController {
             '[data-testid="conversation-main"] div.overflow-y-auto'
         ];
         for (const selector of selectors) {
-            const candidate = scope.querySelector<HTMLElement>(selector);
-            if (this.isScrollable(candidate)) return candidate;
+            const candidates = Array.from(scope.querySelectorAll<HTMLElement>(selector));
+            for (const candidate of candidates) {
+                if (this.isScrollable(candidate) && !this.isInsideNav(candidate) && candidate.contains(container)) {
+                    return candidate;
+                }
+            }
         }
+        const directParent = container.parentElement as HTMLElement | null;
+        if (this.isScrollable(directParent) && !this.isInsideNav(directParent!)) return directParent;
         return null;
+    }
+
+    private isInsideNav(el: HTMLElement | null): boolean {
+        if (!el) return false;
+        return !!el.closest('nav, aside');
     }
 
     private isScrollable(el: HTMLElement | null | undefined): el is HTMLElement {

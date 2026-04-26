@@ -9,7 +9,7 @@ class SidebarLabelController {
     private observer: MutationObserver | null = null;
     private visibilityHandler: (() => void) | null = null;
     private retryTimer: number | null = null;
-    private retryAttempts = 0;
+    private waitObserver: MutationObserver | null = null;
     private readonly retryDelayMs = 250;
     private readonly debugFlag = '__tagalystDebugSidebar';
     private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
@@ -29,11 +29,11 @@ class SidebarLabelController {
         }
         const nav = document.querySelector('nav');
         if (!nav) {
-            this.log('start:retry', { attempts: this.retryAttempts });
+            this.log('start:wait');
             this.scheduleRetry();
+            this.waitForNav();
             return;
         }
-        this.retryAttempts = 0;
         this.log('start', { hasNav: !!nav });
         this.renderAll(nav);
         this.observe(nav);
@@ -42,6 +42,8 @@ class SidebarLabelController {
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        this.waitObserver?.disconnect();
+        this.waitObserver = null;
         if (this.visibilityHandler) {
             document.removeEventListener('visibilitychange', this.visibilityHandler);
             this.visibilityHandler = null;
@@ -50,7 +52,6 @@ class SidebarLabelController {
             clearTimeout(this.retryTimer);
             this.retryTimer = null;
         }
-        this.retryAttempts = 0;
         document.querySelectorAll('[data-ext="labels"]').forEach(el => el.remove());
         this.log('stop');
     }
@@ -135,12 +136,24 @@ class SidebarLabelController {
     }
 
     private scheduleRetry() {
-        if (this.retryTimer || this.retryAttempts >= 3) return;
-        this.retryAttempts += 1;
+        if (this.retryTimer) return;
         this.retryTimer = window.setTimeout(() => {
             this.retryTimer = null;
             this.start();
         }, this.retryDelayMs);
+    }
+
+    private waitForNav() {
+        if (this.waitObserver) return;
+        const root = document.body || document.documentElement;
+        if (!root) return;
+        this.waitObserver = new MutationObserver(() => {
+            if (!document.querySelector('nav')) return;
+            this.waitObserver?.disconnect();
+            this.waitObserver = null;
+            this.start();
+        });
+        this.waitObserver.observe(root, { childList: true, subtree: true });
     }
 }
 

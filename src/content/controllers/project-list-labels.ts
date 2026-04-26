@@ -8,7 +8,7 @@
 class ProjectListLabelController {
     private observer: MutationObserver | null = null;
     private retryTimer: number | null = null;
-    private retryAttempts = 0;
+    private waitObserver: MutationObserver | null = null;
     private readonly retryDelayMs = 250;
     private readonly debugFlag = '__tagalystDebugSidebar';
     private isDebugEnabled() { return (globalThis as any)[this.debugFlag] === true; }
@@ -26,27 +26,25 @@ class ProjectListLabelController {
         if (!this.config.isSidebarLabelsEnabled()) return;
         const root = document.querySelector('main') || document.body;
         if (!root) {
-            this.log('start:retry', { attempts: this.retryAttempts });
+            this.log('start:wait');
             this.scheduleRetry();
+            this.waitForRoot();
             return;
         }
-        this.retryAttempts = 0;
         this.log('start', { hasRoot: !!root });
         this.renderAll(root);
-        // Handle late-loaded project lists.
-        setTimeout(() => this.renderAll(root), 500);
-        setTimeout(() => this.renderAll(root), 1500);
         this.observe(root);
     }
 
     stop() {
         this.observer?.disconnect();
         this.observer = null;
+        this.waitObserver?.disconnect();
+        this.waitObserver = null;
         if (this.retryTimer) {
             clearTimeout(this.retryTimer);
             this.retryTimer = null;
         }
-        this.retryAttempts = 0;
         document.querySelectorAll('[data-ext="project-labels"]').forEach(el => el.remove());
         this.log('stop');
     }
@@ -114,12 +112,24 @@ class ProjectListLabelController {
     }
 
     private scheduleRetry() {
-        if (this.retryTimer || this.retryAttempts >= 3) return;
-        this.retryAttempts += 1;
+        if (this.retryTimer) return;
         this.retryTimer = window.setTimeout(() => {
             this.retryTimer = null;
             this.start();
         }, this.retryDelayMs);
+    }
+
+    private waitForRoot() {
+        if (this.waitObserver) return;
+        const host = document.body || document.documentElement;
+        if (!host) return;
+        this.waitObserver = new MutationObserver(() => {
+            if (!(document.querySelector('main') || document.body)) return;
+            this.waitObserver?.disconnect();
+            this.waitObserver = null;
+            this.start();
+        });
+        this.waitObserver.observe(host, { childList: true, subtree: true });
     }
 }
 
