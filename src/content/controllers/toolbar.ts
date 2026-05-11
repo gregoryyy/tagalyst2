@@ -1,3 +1,4 @@
+/// <reference path="../services/shadow-host.ts" />
 /**
  * Composes toolbar rows for each message and manages the global control panel.
  */
@@ -45,7 +46,7 @@ class ToolbarController {
      */
     ensurePageControls(container: HTMLElement, threadKey: string) {
         this.log('page-controls:ensure', { threadKey });
-        const existing = document.getElementById('ext-page-controls');
+        const existing = shadowHostService.getById('ext-page-controls');
         if (existing) {
             this.log('page-controls:reuse', { threadKey });
             return existing;
@@ -87,7 +88,7 @@ class ToolbarController {
             </div>
         </div>
       `;
-        document.documentElement.appendChild(box);
+        shadowHostService.append(box);
         topPanelController.syncWidth();
 
         const jumpFirstBtn = box.querySelector<HTMLButtonElement>('#ext-jump-first');

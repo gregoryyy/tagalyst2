@@ -1,3 +1,4 @@
+/// <reference path="../services/shadow-host.ts" />
 class OverviewRulerController {
     private messageMarkerLayer: HTMLElement | null = null;
     private messageMarkerPool: HTMLElement[] = [];
@@ -95,7 +96,7 @@ class OverviewRulerController {
         track.appendChild(viewport);
         root.appendChild(track);
         Utils.markExtNode(root);
-        document.body.appendChild(root);
+        shadowHostService.append(root);
         this.root = root;
         this.trackEl = track;
         this.laneRoot = lanes;

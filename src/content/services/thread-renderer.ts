@@ -170,7 +170,9 @@ class ThreadRenderService {
             this.messageMetaRegistry.clear();
             const navEnabled = this.configService.isNavToolbarEnabled ? this.configService.isNavToolbarEnabled() : true;
             if (!navEnabled) {
-                document.getElementById('ext-page-controls')?.remove();
+                const host = (globalThis as any).shadowHostService;
+                if (host?.removeById) host.removeById('ext-page-controls');
+                else document.getElementById('ext-page-controls')?.remove();
                 document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
             }
             for (const { adapter: messageAdapter, el, key, pairIndex } of entries) {

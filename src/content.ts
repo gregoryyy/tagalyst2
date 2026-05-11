@@ -58,6 +58,7 @@ const showBootstrapError = (message: string) => {
     }
 };
 
+shadowHostService.boot();
 const storageService = new StorageService();
 const pageClassifier = new PageClassifier();
 /**
@@ -131,7 +132,7 @@ configService.onChange(cfg => {
         sidebarLabelController.stop();
     }
     if (cfg.navToolbarEnabled === false && container) {
-        document.getElementById('ext-page-controls')?.remove();
+        shadowHostService.removeById('ext-page-controls');
         document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
     } else if (container) {
         toolbarController.ensurePageControls(container, threadKey);
@@ -287,7 +288,7 @@ class BootstrapOrchestrator {
         if (configService.isNavToolbarEnabled()) {
             this.toolbar.ensurePageControls(container, threadKey);
         } else {
-            document.getElementById('ext-page-controls')?.remove();
+            shadowHostService.removeById('ext-page-controls');
             document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
         }
 
@@ -319,8 +320,7 @@ class BootstrapOrchestrator {
         document.querySelectorAll('.ext-tag-editing').forEach(el => el.classList.remove('ext-tag-editing'));
         document.querySelectorAll('.ext-note-editing').forEach(el => el.classList.remove('ext-note-editing'));
         document.getElementById('ext-thread-meta')?.remove();
-        const controls = document.getElementById('ext-page-controls');
-        if (controls) controls.remove();
+        shadowHostService.removeById('ext-page-controls');
         const panel = topPanelController.getElement();
         if (panel) panel.remove();
         topPanelController.reset();
@@ -484,7 +484,7 @@ async function runSpaNavigationOnce(): Promise<void> {
         if (configService.isNavToolbarEnabled()) {
             toolbarController.ensurePageControls(container, threadKey);
         } else {
-            document.getElementById('ext-page-controls')?.remove();
+            shadowHostService.removeById('ext-page-controls');
             document.querySelectorAll('.ext-toolbar-row').forEach(tb => tb.remove());
         }
         topPanelController.ensurePanels();

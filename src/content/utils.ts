@@ -43,7 +43,12 @@ namespace Utils {
     export function mountFloatingEditor(editor: HTMLElement, anchor: HTMLElement): () => void {
         editor.classList.add('ext-floating-editor');
         markExtNode(editor);
-        document.body.appendChild(editor);
+        const host = (globalThis as any).shadowHostService;
+        if (host && typeof host.append === 'function') {
+            host.append(editor);
+        } else {
+            document.body.appendChild(editor);
+        }
 
         const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
