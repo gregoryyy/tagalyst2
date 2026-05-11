@@ -9,9 +9,11 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --runInBand test/e2e/puppeteer-smoke.test.ts",
+    "test:browser": "playwright test",
     "dist": "npm run clean && npm run build && node scripts/build.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "@types/chrome": "^0.0.255",
     "@types/jest": "^29.5.12",
     "cross-zip": "^4.0.1",

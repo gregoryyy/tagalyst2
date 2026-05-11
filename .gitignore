@@ -8,6 +8,9 @@ package-lock.json
 # test outputs
 coverage/
 .jest/
+playwright-report/
+test-results/
+.playwright/
 # remove js
 options/*.js
 options/**/*.js

@@ -8,8 +8,8 @@ if (!(global as any).TextDecoder) (global as any).TextDecoder = TextDecoder;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { JSDOM } = require('jsdom') as typeof import('jsdom');
 
-const THREAD_FIXTURE = path.resolve(__dirname, '../../test-data/Thread3.html');
-const THREAD_URL = 'https://chatgpt.com/thread';
+const THREAD_FIXTURE = path.resolve(__dirname, '../fixtures/thread.html');
+const THREAD_URL = 'https://chatgpt.com/c/6923021c-66f0-832d-bdec-b2184f14e304';
 
 function loadFixture() {
     const html = fs.readFileSync(THREAD_FIXTURE, 'utf8');

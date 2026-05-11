@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Tagalyst design notes — ChatGPT</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .page { display: flex; height: 100%; }
+    nav { width: 240px; border-right: 1px solid #e5e5e5; padding: 8px; box-sizing: border-box; }
+    nav a { display: block; padding: 6px 8px; color: #222; text-decoration: none; }
+    main { flex: 1 1 auto; min-width: 0; height: 100%; }
+    #thread-scroll { height: 100vh; overflow-y: auto; padding: 16px; box-sizing: border-box; }
+    [data-message-author-role] { display: block; max-width: 760px; margin: 0 auto 24px; padding: 12px 16px; border-radius: 12px; }
+    [data-message-author-role="user"] { background: #f1f1f1; }
+    [data-message-author-role="assistant"] { background: #fff; }
+    [data-testid="composer"] { max-width: 760px; margin: 0 auto; padding: 12px 16px; }
+  </style>
+</head>
+<body>
+  <div id="__next">
+    <div class="page">
+      <nav aria-label="Chat history">
+        <a href="/c/6923021c-66f0-832d-bdec-b2184f14e304">Tagalyst design notes</a>
+        <a href="/c/00000000-0000-0000-0000-000000000001">Another conversation</a>
+      </nav>
+      <main>
+        <div id="thread-scroll" style="overflow-y: auto; height: 100vh;">
+          <p data-message-author-role="user" data-message-id="2d1b5195-9d3e-4ec6-91c0-25b61f9d7e07">Describe what Tagalyst is supposed to do, in detail.</p>
+          <p data-message-author-role="assistant" data-message-id="25758ec2-2f1c-4123-8b13-41a4b82812b6">Tagalyst is your Chrome-based system for organizing long ChatGPT conversations. It adds collapsible messages, tagging and bookmarks, full-text search, focus modes, text highlighting with annotations, an overview ruler that mirrors the whole thread, and Markdown export of selected messages.</p>
+          <p data-message-author-role="user" data-message-id="86f100a8-15fa-4608-86ff-75d35228c6e7">How does the overview ruler work?</p>
+          <p data-message-author-role="assistant" data-message-id="72b10e53-cec0-42a2-b300-8c6faf38c866">The overview ruler is a slim minimap on the left edge that mirrors the entire thread. Every message gets a horizontal tick with its number; stars, tags, and search hits line up in their own columns; and a viewport thumb tracks the visible scroll range. Click or drag anywhere on the ruler to scroll the real thread.</p>
+          <p data-message-author-role="user" data-message-id="2abde0f7-2dbe-4157-be97-9df90ea76e35">What about keyboard shortcuts?</p>
+          <p data-message-author-role="assistant" data-message-id="78ea54e2-8034-437b-a7cb-7cc14a9055ed">Keyboard shortcuts are driven by a YAML keymap with sensible defaults: jump between starred messages, collapse or expand all prompts, toggle focus mode, and more. You can review and customize the bindings from the options page.</p>
+          <div data-testid="composer">
+            <textarea data-id="prompt-textarea" placeholder="Message ChatGPT"></textarea>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

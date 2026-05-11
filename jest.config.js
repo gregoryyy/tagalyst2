@@ -15,6 +15,7 @@ module.exports = {
         '<rootDir>/dist/',
         '<rootDir>/content/',
         '<rootDir>/options/',
+        '<rootDir>/test/browser/',
     ],
     moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 };
